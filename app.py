@@ -1,6 +1,6 @@
 """
-碳交易模拟系统 — 完整版
-基于Excel公式的股票/碳交易定价模型 + 专业K线图表 + 精美UI
+股票交易系统 — 完整版
+基于Excel公式的股票交易定价模型 + 专业K线图表 + 精美UI
 """
 import os, sqlite3, hashlib, json
 from datetime import datetime, timedelta
@@ -365,165 +365,337 @@ def get_platform_stats():
 # ──────────────────────────────────────────────
 CUSTOM_CSS = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; }
-    .stApp { background: #f0f4f8; }
+    * { transition: all .25s cubic-bezier(.4,0,.2,1); }
 
-    /* ─── 登录页 AI 主题 ─── */
+    /* ====== 登录页 — 深层 AI 主题 ====== */
     .ai-login-wrap {
         position: fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
-        background: linear-gradient(135deg, #0a0e1a 0%, #1a1040 30%, #0d2137 60%, #0a1628 100%);
+        background: #050810;
         overflow: hidden;
     }
-    .ai-login-wrap::before {
-        content:''; position:absolute; width:600px; height:600px; border-radius:50%;
-        background: radial-gradient(circle, rgba(100,50,255,.15) 0%, transparent 70%);
-        top:-150px; right:-100px; animation: floatOrb 12s ease-in-out infinite;
+    /* 6 层光晕 */
+    .ai-orbs { position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1; pointer-events:none; }
+    .ai-orb {
+        position:absolute; border-radius:50%; filter: blur(100px);
+        animation: orbDrift 18s ease-in-out infinite;
     }
-    .ai-login-wrap::after {
-        content:''; position:absolute; width:500px; height:500px; border-radius:50%;
-        background: radial-gradient(circle, rgba(0,200,255,.1) 0%, transparent 70%);
-        bottom:-100px; left:-100px; animation: floatOrb 15s ease-in-out infinite reverse;
+    .ai-orb:nth-child(1) {
+        width:700px; height:700px; top:-200px; right:-150px;
+        background: rgba(99,102,241,.12);
+        animation-delay:0s;
     }
-    @keyframes floatOrb {
-        0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(40px,-30px) scale(1.1)}
+    .ai-orb:nth-child(2) {
+        width:500px; height:500px; bottom:-150px; left:-100px;
+        background: rgba(6,182,212,.1);
+        animation-delay:-5s; animation-duration:22s;
     }
-    /* 网格线 */
+    .ai-orb:nth-child(3) {
+        width:350px; height:350px; top:40%; left:50%;
+        background: rgba(236,72,153,.08);
+        animation-delay:-10s; animation-duration:20s;
+    }
+    .ai-orb:nth-child(4) {
+        width:450px; height:450px; top:20%; left:-120px;
+        background: rgba(59,130,246,.06);
+        animation-delay:-15s; animation-duration:24s;
+    }
+    @keyframes orbDrift {
+        0%,100% { transform: translate(0,0) scale(1); }
+        25% { transform: translate(60px,-40px) scale(1.15); }
+        50% { transform: translate(-30px,50px) scale(.9); }
+        75% { transform: translate(-50px,-20px) scale(1.1); }
+    }
+    /* 网格矩阵 */
     .ai-grid {
         position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
         background-image:
-            linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
-        background-size: 60px 60px;
+            repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 80px),
+            repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 80px);
+        mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
+        -webkit-mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
     }
-    /* 粒子 */
+    /* 飞线粒子 */
     .ai-particles { position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1; pointer-events:none; }
     .particle {
-        position:absolute; width:3px; height:3px; background:rgba(100,200,255,.5);
-        border-radius:50%; animation: particleFloat 20s infinite;
+        position:absolute; width:2px; height:2px;
+        background:rgba(129,140,248,.6); border-radius:50%;
+        box-shadow: 0 0 8px rgba(129,140,248,.4), 0 0 20px rgba(129,140,248,.2);
+        animation: rise 18s linear infinite;
     }
-    .particle:nth-child(1) { left:10%; animation-delay:0s; }
-    .particle:nth-child(2) { left:20%; animation-delay:2s; width:2px; }
-    .particle:nth-child(3) { left:35%; animation-delay:4s; height:2px; }
-    .particle:nth-child(4) { left:50%; animation-delay:6s; width:4px; height:4px; background:rgba(200,100,255,.4); }
-    .particle:nth-child(5) { left:65%; animation-delay:8s; }
-    .particle:nth-child(6) { left:75%; animation-delay:10s; width:2px; }
-    .particle:nth-child(7) { left:88%; animation-delay:12s; height:2px; }
-    .particle:nth-child(8) { left:45%; animation-delay:14s; width:3px; background:rgba(0,200,200,.3); }
-    @keyframes particleFloat {
-        0%{top:110%;opacity:0;transform:scale(0)} 10%{opacity:1}
-        90%{opacity:1} 100%{top:-10%;opacity:0;transform:scale(1.5)}
+    .particle:nth-child(1) { left:5%; animation-duration:16s; }
+    .particle:nth-child(2) { left:15%; animation-duration:19s; animation-delay:2s; width:3px; height:3px; background:rgba(6,182,212,.5); }
+    .particle:nth-child(3) { left:25%; animation-duration:21s; animation-delay:4s; }
+    .particle:nth-child(4) { left:38%; animation-duration:15s; animation-delay:6s; width:4px; height:4px; background:rgba(236,72,153,.4); }
+    .particle:nth-child(5) { left:50%; animation-duration:23s; animation-delay:8s; }
+    .particle:nth-child(6) { left:62%; animation-duration:17s; animation-delay:3s; width:3px; }
+    .particle:nth-child(7) { left:75%; animation-duration:20s; animation-delay:10s; }
+    .particle:nth-child(8) { left:88%; animation-duration:18s; animation-delay:7s; width:3px; height:3px; background:rgba(99,102,241,.5); }
+    .particle:nth-child(9) { left:32%; animation-duration:22s; animation-delay:12s; }
+    .particle:nth-child(10) { left:55%; animation-duration:19s; animation-delay:14s; width:2px; }
+    @keyframes rise {
+        0% { top:115%; opacity:0; transform: scale(.5) translateX(0); }
+        5% { opacity:1; }
+        15% { transform: scale(1) translateX(30px); }
+        35% { transform: scale(.8) translateX(-20px); }
+        55% { transform: scale(1.2) translateX(15px); }
+        75% { transform: scale(.6) translateX(-30px); }
+        90% { opacity:.5; }
+        100% { top:-5%; opacity:0; transform: scale(1) translateX(0); }
     }
-    /* 登录卡片 */
+
+    /* 登录卡片 — 玻璃拟态 + 旋转渐变边框 */
     .ai-login-card {
-        background: rgba(255,255,255,.04); backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        border: 1px solid rgba(255,255,255,.08);
-        border-radius: 24px; padding: 2.8rem 2.5rem;
-        box-shadow: 0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
-        position:relative; overflow:hidden;
+        background: rgba(15,18,30,.7); backdrop-filter: blur(40px);
+        -webkit-backdrop-filter: blur(40px);
+        border-radius: 28px; padding: 3rem 2.8rem;
+        position:relative; overflow:visible;
+        border: 1px solid rgba(255,255,255,.06);
+        box-shadow:
+            0 0 80px rgba(99,102,241,.08),
+            0 25px 80px rgba(0,0,0,.5),
+            inset 0 1px 0 rgba(255,255,255,.04);
+        animation: cardFadeIn .8s ease-out forwards;
     }
+    @keyframes cardFadeIn {
+        from { opacity:0; transform: translateY(30px) scale(.97); }
+        to { opacity:1; transform: translateY(0) scale(1); }
+    }
+    /* 旋转渐变色条 */
+    .ai-card-border {
+        position:absolute; top:-2px; left:-2px; right:-2px; bottom:-2px;
+        border-radius: 30px; z-index:-1;
+        background: conic-gradient(from 0deg, transparent, #6366f1, #06b6d4, #ec4899, transparent);
+        animation: rotateBorder 6s linear infinite;
+        opacity:.3;
+    }
+    @keyframes rotateBorder {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .ai-login-card:hover .ai-card-border { opacity:.6; }
+    /* 内部光线条 */
     .ai-login-card::before {
-        content:''; position:absolute; top:0; left:0; right:0; height:2px;
-        background: linear-gradient(90deg, transparent, #6366f1, #06b6d4, transparent);
+        content:''; position:absolute; top:0; left:10%; right:10%; height:1px;
+        background: linear-gradient(90deg, transparent, rgba(99,102,241,.4), rgba(6,182,212,.4), transparent);
+        border-radius: 100%;
     }
-    .ai-logo {
-        text-align:center; margin-bottom:2rem;
-    }
+
+    /* LOGO 区 */
+    .ai-logo { text-align:center; margin-bottom:2.2rem; }
     .ai-logo .icon {
-        font-size:3.2rem; display:block; margin-bottom:6px;
+        font-size:3.5rem; display:inline-block; margin-bottom:8px;
+        animation: iconPulse 3s ease-in-out infinite;
+        filter: drop-shadow(0 0 20px rgba(99,102,241,.5));
+    }
+    @keyframes iconPulse {
+        0%,100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
     }
     .ai-logo h1 {
-        font-size:1.6rem; font-weight:800; color:#fff; margin:0;
-        letter-spacing:-.5px; background: linear-gradient(135deg, #a78bfa, #06b6d4);
+        font-size:1.75rem; font-weight:900; color:#fff; margin:0;
+        letter-spacing:-.5px;
+        background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 50%, #a78bfa 100%);
+        background-size: 200% 200%;
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: shimmer 3s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+        0%,100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
     }
     .ai-logo p {
-        font-size:.8rem; color:rgba(255,255,255,.4); margin:4px 0 0 0;
-        letter-spacing:2px; text-transform:uppercase; font-weight:600;
+        font-size:.82rem; color:rgba(255,255,255,.35); margin:6px 0 0 0;
+        letter-spacing:2.5px; text-transform:uppercase; font-weight:600;
+        animation: fadeInUp .8s .2s ease-out both;
     }
     .ai-logo .tagline {
-        font-size:.75rem; color:rgba(255,255,255,.25); margin-top:8px;
-        letter-spacing:3px; text-transform:uppercase;
+        font-size:.7rem; color:rgba(255,255,255,.2); margin-top:10px;
+        letter-spacing:4px; text-transform:uppercase;
+        animation: fadeInUp .8s .35s ease-out both;
     }
+    @keyframes fadeInUp {
+        from { opacity:0; transform:translateY(10px); }
+        to { opacity:1; transform:translateY(0); }
+    }
+
+    /* 输入框 */
     .ai-login-card .stTextInput input {
+        background: rgba(255,255,255,.04) !important;
+        border: 1px solid rgba(255,255,255,.08) !important;
+        border-radius: 14px !important; color: #e0e0e0 !important;
+        padding: 14px 18px !important; font-size:.92rem !important;
+        transition: all .3s cubic-bezier(.4,0,.2,1) !important;
+    }
+    .ai-login-card .stTextInput input:hover {
+        border-color: rgba(129,140,248,.3) !important;
         background: rgba(255,255,255,.06) !important;
-        border: 1px solid rgba(255,255,255,.1) !important;
-        border-radius: 12px !important; color: #fff !important;
-        padding: 12px 16px !important; font-size: .9rem !important;
-        transition: all .2s;
     }
     .ai-login-card .stTextInput input:focus {
         border-color: #6366f1 !important;
-        box-shadow: 0 0 20px rgba(99,102,241,.15) !important;
+        box-shadow: 0 0 30px rgba(99,102,241,.2), 0 0 0 3px rgba(99,102,241,.06) !important;
+        background: rgba(255,255,255,.08) !important;
     }
-    .ai-login-card .stTextInput input::placeholder { color: rgba(255,255,255,.25) !important; }
+    .ai-login-card .stTextInput input::placeholder { color: rgba(255,255,255,.2) !important; }
+    .ai-login-card label { color: rgba(255,255,255,.4) !important; font-size:.72rem !important; font-weight:600; text-transform:uppercase; letter-spacing:1px; }
+
+    /* 按钮 */
     .ai-login-card .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #6366f1, #06b6d4) !important;
-        border: none !important; border-radius: 12px !important;
-        padding: 10px !important; font-weight: 700 !important;
-        font-size: .95rem !important; letter-spacing: .5px;
-        transition: all .2s !important;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+        border: none !important; border-radius: 14px !important;
+        padding: 14px !important; font-weight:800 !important;
+        font-size:1rem !important; letter-spacing:1px;
+        transition: all .3s cubic-bezier(.4,0,.2,1) !important;
+        position:relative; overflow:hidden;
+        box-shadow: 0 4px 25px rgba(99,102,241,.3) !important;
     }
     .ai-login-card .stButton button[kind="primary"]:hover {
-        transform: translateY(-1px); box-shadow: 0 8px 25px rgba(99,102,241,.35) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 40px rgba(99,102,241,.45) !important;
+        background: linear-gradient(135deg, #818cf8, #a78bfa) !important;
     }
-    .ai-login-card .stTabs { margin-top: .5rem; }
-    .ai-login-card .stTabs button {
-        color: rgba(255,255,255,.4) !important; font-weight:600 !important;
-        letter-spacing:.5px; font-size:.8rem !important;
+    .ai-login-card .stButton button[kind="primary"]:active {
+        transform: scale(.97);
     }
-    .ai-login-card .stTabs button[aria-selected="true"] {
-        color: #a78bfa !important;
+    .ai-login-card .stButton button[kind="primary"]::after {
+        content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent);
+        animation: btnShine 2s ease-in-out infinite;
     }
-    .ai-login-card .stTabs [data-baseweb="tab-highlight"] {
-        background: linear-gradient(90deg, #6366f1, #06b6d4) !important;
-    }
-    .ai-login-card label { color: rgba(255,255,255,.5) !important; font-size:.75rem !important; }
-    .ai-login-card .stAlert { border-radius: 12px; font-size:.8rem; }
-    .ai-login-card .stAlert [data-testid="stAlertContainer"] { border-radius: 12px; }
-    .ai-footer {
-        text-align:center; margin-top:1.5rem;
-        color:rgba(255,255,255,.15); font-size:.7rem; letter-spacing:1px;
+    @keyframes btnShine {
+        0% { left: -100%; }
+        50%,100% { left: 100%; }
     }
 
-    /* ─── 主应用样式 ─── */
+    /* Tab */
+    .ai-login-card .stTabs button {
+        color: rgba(255,255,255,.3) !important; font-weight:700 !important;
+        letter-spacing:1px; font-size:.82rem !important;
+        padding: 8px 24px !important; border-radius: 10px !important;
+    }
+    .ai-login-card .stTabs button:hover { color: rgba(255,255,255,.7) !important; background: rgba(255,255,255,.04) !important; }
+    .ai-login-card .stTabs button[aria-selected="true"] { color: #a78bfa !important; }
+    .ai-login-card .stTabs [data-baseweb="tab-highlight"] { background: linear-gradient(90deg, #6366f1, #06b6d4) !important; height:3px !important; border-radius:3px; }
+
+    /* Alert */
+    .ai-login-card .stAlert { border-radius:14px; font-size:.8rem; }
+    .ai-login-card .stAlert [data-testid="stAlertContainer"] { border-radius:14px; }
+
+    .ai-footer {
+        text-align:center; margin-top:1.8rem;
+        color:rgba(255,255,255,.12); font-size:.68rem; letter-spacing:2px;
+    }
+
+    /* ====== 主应用样式 ====== */
+    .stApp { background: #f0f4f8; }
     .main-header {
-        background: linear-gradient(135deg, #0f1729 0%, #1a2a5e 100%);
-        padding: 2rem 2rem; border-radius: 0 0 24px 24px;
+        background: linear-gradient(135deg, #0f1729 0%, #1a2a5e 50%, #0f1729 100%);
+        padding: 2rem; border-radius: 0 0 28px 28px;
         margin: -3rem -3rem 2rem -3rem; text-align: center;
+        box-shadow: 0 8px 40px rgba(0,0,0,.15);
+        position:relative; overflow:hidden;
     }
-    .main-header h1 { color: #fff; font-size: 2.2rem; font-weight: 700; letter-spacing: 1px; margin:0; }
-    .main-header p { color: rgba(255,255,255,.6); font-size:.95rem; margin:4px 0 0 0; }
+    .main-header::before {
+        content:''; position:absolute; top:0; left:0; right:0; height:1px;
+        background: linear-gradient(90deg, transparent, rgba(99,102,241,.3), transparent);
+    }
+    .main-header h1 { color: #fff; font-size: 2rem; font-weight:800; letter-spacing: .5px; margin:0; }
+    .main-header p { color: rgba(255,255,255,.5); font-size:.85rem; margin:6px 0 0 0; }
+
+    /* 卡片 */
     .card {
-        background: #fff; border-radius: 14px; padding: 1.2rem 1.5rem;
-        box-shadow: 0 2px 12px rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.04);
-        margin-bottom:1rem; transition: transform .15s;
+        background: #fff; border-radius: 16px; padding: 1.3rem 1.6rem;
+        box-shadow: 0 2px 16px rgba(0,0,0,.04); border:1px solid rgba(0,0,0,.03);
+        margin-bottom:1rem; transition: all .3s cubic-bezier(.4,0,.2,1);
     }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.1); }
-    .card-title { font-size:.85rem; color:#8892a4; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
-    .card-value { font-size:1.8rem; font-weight:700; color:#0f1729; margin:4px 0; }
-    .card-sub { font-size:.8rem; color:#555; }
+    .card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.08); border-color: rgba(99,102,241,.1); }
+    .card-title { font-size:.82rem; color:#8892a4; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+    .card-value { font-size:1.9rem; font-weight:800; color:#0f1729; margin:4px 0; }
     .up { color:#00c853!important; } .down { color:#ff1744!important; }
-    section[data-testid="stSidebar"] > div:first-child { background: linear-gradient(180deg, #0f1729 0%, #152040 100%); }
-    section[data-testid="stSidebar"] .stMarkdown { color: rgba(255,255,255,.85); }
-    section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.1); }
-    section[data-testid="stSidebar"] .stButton button { background: rgba(255,255,255,.06); border-radius: 10px; color:#fff; font-weight:600; }
-    section[data-testid="stSidebar"] .stButton button:hover { background: rgba(255,255,255,.12); }
-    .stButton button[kind="primary"] { background: linear-gradient(135deg, #1a2a5e, #2a4a8e); border: none; border-radius: 8px; font-weight:600; }
-    .stButton button[kind="primary"]:hover { background: linear-gradient(135deg, #253a7a, #3a5aae); }
-    .stTextInput input { border-radius: 8px; border: 1px solid #d0d5dd; }
-    div[data-testid="stMetricValue"] { font-size: 1.6rem!important; font-weight: 700!important; }
-    div[data-testid="stMetricDelta"] { font-size: .85rem!important; }
-    .kpi-box {
-        background:#fff; border-radius:16px; padding:1.2rem; text-align:center;
-        box-shadow:0 2px 10px rgba(0,0,0,.05); border:1px solid rgba(0,0,0,.04);
+
+    /* 侧边栏 */
+    section[data-testid="stSidebar"] > div:first-child {
+        background: linear-gradient(180deg, #0b1020 0%, #131e3d 60%, #0f1729 100%);
+        box-shadow: inset -1px 0 0 rgba(255,255,255,.03);
     }
-    .kpi-box .label { font-size:.8rem; color:#8892a4; text-transform:uppercase; letter-spacing:.5px; }
-    .kpi-box .value { font-size:1.8rem; font-weight:700; color:#0f1729; margin:4px 0; }
-    .kpi-box .delta { font-size:.85rem; }
-    div[data-testid="stDataFrame"] { font-size:.8rem; }
-    .stDataFrame [data-testid="StyledDataFrameDataCell"] { font-size:.8rem; }
+    section[data-testid="stSidebar"] .stMarkdown { color: rgba(255,255,255,.8); }
+    section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.06); }
+    section[data-testid="stSidebar"] .stRadio > div {
+        background: transparent;
+    }
+    section[data-testid="stSidebar"] .stRadio label {
+        color: rgba(255,255,255,.55) !important; padding: 10px 16px !important;
+        border-radius: 10px; font-weight:600; font-size:.85rem;
+        transition: all .2s; margin: 2px 0;
+    }
+    section[data-testid="stSidebar"] .stRadio label:hover {
+        background: rgba(255,255,255,.04); color: rgba(255,255,255,.9) !important;
+    }
+    section[data-testid="stSidebar"] .stRadio [data-checked="true"] + div label {
+        background: linear-gradient(135deg, rgba(99,102,241,.15), rgba(6,182,212,.1));
+        color: #a78bfa !important; border-left: 3px solid #6366f1;
+    }
+    section[data-testid="stSidebar"] .stButton button {
+        background: rgba(255,255,255,.04); border-radius: 12px;
+        color: rgba(255,255,255,.5); font-weight:600; border: 1px solid rgba(255,255,255,.06);
+    }
+    section[data-testid="stSidebar"] .stButton button:hover {
+        background: rgba(255,255,255,.08); color: #ff6b6b; border-color: rgba(255,107,107,.2);
+    }
+
+    /* 主按钮 */
+    .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #1e3a6e, #2d5fc0) !important;
+        border:none !important; border-radius: 10px !important;
+        font-weight:700 !important; box-shadow: 0 4px 15px rgba(30,58,110,.2);
+    }
+    .stButton button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #26478c, #3568d4) !important;
+        box-shadow: 0 6px 25px rgba(30,58,110,.35) !important;
+        transform: translateY(-1px);
+    }
+    .stButton button[kind="primary"]:active { transform: scale(.97); }
+
+    /* 输入框 */
+    .stTextInput input { border-radius: 10px; border:1px solid #d0d5dd; transition: all .2s; }
+    .stTextInput input:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.08); }
+
+    /* 指标卡片 */
+    .kpi-box {
+        background:#fff; border-radius:18px; padding:1.3rem; text-align:center;
+        box-shadow:0 2px 12px rgba(0,0,0,.04); border:1px solid rgba(0,0,0,.03);
+        transition: all .3s; position:relative; overflow:hidden;
+    }
+    .kpi-box:hover { transform: translateY(-2px); box-shadow:0 10px 30px rgba(0,0,0,.06); border-color:rgba(99,102,241,.08); }
+    .kpi-box::before {
+        content:''; position:absolute; top:0; left:0; right:0; height:3px;
+        background: linear-gradient(90deg, #6366f1, #06b6d4);
+        transform: scaleX(0); transition: transform .4s;
+    }
+    .kpi-box:hover::before { transform: scaleX(1); }
+    .kpi-box .label { font-size:.75rem; color:#8892a4; text-transform:uppercase; letter-spacing:.8px; font-weight:700; }
+    .kpi-box .value { font-size:1.9rem; font-weight:800; color:#0f1729; margin:5px 0; }
+    .kpi-box .delta { font-size:.85rem; font-weight:600; }
+
+    /* 表格 */
+    div[data-testid="stDataFrame"] table { border-radius: 12px; overflow:hidden; }
+    div[data-testid="stDataFrame"] th { background: #f8f9fc !important; font-weight:700; font-size:.78rem; color:#475569; }
+    div[data-testid="stDataFrame"] td { font-size:.82rem; }
+    div[data-testid="stDataFrame"] tbody tr:hover { background: rgba(99,102,241,.03) !important; }
+    div[data-testid="stDataFrame"] tbody tr:hover td { background: transparent; }
+
+    /* Expander */
+    .stExpander { border-radius:14px !important; border:1px solid rgba(0,0,0,.05) !important; }
+    .stExpander:hover { border-color: rgba(99,102,241,.1) !important; }
+    .stExpander summary { font-weight:700; font-size:.9rem; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,.15); border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,.3); }
 </style>
 """
 
@@ -532,7 +704,7 @@ def render_header():
     role_tag = "🛡️ 管理员" if st.session_state.role == "admin" else "🎯 选手"
     st.markdown(f"""
     <div class="main-header">
-        <h1>📊 碳交易模拟系统</h1>
+        <h1>📊 股票交易系统</h1>
         <p>{st.session_state.username} · {role_tag}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -550,23 +722,28 @@ def page_login():
     # AI 主题背景
     st.markdown("""
     <div class="ai-login-wrap"></div>
+    <div class="ai-orbs">
+        <div class="ai-orb"></div><div class="ai-orb"></div><div class="ai-orb"></div><div class="ai-orb"></div>
+    </div>
     <div class="ai-grid"></div>
     <div class="ai-particles">
         <div class="particle"></div><div class="particle"></div><div class="particle"></div>
         <div class="particle"></div><div class="particle"></div><div class="particle"></div>
-        <div class="particle"></div><div class="particle"></div>
+        <div class="particle"></div><div class="particle"></div><div class="particle"></div>
+        <div class="particle"></div>
     </div>
     """, unsafe_allow_html=True)
 
     _, mid, _ = st.columns([1, 2.4, 1])
     with mid:
-        st.markdown("<div style='height:12vh'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10vh'></div>", unsafe_allow_html=True)
         st.markdown("""
         <div class="ai-login-card">
+            <div class="ai-card-border"></div>
             <div class="ai-logo">
                 <span class="icon">🧠</span>
-                <h1>AI 碳交易模拟系统</h1>
-                <p>AI-Powered Carbon Trading Simulator</p>
+                <h1>AI 股票交易系统</h1>
+                <p>AI-Powered Stock Trading Simulator</p>
                 <div class="tagline">✦ 商业竞赛 · 多用户仿真平台 ✦</div>
             </div>
         """, unsafe_allow_html=True)
@@ -1051,7 +1228,7 @@ NAV = {
 PLAYER_NAV = ["📊 总览","🏛️ 交易大厅","💼 我的持仓","📈 我的做市","📉 K线展板"]
 ADMIN_NAV = list(NAV.keys())
 
-st.set_page_config(page_title="碳交易模拟系统", page_icon="📊", layout="wide")
+st.set_page_config(page_title="股票交易系统", page_icon="📊", layout="wide")
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 init_db()
 
@@ -1061,7 +1238,7 @@ if "logged_in" not in st.session_state:
 def main():
     if not st.session_state.logged_in: page_login(); return
     with st.sidebar:
-        st.markdown("<h3 style='color:#fff;font-weight:700;margin:0'>📊 碳交易</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color:#fff;font-weight:700;margin:0'>📊 股票交易</h3>", unsafe_allow_html=True)
         st.markdown(f"<p style='color:rgba(255,255,255,.7);font-size:.85rem'>👤 {st.session_state.username} · {'🛡️ 管理员' if st.session_state.role=='admin' else '🎯 选手'}</p>", unsafe_allow_html=True)
         st.divider()
         nav = ADMIN_NAV if st.session_state.role=="admin" else PLAYER_NAV
