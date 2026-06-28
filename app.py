@@ -1373,17 +1373,23 @@ def page_admin_user_mgmt():
                 if ok: st.rerun()
 
     st.divider()
-    st.markdown("**批量创建选手**")
-    BATCH_USERS = [
-        "陈思成", "陈佳欣", "陈泽方", "陈彦霓", "陈钰珊", "周泽辉",
-        "冼芷如", "冼芷均", "覃炽华", "覃炜婷", "赵紫涵", "康泰铭",
-    ]
-    if st.button(f"批量创建 {len(BATCH_USERS)} 个选手（密码 123456）", use_container_width=True):
-        created = 0
-        for u in BATCH_USERS:
-            ok, _ = register_user(u, "123456")
-            if ok: created += 1
-        st.success(f"成功创建 {created} 人"); st.rerun()
+    st.markdown("**批量创建选手（上传 Excel）**")
+    st.caption("Excel 第一列=用户名，第二列=密码")
+    uploaded = st.file_uploader("选择 Excel 文件", type=["xlsx"], key="batch_upload")
+    if uploaded:
+        df = pd.read_excel(uploaded)
+        if df.shape[1] >= 2:
+            valid = [(str(df.iloc[i,0]).strip(), str(df.iloc[i,1]).strip()) for i in range(len(df)) if pd.notna(df.iloc[i,0]) and pd.notna(df.iloc[i,1])]
+            st.info(f"检测到 {len(valid)} 个用户")
+            confirm_batch_create = st.checkbox("确认批量创建")
+            if st.button("一键创建", type="primary", disabled=not confirm_batch_create):
+                created = 0
+                for u, p in valid:
+                    ok, _ = register_user(u, p)
+                    if ok: created += 1
+                st.success(f"成功创建 {created}/{len(valid)} 人"); st.rerun()
+        else:
+            st.error("Excel 格式错误，至少需要两列（用户名/密码）")
 
     st.divider()
     st.markdown("**批量删除选手**")
