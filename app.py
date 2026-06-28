@@ -653,8 +653,8 @@ def page_trade_hall():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 因子面板（桌面端）
-    st.markdown('<div class="desktop-only" style="margin-top:20px;">', unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">定价因子</div>""", unsafe_allow_html=True)
+    st.markdown('<div style="margin-top:20px;">', unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:12px">定价因子</div>""", unsafe_allow_html=True)
     factor_sym = st.selectbox("查看股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="factor_sel")
     fsym = factor_sym.split("(")[1].rstrip(")")
     fs = next(x for x in stocks if x["symbol"] == fsym)
@@ -662,11 +662,39 @@ def page_trade_hall():
     prem_f = round(1 + 0.2 * (fs["premium_rate"] - 50) / 50, 4)
     cm = max(fs["industry_carbon_mean"], 1)
     carb_f = round(1 - 0.5 * (fs["carbon_price"] - cm) / cm, 4)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("昨收价", fmt_money(prev))
-    c2.metric("溢价率", f"{fs['premium_rate']:.0f}%", delta=f"因子 {prem_f}")
-    c3.metric("碳价", f"{fs['carbon_price']:.0f}", delta=f"均值 {cm:.0f}")
-    c4.metric("碳因子", f"{carb_f}")
+    # 幸福度（溢价率）
+    st.markdown(f"""
+    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        <div style="font-size:13px;color:#666;margin-bottom:8px;">幸福度（溢价率）对价格的影响</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
+                <div style="width:{fs['premium_rate']}%;height:100%;background:#{ '16a34a' if prem_f >= 1 else 'ef4444' };border-radius:6px;"></div>
+            </div>
+            <span style="font-size:28px;font-weight:600;color:#{ '16a34a' if prem_f >= 1 else 'ef4444' };">{prem_f}</span>
+        </div>
+        <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% → 因子 {prem_f}</div>
+    </div>""", unsafe_allow_html=True)
+    # 碳排放（碳价）
+    st.markdown(f"""
+    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        <div style="font-size:13px;color:#666;margin-bottom:8px;">碳排放（碳价）对价格的影响</div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
+                <div style="width:{max(0, min(100, (1-carb_f)*200+50)):.0f}%;height:100%;background:#{ '16a34a' if carb_f >= 1 else 'ef4444' };border-radius:6px;"></div>
+            </div>
+            <span style="font-size:28px;font-weight:600;color:#{ '16a34a' if carb_f >= 1 else 'ef4444' };">{carb_f}</span>
+        </div>
+        <div style="font-size:12px;color:#999;margin-top:4px;">碳价 {fs['carbon_price']:.0f}（均值 {cm:.0f}）→ 因子 {carb_f} · 碳价越低价格越涨</div>
+    </div>""", unsafe_allow_html=True)
+    # 价格
+    st.markdown(f"""
+    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        <div style="display:flex;justify-content:space-around;text-align:center;">
+            <div><div style="font-size:12px;color:#666;">昨收价</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev)}</div></div>
+            <div><div style="font-size:12px;color:#666;">理论价</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(round(prev*max(1,prem_f)*carb_f,2))}</div></div>
+            <div><div style="font-size:12px;color:#666;">涨跌停</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev*0.9)}~{fmt_money(prev*1.1)}</div></div>
+        </div>
+    </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 移动端底部交易栏 + 持仓列表
