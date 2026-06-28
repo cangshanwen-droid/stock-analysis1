@@ -1359,6 +1359,20 @@ def page_admin_user_mgmt():
             st.success(f"{target3} 已删除"); st.rerun()
 
     st.divider()
+    st.markdown("**创建管理员**")
+    with st.form("create_admin"):
+        aname = st.text_input("管理员用户名", placeholder="至少3位")
+        apwd = st.text_input("密码", type="password", placeholder="至少4位")
+        if st.form_submit_button("创建管理员", type="primary", use_container_width=True):
+            if not aname or not apwd: st.warning("请完整填写")
+            elif len(aname) < 3: st.warning("用户名至少3位")
+            elif len(apwd) < 4: st.warning("密码至少4位")
+            else:
+                ok, msg = register_user(aname, apwd, role="admin")
+                st.success(msg) if ok else st.error(msg)
+                if ok: st.rerun()
+
+    st.divider()
     st.markdown("**批量创建选手**")
     BATCH_USERS = [
         "陈思成", "陈佳欣", "陈泽方", "陈彦霓", "陈钰珊", "周泽辉",
