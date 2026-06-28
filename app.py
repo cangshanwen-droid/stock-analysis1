@@ -115,39 +115,35 @@ def init_db():
                     conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s_def[0],))
             conn.commit()
 
-        # 生成标准K线数据 — 每只股票20轮，模拟真实走势
-        import random as _rand
-        _rand.seed(42)
-        def _gen_kline(start_price, trend=1.0, vol_base=5000):
-            """生成20轮模拟K线，trend>1上涨，<1下跌"""
-            rows = []
-            p = float(start_price)
-            for i in range(20):
-                o = p
-                # 带趋势的随机波动
-                drift = (trend - 1.0) * 0.3 / 20  # 趋势漂移
-                noise = _rand.gauss(0, 0.025)     # 随机噪声
-                ret = drift + noise
-                c = round(p * (1 + ret), 2)
-                c = max(c, 0.01)  # 防止负价格
-                # 最高价 > max(o,c), 最低价 < min(o,c)
-                spread = abs(c - o) * 0.3 + 0.05
-                h = round(max(o, c) * (1 + _rand.uniform(0, spread)), 2)
-                l = round(min(o, c) * (1 - _rand.uniform(0, spread)), 2)
-                v = int(_rand.gauss(vol_base, vol_base * 0.3))
-                v = max(v, 100)
-                rows.append((o, h, l, c, v))
-                p = c
-            return rows
+        # 仅在首次部署时生成种子K线数据（reset_to_round1 删掉后不重新生成）
+        if first_boot:
+            import random as _rand
+            _rand.seed(42)
+            def _gen_kline(start_price, trend=1.0, vol_base=5000):
+                rows = []
+                p = float(start_price)
+                for i in range(20):
+                    o = p
+                    drift = (trend - 1.0) * 0.3 / 20
+                    noise = _rand.gauss(0, 0.025)
+                    ret = drift + noise
+                    c = round(p * (1 + ret), 2)
+                    c = max(c, 0.01)
+                    spread = abs(c - o) * 0.3 + 0.05
+                    h = round(max(o, c) * (1 + _rand.uniform(0, spread)), 2)
+                    l = round(min(o, c) * (1 - _rand.uniform(0, spread)), 2)
+                    v = int(_rand.gauss(vol_base, vol_base * 0.3))
+                    v = max(v, 100)
+                    rows.append((o, h, l, c, v))
+                    p = c
+                return rows
 
-        kline_seed = {
-            "WULIU": _gen_kline(10.0, trend=1.08, vol_base=5000),   # 缓步上涨
-            "JXIAO": _gen_kline(15.0, trend=1.02, vol_base=7000),   # 横盘震荡偏多
-            "JGONG": _gen_kline(20.0, trend=1.15, vol_base=10000),  # 强势上涨
-            "YLIAO": _gen_kline(25.0, trend=0.92, vol_base=15000),  # 震荡下行
-        }
-        has_any_kline = conn.execute("SELECT 1 FROM kline LIMIT 1").fetchone()
-        if not has_any_kline:
+            kline_seed = {
+                "WULIU": _gen_kline(10.0, trend=1.08, vol_base=5000),
+                "JXIAO": _gen_kline(15.0, trend=1.02, vol_base=7000),
+                "JGONG": _gen_kline(20.0, trend=1.15, vol_base=10000),
+                "YLIAO": _gen_kline(25.0, trend=0.92, vol_base=15000),
+            }
             for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
                 sym = s["symbol"]
                 klines = kline_seed.get(sym)
@@ -159,10 +155,9 @@ def init_db():
                     conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,1)", (sym, r))
                     conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)",
                         (sym, r, o, h, l, c, v, v*0.6, v*0.4, cpct))
-                # 同步最新价格到 stocks 表
                 last_c = klines[-1][3]
                 conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
-        conn.commit()
+            conn.commit()
         # 首次启动时设置市场轮次 = 最大K线轮次 + 1，后续不覆盖
         if first_boot:
             max_round = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
