@@ -2,7 +2,8 @@
 股票交易系统 — 移动端优先响应式版本
 商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
-import os, sqlite3, hashlib, tempfile
+import os, sqlite3, hashlib, tempfile, secrets
+from contextlib import contextmanager
 from datetime import datetime
 
 import streamlit as st
@@ -10,16 +11,27 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-def get_db():
-    """SQLite 本地数据库"""
-    conn = sqlite3.connect(os.path.join(tempfile.gettempdir(), "stock_analysis.db"))
+DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DB_PATH = os.path.join(DB_DIR, "stock_analysis.db")
+
+@contextmanager
+def get_db_cm():
+    """带异常安全的数据库连接上下文管理器"""
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def get_db():
+    """旧版兼容 — 优先使用 get_db_cm()"""
+    return sqlite3.connect(DB_PATH)
 
 def row_get(row, key, default=None):
     try: return row[key]
-    except: return default
+    except (KeyError, IndexError, TypeError): return default
 
 def hash_pwd(p, salt=""): return hashlib.sha256((p + salt).encode()).hexdigest()
 
@@ -37,56 +49,59 @@ def check_pwd(stored, plain):
 
 def make_pwd(plain):
     """生成加盐密码"""
-    import secrets
     salt = secrets.token_hex(8)
     return f"{salt}:{hash_pwd(plain, salt)}"
 
 def init_db():
-    conn = get_db(); cur = conn.cursor()
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
-        CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY AUTOINCREMENT, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, PRIMARY KEY(stock_symbol, round));
-        CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1), state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
-        CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-    """)
-    conn.commit()
-    # 迁移：revenue 字段
-    try: cur.execute("ALTER TABLE stocks ADD COLUMN revenue REAL DEFAULT 100000")
-    except: pass
-    cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
-    conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
-    first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
-    if first_boot:
-        _seed(conn)
+    os.makedirs(DB_DIR, exist_ok=True)
+    with get_db_cm() as conn:
+        cur = conn.cursor()
+        cur.executescript("""
+            CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
+            CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY AUTOINCREMENT, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, PRIMARY KEY(stock_symbol, round));
+            CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1), state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        """)
+        conn.commit()
+        # 迁移：revenue 字段
+        try: cur.execute("ALTER TABLE stocks ADD COLUMN revenue REAL DEFAULT 100000")
+        except: pass
+        cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
+        conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
+        first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+        if first_boot:
+            _seed(conn)
 
-    # 补全首轮K线
-    for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
-        exists = conn.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1 LIMIT 1", (s["symbol"],)).fetchone()
-        if exists:
-            continue
-        txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
-        bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-        st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-        tv = sum(t["shares"] for t in txns)
-        np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-        pc = s["previous_close"] or s["current_price"]
-        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],))
-        conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
+        # 补全首轮K线
+        for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
+            exists = conn.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1 LIMIT 1", (s["symbol"],)).fetchone()
+            if exists:
+                continue
+            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
+            bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+            st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+            tv = sum(t["shares"] for t in txns)
+            np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+            pc = s["previous_close"] or s["current_price"]
+            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],))
+            conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
 
-    for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-        has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-        if not has_open:
-            max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()
-            mr = max_r[0] if max_r else 0
-            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr+1))
-    conn.commit(); conn.close()
+        for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+            has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+            if not has_open:
+                max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()
+                mr = max_r[0] if max_r else 0
+                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr+1))
+        conn.commit()
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd("admin123")))
+    admin_pw = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(12)
+    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
@@ -125,278 +140,294 @@ def compute_price(stock):
     return max(round(prev * 0.9, 2), min(round(prev * 1.1, 2), round(t, 2)))
 
 def log_action(actor, action, target="", detail="", conn=None):
-    own_conn = conn is None
-    if own_conn:
-        conn = get_db()
-    conn.execute(
-        "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
-        (actor or "system", action, str(target or ""), str(detail or "")),
-    )
-    if own_conn:
-        conn.commit(); conn.close()
+    if conn is not None:
+        conn.execute("INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+            (actor or "system", action, str(target or ""), str(detail or "")))
+    else:
+        with get_db_cm() as c:
+            c.execute("INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (actor or "system", action, str(target or ""), str(detail or "")))
+            c.commit()
 
 def get_holding_shares(username, symbol, conn=None):
-    own_conn = conn is None
-    if own_conn:
-        conn = get_db()
-    r = conn.execute("""
-        SELECT
-            COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
-            COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
-        FROM transactions
-        WHERE username=? AND stock_symbol=?
-    """, (username, symbol)).fetchone()
-    if own_conn:
-        conn.close()
+    if conn is not None:
+        r = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
+                COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
+            FROM transactions
+            WHERE username=? AND stock_symbol=?
+        """, (username, symbol)).fetchone()
+    else:
+        with get_db_cm() as c:
+            r = c.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
+                    COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
+                FROM transactions
+                WHERE username=? AND stock_symbol=?
+            """, (username, symbol)).fetchone()
     return int((r["bought"] or 0) - (r["sold"] or 0)) if r else 0
 
 def settle_round(symbol):
-    conn = get_db(); cur = conn.cursor()
-    stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
-    r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
-    cr = r[0] if r and r[0] else 0
-    if cr == 0: conn.close(); return None, False, 0, 0, 0, 0, 0
-    txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
-    buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
-    sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
-    hb = max(o[0] for o in buys) if buys else 0
-    ls_ = min(o[0] for o in sells) if sells else 0
-    matched = hb >= ls_ if buys and sells else False
-    mp = round((hb + ls_) / 2, 2) if matched else 0
-    bq = sum(o[1] for o in buys); sq = sum(o[1] for o in sells)
-    mv_ = min(bq, sq) if matched else 0
-    bt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
-    st_amt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
-    tv = sum(t["shares"] for t in txns)
-    pf = round(1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50, 4)
-    icm = max(row_get(stock, "industry_carbon_mean", 50), 1)
-    cf = round(1 - 0.5 * (row_get(stock, "carbon_price", 50) - icm) / icm, 4)
-    np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
-    raw = round((stock["previous_close"] or stock["current_price"]), 2) * (bt / max(st_amt, 1)) * pf * cf
-    pc = stock["previous_close"] or stock["current_price"]
-    cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
-    hi = max(np_, pc); lo = min(np_, pc)
-    cur.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, cr))
-    cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-    nr = cr + 1
-    cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
-    cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        cur = conn.cursor()
+        stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
+        r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+        cr = r[0] if r and r[0] else 0
+        if cr == 0: return None, False, 0, 0, 0, 0, 0
+        txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
+        buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
+        sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
+        hb = max(o[0] for o in buys) if buys else 0
+        ls_ = min(o[0] for o in sells) if sells else 0
+        matched = hb >= ls_ if buys and sells else False
+        mp = round((hb + ls_) / 2, 2) if matched else 0
+        bq = sum(o[1] for o in buys); sq = sum(o[1] for o in sells)
+        mv_ = min(bq, sq) if matched else 0
+        bt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
+        st_amt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
+        tv = sum(t["shares"] for t in txns)
+        pf = round(1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50, 4)
+        icm = max(row_get(stock, "industry_carbon_mean", 50), 1)
+        cf = round(1 - 0.5 * (row_get(stock, "carbon_price", 50) - icm) / icm, 4)
+        np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
+        raw = round((stock["previous_close"] or stock["current_price"]), 2) * (bt / max(st_amt, 1)) * pf * cf
+        pc = stock["previous_close"] or stock["current_price"]
+        cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
+        hi = max(np_, pc); lo = min(np_, pc)
+        cur.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, cr))
+        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+        nr = cr + 1
+        cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
+        cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
+        conn.commit()
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 用户 / 股票 / 持仓 / 汇总（保持原逻辑）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
-    # 限速检查
-    if "login_fails" not in st.session_state: st.session_state.login_fails = {}
-    fails = st.session_state.login_fails
-    now = datetime.now()
-    if u in fails:
-        if fails[u]["count"] >= 5:
-            if (now - fails[u]["last"]).seconds < 30:
-                return False, ""
-            fails[u] = {"count": 0, "last": now}
-    conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
+    """SQLite 持久化限速：5 次失败 / 30 秒"""
+    with get_db_cm() as conn:
+        # 清理过期记录（超过30秒）
+        conn.execute("DELETE FROM login_attempts WHERE username=? AND attempt_time < datetime('now', '-30 seconds')", (u,))
+        # 检查最近失败次数
+        recent = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()
+        if recent and recent[0] >= 5:
+            return False, ""
+        r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
     if not r or not check_pwd(r["password"], p):
-        fails[u] = {"count": fails.get(u, {}).get("count", 0) + 1, "last": now}
+        with get_db_cm() as conn:
+            conn.execute("INSERT INTO login_attempts(username) VALUES(?)", (u,))
+            conn.commit()
         return False, ""
-    if u in fails: del fails[u]
     try:
         if r["status"] == "disabled": return False, ""
     except: pass
     return True, r["role"]
 
 def toggle_user(username):
-    conn = get_db()
-    cur = conn.execute("SELECT status FROM users WHERE username=? AND role='player'", (username,)).fetchone()
-    if cur: new_s = "disabled" if cur["status"] != "disabled" else "active"
-    else: conn.close(); return
-    conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username)); conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        cur = conn.execute("SELECT status FROM users WHERE username=? AND role='player'", (username,)).fetchone()
+        if cur: new_s = "disabled" if cur["status"] != "disabled" else "active"
+        else: return
+        conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username))
+        conn.commit()
 
 def delete_user(username):
-    conn = get_db()
-    conn.execute("DELETE FROM users WHERE username=? AND role='player'", (username,))
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("DELETE FROM users WHERE username=? AND role='player'", (username,))
+        conn.commit()
 
 def register_user(u, p, role="player"):
-    conn = get_db()
     try:
-        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, make_pwd(p), role))
-        conn.commit(); return True, "注册成功"
-    except sqlite3.IntegrityError: return False, "用户名已存在"
-    finally: conn.close()
+        with get_db_cm() as conn:
+            conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, make_pwd(p), role))
+            conn.commit()
+        return True, "注册成功"
+    except sqlite3.IntegrityError:
+        return False, "用户名已存在"
 
 def get_all_users():
-    conn = get_db(); r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall()
     return [dict(x) for x in r]
 
 def get_audit_logs(limit=80):
-    conn = get_db()
-    r = conn.execute("SELECT actor,action,target,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT actor,action,target,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [dict(x) for x in r]
 
 def reset_pwd(u, np_):
-    conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u)); conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u))
+        conn.commit()
 
 def get_stocks():
-    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
     return [dict(x) for x in r]
 
 def get_stock(sid):
-    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone()
     return dict(r) if r else None
 
 def add_stock(sym, name, price):
-    conn = get_db()
     try:
-        funds = price * 10000 * 20 / 10000
-        conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym.upper(), name, price, price, funds))
-        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
-        conn.commit(); return True, "添加成功"
-    except sqlite3.IntegrityError: return False, "代码已存在"
-    finally: conn.close()
+        with get_db_cm() as conn:
+            funds = price * 10000 * 20 / 10000
+            conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym.upper(), name, price, price, funds))
+            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
+            conn.commit()
+        return True, "添加成功"
+    except sqlite3.IntegrityError:
+        return False, "代码已存在"
 
 def update_stock_params(sid, **kw):
     """仅允许安全字段更新"""
     allowed = {"carbon_price", "premium_rate", "industry_carbon_mean", "revenue", "total_shares"}
     safe = {k: v for k, v in kw.items() if k in allowed}
     if not safe: return
-    conn = get_db()
-    sets = ", ".join(f"{k}=?" for k in safe)
-    vals = list(safe.values()) + [sid]
-    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        sets = ", ".join(f"{k}=?" for k in safe)
+        vals = list(safe.values()) + [sid]
+        conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
+        conn.commit()
 
 def delete_stock(sid):
-    conn = get_db(); conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,)); conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
+        conn.commit()
 
 def add_trade(username, symbol, tt, price, shares):
-    conn = get_db()
-    r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
-    cr = r[0] if r and r[0] else 0
-    if cr == 0: conn.close(); return False, "市场已闭市，无法交易"
-    stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
-    if not stock: conn.close(); return False, "股票不存在或已停用"
-    cost = price * shares
-    if tt == "buy":
-        bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
-        if not bal or bal["balance"] < cost: conn.close(); return False, "余额不足"
-        conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
-    else:
-        holding = get_holding_shares(username, symbol, conn)
-        if holding < shares:
-            conn.close()
-            return False, f"持仓不足：当前仅持有 {holding} 股"
-        conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
-    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
-    log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+        cr = r[0] if r and r[0] else 0
+        if cr == 0: return False, "市场已闭市，无法交易"
+        stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
+        if not stock: return False, "股票不存在或已停用"
+        cost = price * shares
+        if tt == "buy":
+            bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
+            if not bal or bal["balance"] < cost: return False, "余额不足"
+            conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+        else:
+            holding = get_holding_shares(username, symbol, conn)
+            if holding < shares:
+                return False, f"持仓不足：当前仅持有 {holding} 股"
+            conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
+        conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
+        log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
+        conn.commit()
     return True, "交易成功"
 
 def get_user_balance(username):
-    conn = get_db(); r = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
     return r["balance"] if r else 0
 
 def is_market_open():
-    conn = get_db(); r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
     return r["state"] == "open" if r else True
 
 def get_market_round():
-    conn = get_db(); r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone(); conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
     return r["round"] if r else 1
 
 def close_market():
-    conn = get_db()
-    r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
-    if r and r["state"] == "closed": conn.close(); return
-    stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
-    for s in stocks:
-        open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-        if open_r and open_r[0]:
-            cr = open_r[0]
-            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
-            bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-            st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-            tv = sum(t["shares"] for t in txns)
-            np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-            pc = s["previous_close"] or s["current_price"]
-            hi = max(np_, pc); lo = min(np_, pc)
-            cpct = round((np_-pc)/pc*100,2) if pc else 0
-            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-            conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-            conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
-            conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-    conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
+        if r and r["state"] == "closed": return
+        stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
+        for s in stocks:
+            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+            if open_r and open_r[0]:
+                cr = open_r[0]
+                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
+                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                tv = sum(t["shares"] for t in txns)
+                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+                pc = s["previous_close"] or s["current_price"]
+                hi = max(np_, pc); lo = min(np_, pc)
+                cpct = round((np_-pc)/pc*100,2) if pc else 0
+                conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+                conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+                conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+        conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
+        conn.commit()
 
 def open_market():
-    conn = get_db()
-    r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
-    if not r or r["state"] == "open": conn.close(); return
-    new_round = r["round"] + 1
-    stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
-    for s in stocks:
-        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
-    conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
+        if not r or r["state"] == "open": return
+        new_round = r["round"] + 1
+        stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+        for s in stocks:
+            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
+        conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
+        conn.commit()
 
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
-    conn = get_db()
-    r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
-    if not r or r["round"] <= 1: conn.close(); return
-    prev_round = r["round"] - 1
-    stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
-    for s in stocks:
-        # 删除最新轮次的k线
-        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
-        # 删除最新轮次
-        conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
-        # 恢复上一轮价格
-        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_round)).fetchone()
-        if prev_k:
-            conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
-    conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
-    conn.commit(); conn.close()
+    with get_db_cm() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
+        if not r or r["round"] <= 1: return
+        # 检查市场是否为 closed 状态才允许撤销
+        if r["state"] != "closed": return
+        prev_round = r["round"] - 1
+        stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+        for s in stocks:
+            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
+            conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
+            prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_round)).fetchone()
+            if prev_k:
+                conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
+        conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
+        conn.commit()
 
 def reset_to_round1():
     """回到第一轮：清空所有K线和轮次，价格不变，轮次重置为1"""
-    conn = get_db()
-    stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
-    for s in stocks:
-        conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
-        conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
-        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
-    conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
-    conn.commit()
-    # 验证写入
-    r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
-    actual = r["round"] if r else 1
-    conn.close()
-    return actual
+    with get_db_cm() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+        for s in stocks:
+            conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+            conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+            conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
+        conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
+        conn.commit()
+        r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+    return r["round"] if r else 1
 
 def get_user_portfolio(username):
-    conn = get_db()
-    buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
-    sells = conn.execute("SELECT stock_symbol,SUM(shares) s FROM transactions WHERE username=? AND trade_type IN('sell','force_close') GROUP BY stock_symbol", (username,)).fetchall()
-    conn.close()
+    with get_db_cm() as conn:
+        buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
+        sells = conn.execute("SELECT stock_symbol,SUM(shares) s FROM transactions WHERE username=? AND trade_type IN('sell','force_close') GROUP BY stock_symbol", (username,)).fetchall()
     sm = {r["stock_symbol"]: r["s"] for r in sells}
     stocks = {s["symbol"]: s for s in get_stocks()}
     rows = []
     for b in buys:
         sym = b["stock_symbol"]; net = b["s"] - sm.get(sym, 0)
         if net <= 0: continue
-        avg = round(b["c"] / b["s"], 2); info = stocks.get(sym, {"name": sym, "current_price": avg})
+        avg = round(b["c"] / b["s"], 2) if b["s"] else 0
+        info = stocks.get(sym, {"name": sym, "current_price": avg})
         cp = row_get(info, "current_price", avg); mv_ = round(cp * net, 2); pnl = round((cp - avg) * net, 2)
         rows.append({"symbol": sym, "name": info["name"], "shares": int(net), "avg_cost": avg, "current_price": cp, "market_value": mv_, "pnl": pnl, "pnl_ratio": round((cp - avg) / avg * 100, 2) if avg else 0})
     return pd.DataFrame(rows)
 
 def get_user_market_making(username):
-    conn = get_db()
-    rows = conn.execute("SELECT t.stock_symbol,t.price sp,t.shares,t.trade_date,COALESCE(s.current_price,t.price) cp,COALESCE(s.name,t.stock_symbol) nm FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol WHERE t.username=? AND t.trade_type='sell' ORDER BY t.trade_date DESC", (username,)).fetchall()
-    conn.close()
+    with get_db_cm() as conn:
+        rows = conn.execute("SELECT t.stock_symbol,t.price sp,t.shares,t.trade_date,COALESCE(s.current_price,t.price) cp,COALESCE(s.name,t.stock_symbol) nm FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol WHERE t.username=? AND t.trade_type='sell' ORDER BY t.trade_date DESC", (username,)).fetchall()
     return pd.DataFrame([{"股票": r["nm"], "卖出价": round(r["sp"], 2), "当前价": round(r["cp"], 2), "数量": r["shares"], "对手方盈亏": round((r["cp"] - r["sp"]) * r["shares"], 2), "时间": r["trade_date"]} for r in rows])
 
 def get_user_overview(username):
@@ -409,7 +440,8 @@ def get_user_overview(username):
 def get_admin_summary():
     stocks = get_stocks()
     if not stocks: return pd.DataFrame()
-    conn = get_db(); players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall(); conn.close()
+    with get_db_cm() as conn:
+        players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
     aps = {}
     for p in players:
         df = get_user_portfolio(p["username"])
@@ -425,7 +457,8 @@ def get_admin_summary():
     return pd.DataFrame(rows)
 
 def get_holder_detail(symbol):
-    conn = get_db(); players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall(); conn.close()
+    with get_db_cm() as conn:
+        players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
     r = []
     for p in players:
         pf = get_user_portfolio(p["username"])
@@ -436,25 +469,25 @@ def get_holder_detail(symbol):
     return pd.DataFrame(r)
 
 def get_kline_data(symbol):
-    conn = get_db()
-    r = conn.execute("""
-        SELECT k.*
-        FROM kline k
-        JOIN (
-            SELECT round, MAX(id) AS id
-            FROM kline
-            WHERE stock_symbol=?
-            GROUP BY round
-        ) latest ON latest.id = k.id
-        ORDER BY k.round
-    """, (symbol,)).fetchall()
-    conn.close()
+    with get_db_cm() as conn:
+        r = conn.execute("""
+            SELECT k.*
+            FROM kline k
+            JOIN (
+                SELECT round, MAX(id) AS id
+                FROM kline
+                WHERE stock_symbol=?
+                GROUP BY round
+            ) latest ON latest.id = k.id
+            ORDER BY k.round
+        """, (symbol,)).fetchall()
     return [dict(x) for x in r]
 
 def get_platform_stats():
     s = get_admin_summary()
     if s.empty: return {"total_mv": 0, "total_pnl": 0, "active_users": 0}
-    conn = get_db(); cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]; conn.close()
+    with get_db_cm() as conn:
+        cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
     return {"total_mv": round((s["当前价"] * s["总持仓量"]).sum(), 2), "total_pnl": round(s["总盈亏"].sum(), 2), "active_users": cnt}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -723,8 +756,8 @@ def page_login():
                             st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
                             log_action(u, "login", "auth", "success")
                         else:
-                            fails = st.session_state.get("login_fails", {}).get(u, {})
-                            cnt = fails.get("count", 0)
+                            with get_db_cm() as conn:
+                                cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
                             if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
                             else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
                     st.rerun()
@@ -749,8 +782,19 @@ def fmt_pct(v, s=True):
 
 def fmt_num(v):     return f"{v:,}"
 
+def download_db_button():
+    """管理员一键导出数据库按钮"""
+    if os.path.exists(DB_PATH):
+        with open(DB_PATH, "rb") as f:
+            st.download_button(
+                label="下载数据库备份",
+                data=f,
+                file_name=f"stock_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                mime="application/octet-stream",
+                use_container_width=True,
+            )
+
 GREEN = "#16a34a"; RED = "#ef4444"
-K_UP   = "#ef5350"; K_DN = "#26a69a"  # K线红涨绿跌
 
 def pnl_class(v): return "up" if v >= 0 else "down"
 def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 盈亏红涨绿跌
@@ -799,7 +843,7 @@ def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
     if pf.empty: st.info("暂无持仓"); return
 
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的持仓</div>""", unsafe_allow_html=True)
 
     # 移动端：卡片
@@ -809,7 +853,7 @@ def page_portfolio():
         st.markdown(f"""
         <div class="stock-card">
             <div class="sc-header">
-                <span class="sc-name">{r["name"]} &nbsp;<span style="font-size:12px;color:#8A8AAA">{r["symbol"]}</span></span>
+                <span class="sc-name">{esc(r["name"])} &nbsp;<span style="font-size:12px;color:#8A8AAA">{esc(r["symbol"])}</span></span>
                 <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
             </div>
             <div class="sc-detail">
@@ -835,7 +879,7 @@ def page_portfolio():
 
 def page_market_making():
     mm = get_user_market_making(st.session_state.username)
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的做市</div>""", unsafe_allow_html=True)
     if mm.empty: st.info("无做市记录"); return
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
@@ -849,7 +893,7 @@ def page_market_making():
 def page_trade_hall():
     stocks = get_stocks()
     if not stocks: st.error("无股票"); return
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
 
     if not is_market_open():
@@ -869,7 +913,8 @@ def page_trade_hall():
             shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
         if st.form_submit_button("确认交易", type="primary", use_container_width=True):
             tt = "buy" if direction == "买入" else "sell"
-            ok, msg = add_trade(st.session_state.username, s["symbol"], tt, price, shares)
+            with st.spinner("交易处理中..."):
+                ok, msg = add_trade(st.session_state.username, s["symbol"], tt, price, shares)
             if ok: st.success(msg)
             else: st.error(msg)
             st.rerun()
@@ -929,7 +974,7 @@ def page_trade_hall():
             st.markdown(f"""
             <div class="stock-card">
                 <div class="sc-header">
-                    <span class="sc-name">{r["name"]} <span style="font-size:12px;color:#8A8AAA">{r["symbol"]}</span></span>
+                    <span class="sc-name">{esc(r["name"])} <span style="font-size:12px;color:#8A8AAA">{esc(r["symbol"])}</span></span>
                     <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
                 </div>
                 <div class="sc-detail">
@@ -941,25 +986,33 @@ def page_trade_hall():
             </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 移动端固定底部交易栏
+    # 移动端固定底部交易栏 — 使用 Streamlit 原生组件
     st.markdown('<div class="mobile-only trade-bar-spacer"></div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="mobile-only trade-bar">
-        <select id="tradeSymbol" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
-            {''.join(f'<option value="{s["symbol"]}">{s["name"]}</option>' for s in stocks)}
-        </select>
-        <select id="tradeDir" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
-            <option value="buy">买入</option>
-            <option value="sell">卖出</option>
-        </select>
-        <input id="tradeQty" type="number" value="100" min="1" step="100" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
-        <input id="tradePrice" type="number" value="{stocks[0]["current_price"]:.2f}" step="0.5" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
-    </div>""", unsafe_allow_html=True)
+    st.markdown('<div class="mobile-only" style="position:fixed;bottom:0;left:0;right:0;z-index:100;background:#fff;padding:12px 16px;border-top:1px solid var(--border);">', unsafe_allow_html=True)
+    with st.form("trade_form_mobile"):
+        cols = st.columns([2, 1, 1, 1])
+        with cols[0]:
+            m_sel = st.selectbox("股票", list(opts.keys()), label_visibility="collapsed")
+        with cols[1]:
+            m_dir = st.radio("方向", ["买入", "卖出"], horizontal=True, label_visibility="collapsed")
+        m_s = opts[m_sel]
+        with cols[2]:
+            m_price = st.number_input("价格", min_value=0.01, value=float(m_s["current_price"]), step=0.5, format="%.2f", label_visibility="collapsed")
+        with cols[3]:
+            m_shares = st.number_input("数量", min_value=1, step=100, format="%d", label_visibility="collapsed")
+        if st.form_submit_button("交易", type="primary", use_container_width=True):
+            m_tt = "buy" if m_dir == "买入" else "sell"
+            with st.spinner("交易处理中..."):
+                ok, msg = add_trade(st.session_state.username, m_s["symbol"], m_tt, m_price, m_shares)
+            if ok: st.success(msg)
+            else: st.error(msg)
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def page_kline():
     stocks = get_stocks()
     if not stocks: st.info("无数据"); return
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div class="section-title">K 线展板</div>""", unsafe_allow_html=True)
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
@@ -1127,7 +1180,7 @@ def page_kline():
     st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
 
 def page_admin_stock_summary():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票汇总</div>""", unsafe_allow_html=True)
     stats = get_platform_stats()
     st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}<div></div></div>""", unsafe_allow_html=True)
@@ -1157,7 +1210,7 @@ def page_admin_stock_summary():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_admin_stock_mgmt():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
     if st.session_state.get("stock_add_ok"): st.success(st.session_state.stock_add_ok); st.session_state.stock_add_ok = ""
     if st.session_state.get("stock_add_err"): st.error(st.session_state.stock_add_err); st.session_state.stock_add_err = ""
@@ -1242,16 +1295,19 @@ def page_admin_stock_mgmt():
                     cc1, cc2 = st.columns(2)
                     if cc1.button("确认改价", key=f"cf_up_{s['id']}", type="primary", use_container_width=True):
                         old_price = s["current_price"]
-                        conn = get_db(); conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"])); conn.commit(); conn.close()
+                        with get_db_cm() as conn:
+                            conn.execute("BEGIN IMMEDIATE")
+                            conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"]))
+                            conn.commit()
                         log_action(st.session_state.username, "stock_price_update", s["symbol"], f"{old_price} -> {np_}")
                         st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
                     if cc2.button("取消", key=f"cx_up_{s['id']}", use_container_width=True):
                         st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
             with c2:
-                cp = st.number_input("碳价", value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
-                pr = st.number_input("溢价率", value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
-                rev = st.number_input("营业收入(万)", value=float(row_get(s,"revenue",100000)), step=1000.0, format="%.0f", key=f"rev_{s['id']}")
-                ts_ = st.number_input("总股数(万手)", value=float(row_get(s,"total_shares",10000)), step=1000.0, format="%.0f", key=f"ts_{s['id']}")
+                cp = st.number_input("碳价【0~200】", min_value=0.0, max_value=200.0, value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
+                pr = st.number_input("溢价率【0~100】", min_value=0.0, max_value=100.0, value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
+                rev = st.number_input("营业收入(万)", min_value=1.0, value=float(row_get(s,"revenue",100000)), step=1000.0, format="%.0f", key=f"rev_{s['id']}")
+                ts_ = st.number_input("总股数(万手)", min_value=1.0, value=float(row_get(s,"total_shares",10000)), step=1000.0, format="%.0f", key=f"ts_{s['id']}")
                 pe_val = calc_pe(s)
                 st.caption(f"PE = {fmt_money(s['current_price'])} x {row_get(s,'total_shares',10000):,.0f} / {row_get(s,'revenue',100000):,.0f} = {pe_val}")
                 if st.button("保存参数", key=f"sv_{s['id']}"):
@@ -1272,7 +1328,7 @@ def page_admin_stock_mgmt():
                         st.session_state[f"confirm_delete_{s['id']}"] = False; st.rerun()
 
 def page_admin_user_mgmt():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">用户管理</div>""", unsafe_allow_html=True)
     users = get_all_users()
     df = pd.DataFrame(users)
@@ -1412,7 +1468,7 @@ def page_admin_user_mgmt():
         log_df.columns = ["操作者", "动作", "对象", "详情", "时间"]
         st.dataframe(log_df, use_container_width=True, hide_index=True)
 def page_admin_settle():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
 
     market_open = is_market_open()
@@ -1497,6 +1553,11 @@ def page_admin_settle():
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_r1 = False; st.rerun()
 
+    # 数据库备份
+    with st.expander("数据库备份"):
+        st.caption(f"当前数据库路径：{DB_PATH}")
+        download_db_button()
+
     st.divider()
 
     # 每轮K线历史
@@ -1532,7 +1593,9 @@ ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K�
 
 st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="auto")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
-init_db()
+if "db_initialized" not in st.session_state:
+    init_db()
+    st.session_state.db_initialized = True
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False; st.session_state.username = ""; st.session_state.role = ""
