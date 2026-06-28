@@ -75,12 +75,13 @@ def init_db():
         cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
         conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
         first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
-        admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
         if first_boot:
             _seed(conn)
         else:
-            # 确保 admin 密码与当前环境变量/默认值一致
-            conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
+            # 仅在显式配置 ADMIN_PASSWORD 时同步管理员密码，避免重启覆盖后台改密。
+            admin_pw = os.environ.get("ADMIN_PASSWORD")
+            if admin_pw:
+                conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
             # 每次启动同步股票数据（覆盖更新）
             # 格式: (代码, 名称, 总股本, 净利润, 行业PE, 初始碳排, 碳排均值, 幸福度)
             stock_defs = [
@@ -171,14 +172,28 @@ def init_db():
                 conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], next_round))
             conn.commit()
         else:
-            # 非首次：确保有未结算轮次，但不修改 market_state.round
-            current_r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
-            cr = current_r["round"] if current_r else 1
-            for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-                has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND round=? AND is_settled=0", (s["symbol"], cr)).fetchone()
-                if not has_open:
-                    mr = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
-                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr + 1))
+            # 非首次：市场开盘时同步 market_state.round 与真实未结算轮次。
+            state_row = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
+            market_state = state_row["state"] if state_row else "open"
+            active_symbols = [s["symbol"] for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
+            if market_state == "open":
+                open_rounds = [
+                    r["round"] for r in conn.execute(
+                        "SELECT DISTINCT round FROM rounds WHERE is_settled=0 ORDER BY round"
+                    ).fetchall()
+                ]
+                if open_rounds:
+                    target_round = max(open_rounds)
+                else:
+                    max_k = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
+                    target_round = max(max_k + 1, state_row["round"] if state_row else 1)
+                for sym in active_symbols:
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (sym, target_round))
+                conn.execute("UPDATE market_state SET round=? WHERE id=1", (target_round,))
+            else:
+                max_k = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
+                if max_k:
+                    conn.execute("UPDATE market_state SET round=? WHERE id=1", (max_k,))
             conn.commit()
 
 def _seed(conn):
@@ -414,6 +429,10 @@ def add_trade(username, symbol, tt, price, shares):
         conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
         log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
         conn.commit()
+    try:
+        get_public_quote_snapshot.clear()
+    except Exception:
+        pass
     return True, "交易成功"
 
 def get_user_balance(username):
@@ -455,6 +474,12 @@ def close_market():
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
+
+    try:
+        get_public_quote_snapshot.clear()
+    except Exception:
+        pass
+
 def open_market():
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -466,6 +491,12 @@ def open_market():
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
         conn.commit()
+
+    try:
+        get_public_quote_snapshot.clear()
+    except Exception:
+        pass
+
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
     with get_db_cm() as conn:
@@ -484,6 +515,12 @@ def undo_market():
                 conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
         conn.commit()
+
+    try:
+        get_public_quote_snapshot.clear()
+    except Exception:
+        pass
+
 def reset_to_round1():
     """回到第一轮：不清除K线历史，只重置轮次"""
     with get_db_cm() as conn:
@@ -495,6 +532,10 @@ def reset_to_round1():
         conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
         conn.commit()
         r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+    try:
+        get_public_quote_snapshot.clear()
+    except Exception:
+        pass
     return r["round"] if r else 1
 
 def get_user_portfolio(username):
@@ -660,6 +701,12 @@ def get_market_card_data(stock):
         "sell5": float(sell_amt or 0),
         "round": latest_round,
     }
+
+@st.cache_data(ttl=1, show_spinner=False)
+def get_public_quote_snapshot():
+    stocks = get_stocks()
+    quotes = {s["symbol"]: get_market_card_data(s) for s in stocks}
+    return stocks, quotes
 
 def get_platform_stats():
     s = get_admin_summary()
@@ -1023,7 +1070,7 @@ DASHBOARD_CSS = """
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def page_public_dashboard():
     st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
-    stocks = get_stocks()
+    stocks, quotes = get_public_quote_snapshot()
     if not stocks:
         st.markdown('<div style="color:rgba(255,255,255,.3);text-align:center;padding:40px;">暂无行情数据</div>', unsafe_allow_html=True)
         return
@@ -1065,7 +1112,7 @@ def page_public_dashboard():
     # 四只股票行情卡片
     cards = ""
     for s in stocks:
-        q = get_market_card_data(s)
+        q = quotes.get(s["symbol"]) or get_market_card_data(s)
         p = q["price"]
         prev = q["ref_price"]
         chg = q["change"]
