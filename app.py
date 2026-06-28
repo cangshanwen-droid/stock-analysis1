@@ -860,96 +860,96 @@ RESPONSIVE_CSS = """
 <style>
 * { box-sizing: border-box; }
 html, body, .stApp {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
     -webkit-font-smoothing: antialiased;
 }
 #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
 [data-testid="stDecoration"], [data-testid="stToolbar"],
 [data-testid="manage-app-button"] { display: none !important; }
 
-.stApp { background: #f8f9fc !important; }
-section.main > div.block-container { padding: 8px 16px !important; max-width: 100% !important; }
+.stApp { background: #f1f5f9 !important; }
+section.main > div.block-container { padding: 6px 14px !important; }
 
 /* 顶栏 */
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 2px 0 10px 0; font-size: 12px; color: #64748b;
-    border-bottom: 1px solid #e2e8f0; margin-bottom: 14px;
+    padding: 0 0 8px 0; font-size: 12px; color: #64748b;
+    border-bottom: 1px solid #e2e8f0; margin-bottom: 12px;
 }
-.topbar .brand { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: 1px; }
+.topbar .brand { font-size: 18px; font-weight: 700; color: #0f172a; letter-spacing: 0; }
 
-/* KPI 卡片 */
-.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+/* KPI 卡片 — 细腻阴影 + 白底 */
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
 .kpi-card {
-    background: #fff; border-radius: 10px; padding: 16px 18px;
-    border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    background: #fff; border-radius: 10px; padding: 14px 16px;
+    border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,.04);
 }
-.kpi-card .label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
-.kpi-card .value { font-size: 24px; font-weight: 700; color: #0f172a; font-feature-settings: "tnum"; }
-.kpi-card .delta { font-size: 12px; margin-top: 2px; }
-.kpi-card .delta.up { color: #ef4455; }
-.kpi-card .delta.down { color: #718096; }
+.kpi-card .label { font-size: 10px; color: #94a3b8; margin-bottom: 2px; letter-spacing: .3px; }
+.kpi-card .value { font-size: 22px; font-weight: 700; color: #0f172a; font-feature-settings: "tnum"; }
+.kpi-card .delta { font-size: 11px; margin-top: 1px; }
+.kpi-card .delta.up { color: #dc2626; }
+.kpi-card .delta.down { color: #6b7280; }
 
 /* 股票卡片 */
 .stock-card {
-    background: #fff; border-radius: 10px; padding: 14px;
-    margin-bottom: 8px; border: 1px solid #e2e8f0;
+    background: #fff; border-radius: 10px; padding: 12px 14px;
+    margin-bottom: 6px; border: 1px solid #e2e8f0;
 }
 .stock-card .sc-header { display: flex; justify-content: space-between; align-items: center; }
 .stock-card .sc-name { font-size: 14px; font-weight: 600; color: #0f172a; }
 .stock-card .sc-pct { font-size: 13px; font-weight: 600; }
-.stock-card .sc-pct.up { color: #ef4455; }
-.stock-card .sc-pct.down { color: #718096; }
+.stock-card .sc-pct.up { color: #dc2626; }
+.stock-card .sc-pct.down { color: #6b7280; }
 .stock-card .sc-detail {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px;
     margin: 4px 0; font-size: 12px; color: #64748b;
 }
 .stock-card .sc-detail .val { color: #0f172a; font-weight: 500; }
 
-.section-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
-.chart-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 8px 0; }
+.section-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+.chart-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 6px 0; }
 .chart-metric { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
-.chart-metric .label { font-size: 10px; color: #64748b; }
-.chart-metric .value { font-size: 15px; font-weight: 700; color: #0f172a; }
-.chart-metric .value.up { color: #ef4455; }
-.chart-metric .value.down { color: #718096; }
-.chart-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px; }
+.chart-metric .label { font-size: 10px; color: #94a3b8; }
+.chart-metric .value { font-size: 14px; font-weight: 700; color: #0f172a; }
+.chart-metric .value.up { color: #dc2626; }
+.chart-metric .value.down { color: #6b7280; }
+.chart-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px; }
 
-.mobile-nav { margin: 0 0 10px 0; }
+.mobile-nav { margin: 0 0 8px 0; }
 .mobile-nav div[role="radiogroup"] { display: flex !important; flex-wrap: wrap !important; gap: 4px !important; }
 .mobile-nav div[role="radiogroup"] label {
-    padding: 6px 10px !important; border-radius: 6px !important;
+    padding: 5px 10px !important; border-radius: 6px !important;
     font-size: 12px !important; color: #64748b !important;
-    background: #f1f5f9 !important; cursor: pointer !important;
+    background: #fff !important; border: 1px solid #e2e8f0 !important; cursor: pointer !important;
 }
 .mobile-nav div[role="radiogroup"] label[data-checked="true"] {
-    background: #1e293b !important; color: #fff !important;
+    background: #0f172a !important; color: #fff !important; border-color: #0f172a !important;
 }
 .mobile-nav div[role="radiogroup"] label input { display: none !important; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
 @media (min-width: 768px) {
-    section.main > div.block-container { padding: 16px 24px !important; max-width: 1200px !important; margin: 0 auto !important; }
-    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    section.main > div.block-container { padding: 14px 22px !important; max-width: 1200px !important; margin: 0 auto !important; }
+    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
-    .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .desktop-table { background: #fff; border-radius: 10px; padding: 2px 12px 10px 12px; border: 1px solid #e2e8f0; }
+    .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .desktop-table { background: #fff; border-radius: 10px; padding: 0 12px 8px 12px; border: 1px solid #e2e8f0; }
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] th {
-        background: transparent !important; font-size: 11px !important;
-        color: #64748b !important; font-weight: 600 !important;
-        border-bottom: 1px solid #e2e8f0 !important; padding: 8px !important;
+        background: transparent !important; font-size: 10px !important;
+        color: #94a3b8 !important; font-weight: 600 !important;
+        border-bottom: 1px solid #f1f5f9 !important; padding: 6px !important;
     }
     [data-testid="stDataFrame"] td {
         font-size: 13px !important; color: #0f172a !important;
-        border-bottom: 1px solid #f1f5f9 !important; padding: 8px !important;
+        border-bottom: 1px solid #f8fafc !important; padding: 6px !important;
     }
     div[data-testid="stButton"] button {
         border-radius: 6px !important; font-weight: 500 !important;
         background: #fff !important; border: 1px solid #e2e8f0 !important;
-        color: #475569 !important; font-size: 13px !important;
+        color: #475569 !important; font-size: 13px !important; padding: 4px 12px !important;
     }
     div[data-testid="stButton"] button:hover { border-color: #94a3b8 !important; }
     div[data-testid="stButton"] button[kind="primary"] {
@@ -957,7 +957,7 @@ section.main > div.block-container { padding: 8px 16px !important; max-width: 10
     }
     .st-emotion-cache-1aej4i3, details {
         background: #fff !important; border: 1px solid #e2e8f0 !important;
-        border-radius: 8px !important; margin-bottom: 6px !important;
+        border-radius: 8px !important; margin-bottom: 4px !important;
     }
     .st-emotion-cache-1aej4i3 summary, details summary {
         font-weight: 500 !important; padding: 8px 12px !important; color: #0f172a !important;
@@ -965,9 +965,9 @@ section.main > div.block-container { padding: 8px 16px !important; max-width: 10
     input, div[data-baseweb="input"] input {
         background: #fff !important; border: 1px solid #e2e8f0 !important;
         color: #0f172a !important; border-radius: 6px !important;
-        padding: 8px 12px !important; font-size: 14px !important;
+        padding: 6px 10px !important; font-size: 13px !important;
     }
-    input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,.1) !important; }
+    input:focus { border-color: #3b82f6 !important; }
 }
 
 @media (min-width: 768px) {
@@ -983,27 +983,27 @@ SIDEBAR_CSS = """
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 2px; background: transparent; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
 
-    .sb-brand { padding: 24px 22px 14px 22px; border-bottom: 1px solid #1e293b; }
+    .sb-brand { padding: 20px 20px 12px 20px; border-bottom: 1px solid #1e293b; }
     .sb-brand .name p {
-        font-size: 24px !important; font-weight: 800 !important; letter-spacing: 3px !important;
+        font-size: 22px !important; font-weight: 800 !important;
         color: #f1f5f9 !important; margin: 0 !important;
     }
-    .sb-brand .sub p { color: #64748b !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
-    .sb-user { padding: 12px 22px 10px 22px; border-bottom: 1px solid #1e293b; }
-    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 0 2px 0 !important; }
-    .sb-user .urole p { font-size: 12px !important; color: #64748b !important; margin: 0 !important; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; margin-right: 4px; }
-    .menu-group-label { padding: 14px 22px 4px 22px; }
-    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
+    .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 3px !important; margin: 2px 0 0 0 !important; }
+    .sb-user { padding: 10px 20px 8px 20px; border-bottom: 1px solid #1e293b; }
+    .sb-user .uname p { font-size: 13px !important; font-weight: 600 !important; color: #e2e8f0 !important; margin: 0 !important; }
+    .sb-user .urole p { font-size: 11px !important; color: #475569 !important; margin: 0 !important; }
+    .sb-user .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
+    .menu-group-label { padding: 12px 20px 2px 20px; }
+    .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
     section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 0 6px !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 8px 12px !important; margin: 1px 0 !important;
+        padding: 7px 10px !important; margin: 0 !important;
         border-radius: 6px !important; font-size: 13px !important; font-weight: 500 !important;
-        color: #94a3b8 !important; background: transparent !important;
+        color: #64748b !important; background: transparent !important;
         border: none !important; cursor: pointer !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
