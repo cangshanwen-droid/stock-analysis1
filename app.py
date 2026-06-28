@@ -664,8 +664,6 @@ def page_overview():
         st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
     else:
         st.info("暂无K线数据")
-    else:
-        st.info("暂无持仓数据")
 
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
