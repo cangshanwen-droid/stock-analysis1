@@ -1125,9 +1125,10 @@ SIDEBAR_CSS = """
 DASHBOARD_CSS = """
 <style>
     .stApp { background: #080c17 !important; }
-    section.main > div.block-container { padding: 4px 14px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    section.main > div.block-container { padding: 0 14px 0 14px !important; max-width: 1400px !important; margin: 0 auto !important; }
     #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
     [data-testid="stDecoration"], [data-testid="stToolbar"], header { display: none !important; }
+    .stApp > header { height: 0 !important; overflow: hidden; }
 
     .dash-top { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px 0; }
     .dash-brand { font-size: 22px; font-weight: 800; letter-spacing: 4px;
