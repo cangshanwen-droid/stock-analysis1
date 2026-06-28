@@ -413,28 +413,30 @@ def delete_stock(sid):
         conn.commit()
 def add_trade(username, symbol, tt, price, shares):
     """订单簿撮合：可立即成交则成交，否则挂单"""
+    direction = "买入" if tt == "buy" else "卖出"
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
         cr = r[0] if r and r[0] else 0
         if cr == 0: return False, "市场已闭市，无法交易"
-        stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
-        if not stock: return False, "股票不存在或已停用"
+        stock_row = conn.execute("SELECT name FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
+        if not stock_row: return False, "股票不存在或已停用"
+        stock_name = stock_row["name"]
 
         remaining = shares
         matched_shares = 0
+        total_cost = 0
 
         if tt == "buy":
-            # 余额检查（按最大可能成本）
+            # 余额检查
             max_cost = price * remaining
             bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
             if not bal or bal["balance"] < max_cost:
                 max_can_buy = int(bal["balance"] / price)
                 if max_can_buy <= 0:
-                    return False, f"余额不足，最多可买 {int(bal['balance']/price)} 股"
+                    return False, f"💰 余额不足\n你只有 ¥{bal['balance']:,.0f}，{stock_name} ¥{price} 最少要买1股需 ¥{price:,.2f}"
                 remaining = min(remaining, max_can_buy)
 
-            # 扫卖一（最低卖单），直到全部成交或没有可匹配的卖单
             while remaining > 0:
                 sell_order = conn.execute("""
                     SELECT id, username, price, shares FROM order_book
@@ -447,7 +449,6 @@ def add_trade(username, symbol, tt, price, shares):
                 match_price = sell_order["price"]
                 match_cost = match_shares * match_price
 
-                # 检查卖家持仓（挂单后可能卖掉了）
                 seller_holding = get_holding_shares(sell_order["username"], symbol, conn)
                 seller_pending = conn.execute("SELECT COALESCE(SUM(shares),0) FROM order_book WHERE username=? AND stock_symbol=? AND trade_type='sell' AND id!=?", (sell_order["username"], symbol, sell_order["id"])).fetchone()[0]
                 seller_avail = seller_holding - seller_pending
@@ -462,6 +463,7 @@ def add_trade(username, symbol, tt, price, shares):
                     (sell_order["username"], symbol, "sell", match_price, match_shares, cr))
 
                 matched_shares += match_shares
+                total_cost += match_cost
                 remaining -= match_shares
                 new_sell_shares = sell_order["shares"] - match_shares
                 if new_sell_shares <= 0:
@@ -472,20 +474,30 @@ def add_trade(username, symbol, tt, price, shares):
             if matched_shares > 0 and remaining > 0:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "buy", price, remaining, cr))
-                msg = f"成交 {matched_shares} 股，剩余 {remaining} 股已挂单等待"
+                msg = (f"✅ 已成交 {matched_shares} 股 {stock_name}，均价 ¥{total_cost/matched_shares:.2f}，"
+                       f"共 ¥{total_cost:,.2f}\n"
+                       f"⏳ 剩余 {remaining} 股已挂单 @ ¥{price}，等卖家出现自动成交")
             elif matched_shares > 0:
-                msg = f"全部成交 {matched_shares} 股"
+                msg = (f"✅ {stock_name} 买入全部成交！\n"
+                       f"📊 数量：{matched_shares} 股\n"
+                       f"💰 均价：¥{total_cost/matched_shares:.2f}\n"
+                       f"💵 总花费：¥{total_cost:,.2f}")
             else:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "buy", price, remaining, cr))
-                msg = f"已挂单等待成交 {remaining} 股（当前无匹配卖单）"
+                msg = (f"⏳ {stock_name} 买入挂单已提交\n"
+                       f"📋 价格 ¥{price}，数量 {remaining} 股，共 ¥{price*remaining:,.2f}\n"
+                       f"📌 当前无人在这个价格卖出，已加入挂单等待成交")
 
         else:  # sell
             holding = get_holding_shares(username, symbol, conn)
             pending_sell = conn.execute("SELECT COALESCE(SUM(shares),0) FROM order_book WHERE username=? AND stock_symbol=? AND trade_type='sell'", (username, symbol)).fetchone()[0]
             available = holding - pending_sell
             if available < remaining:
-                return False, f"可卖持仓不足：持有 {holding} 股，已挂卖 {pending_sell} 股，可用 {available} 股"
+                return (False,
+                    f"❌ {stock_name} 可卖数量不足\n"
+                    f"📊 你持有 {holding} 股，其中 {pending_sell} 股已在挂卖中\n"
+                    f"💡 当前可卖 {available} 股")
 
             while remaining > 0:
                 buy_order = conn.execute("""
@@ -511,6 +523,7 @@ def add_trade(username, symbol, tt, price, shares):
                     (username, symbol, "sell", match_price, match_shares, cr))
 
                 matched_shares += match_shares
+                total_cost += match_cost
                 remaining -= match_shares
                 new_buy_shares = buy_order["shares"] - match_shares
                 if new_buy_shares <= 0:
@@ -521,13 +534,20 @@ def add_trade(username, symbol, tt, price, shares):
             if matched_shares > 0 and remaining > 0:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", price, remaining, cr))
-                msg = f"成交 {matched_shares} 股，剩余 {remaining} 股已挂单等待"
+                msg = (f"✅ 已成交 {matched_shares} 股 {stock_name}，均价 ¥{total_cost/matched_shares:.2f}，"
+                       f"共 ¥{total_cost:,.2f}\n"
+                       f"⏳ 剩余 {remaining} 股已挂单 @ ¥{price}，等买家出现自动成交")
             elif matched_shares > 0:
-                msg = f"全部成交 {matched_shares} 股"
+                msg = (f"✅ {stock_name} 卖出全部成交！\n"
+                       f"📊 数量：{matched_shares} 股\n"
+                       f"💰 均价：¥{total_cost/matched_shares:.2f}\n"
+                       f"💵 总收入：¥{total_cost:,.2f}")
             else:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", price, remaining, cr))
-                msg = f"已挂单等待成交 {remaining} 股（当前无匹配买单）"
+                msg = (f"⏳ {stock_name} 卖出挂单已提交\n"
+                       f"📋 价格 ¥{price}，数量 {remaining} 股，共 ¥{price*remaining:,.2f}\n"
+                       f"📌 当前没人出这个价买，已加入挂单等待成交")
 
         log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, matched={matched_shares}", conn)
         conn.commit()
