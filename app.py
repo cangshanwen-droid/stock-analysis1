@@ -93,28 +93,56 @@ def init_db():
             for sym in existing:
                 if sym not in [s[0] for s in stock_defs]:
                     conn.execute("UPDATE stocks SET is_deleted=1 WHERE symbol=?", (sym,))
+            # 清空旧K线数据，准备重新生成标准K线
+            for sym, _, _ in stock_defs:
+                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
             conn.commit()
 
-        # 补全首轮K线
+        # 生成标准K线数据（如果为空）
+        kline_seed = {
+            "WULIU": [
+                (10.0, 10.5, 9.8, 10.2, 5000),
+                (10.2, 11.0, 10.0, 10.8, 6500),
+                (10.8, 11.2, 10.3, 10.5, 4200),
+                (10.5, 11.5, 10.4, 11.3, 7800),
+                (11.3, 11.8, 10.8, 11.6, 5500),
+            ],
+            "JXIAO": [
+                (15.0, 15.8, 14.5, 15.5, 8000),
+                (15.5, 16.2, 14.8, 15.0, 7200),
+                (15.0, 15.5, 13.5, 14.0, 9500),
+                (14.0, 14.8, 13.2, 14.5, 6100),
+                (14.5, 15.8, 14.2, 15.6, 8800),
+            ],
+            "JGONG": [
+                (20.0, 21.0, 19.5, 20.8, 10000),
+                (20.8, 22.5, 20.5, 22.2, 12000),
+                (22.2, 23.0, 21.0, 21.5, 9000),
+                (21.5, 22.8, 20.8, 22.5, 11000),
+                (22.5, 24.0, 22.0, 23.8, 14000),
+            ],
+            "YLIAO": [
+                (25.0, 26.5, 24.0, 26.0, 15000),
+                (26.0, 28.0, 25.5, 27.5, 18000),
+                (27.5, 29.0, 25.0, 25.8, 22000),
+                (25.8, 26.5, 23.0, 23.5, 16000),
+                (23.5, 25.0, 22.0, 24.2, 20000),
+            ],
+        }
         for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
-            exists = conn.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1 LIMIT 1", (s["symbol"],)).fetchone()
-            if exists:
+            sym = s["symbol"]
+            klines = kline_seed.get(sym)
+            if not klines:
                 continue
-            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
-            bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-            st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-            tv = sum(t["shares"] for t in txns)
-            np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-            pc = s["previous_close"] or s["current_price"]
-            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],))
-            conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
-
-        for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-            has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-            if not has_open:
-                max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()
-                mr = max_r[0] if max_r else 0
-                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr+1))
+            conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
+            for r, (o, h, l, c, v) in enumerate(klines, 1):
+                cpct = round((c - o) / o * 100, 2) if o else 0
+                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,1)", (sym, r))
+                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (sym, r, o, h, l, c, v, v*0.6, v*0.4, cpct))
+            # 同步最新价格到 stocks 表
+            last_c = klines[-1][3]
+            conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
         conn.commit()
 
 def _seed(conn):
@@ -128,13 +156,6 @@ def _seed(conn):
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
     trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
-    # 为种子交易生成首轮K线
-    for sym, price in [("WULIU", 10.0), ("JXIAO", 15.0), ("JGONG", 20.0), ("YLIAO", 25.0)]:
-        bt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "buy")
-        st_amt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "sell")
-        tv = sum(t[4] for t in trades if t[1] == sym)
-        np_ = compute_price({"previous_close": price, "current_price": price, "premium_rate": 50, "carbon_price": 50, "industry_carbon_mean": 50, "buy_total": bt, "sell_total": st_amt})
-        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (sym, price, max(np_, price), min(np_, price), np_, tv, bt, st_amt, round((np_ - price) / price * 100, 2)))
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
