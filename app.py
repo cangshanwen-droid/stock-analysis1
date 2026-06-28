@@ -80,13 +80,25 @@ def init_db():
             # 确保 admin 密码与当前环境变量/默认值一致
             conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
             # 每次启动同步股票数据（覆盖更新）
-            stock_defs = [("WULIU", "物流1公司", 10.0), ("JXIAO", "经销1公司", 15.0), ("JGONG", "加工1公司", 20.0), ("YLIAO", "原料1公司", 25.0)]
-            for sym, name, price in stock_defs:
+            # 格式: (代码, 名称, 总股本, 净利润, 行业PE, 初始碳排, 碳排均值, 幸福度)
+            stock_defs = [
+                ("WULIU", "物流1公司", 10000, 100, 20, 50, 50, 50),
+                ("JXIAO", "经销1公司", 10000, 150, 20, 50, 50, 50),
+                ("JGONG", "加工1公司", 10000, 200, 20, 50, 50, 50),
+                ("YLIAO", "原料1公司", 10000, 250, 20, 50, 50, 50),
+            ]
+            for sym, name, ts_, rev, ipe, cp, icm, pr in stock_defs:
+                price = calc_initial_price(rev, ts_, ipe)
                 exists = conn.execute("SELECT id FROM stocks WHERE symbol=?", (sym,)).fetchone()
                 if exists:
-                    conn.execute("UPDATE stocks SET name=?,current_price=?,previous_close=?,is_deleted=0 WHERE symbol=?", (name, price, price, sym))
+                    conn.execute("""UPDATE stocks SET name=?,current_price=?,previous_close=?,is_deleted=0,
+                        total_shares=?,revenue=?,industry_pe=?,carbon_price=?,industry_carbon_mean=?,premium_rate=? WHERE symbol=?""",
+                        (name, price, price, ts_, rev, ipe, cp, icm, pr, sym))
                 else:
-                    conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, price * 10000 * 20 / 10000))
+                    conn.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
+                        total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (sym, name, price, price, price * 10000 * 20 / 10000, ts_, rev, ipe, cp, icm, pr))
                 conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
             # 隐藏多余的旧股票
             existing = [r[0] for r in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
@@ -158,8 +170,17 @@ def _seed(conn):
     cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
-    for sym, name, price, funds in [("WULIU", "物流1公司", 10.0, 2000), ("JXIAO", "经销1公司", 15.0, 3000), ("JGONG", "加工1公司", 20.0, 4000), ("YLIAO", "原料1公司", 25.0, 5000)]:
-        cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
+    for sym, name, ts_, rev, ipe, cp, icm, pr, funds in [
+        ("WULIU", "物流1公司", 10000, 100, 20, 50, 50, 50, 2000),
+        ("JXIAO", "经销1公司", 10000, 150, 20, 50, 50, 50, 3000),
+        ("JGONG", "加工1公司", 10000, 200, 20, 50, 50, 50, 4000),
+        ("YLIAO", "原料1公司", 10000, 250, 20, 50, 50, 50, 5000),
+    ]:
+        price = calc_initial_price(rev, ts_, ipe)
+        cur.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
+            total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (sym, name, price, price, funds, ts_, rev, ipe, cp, icm, pr))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
     trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
@@ -175,6 +196,12 @@ def calc_pe(stock):
     cp = row_get(stock, "current_price", 0) or row_get(stock, "previous_close", 0) or 0
     ts = row_get(stock, "total_shares", 10000)
     return round(cp * ts / rev, 2)
+
+def calc_initial_price(revenue, total_shares, industry_pe):
+    """初始价 = 净利润×10000÷总股本÷行业PE（Excel公式）"""
+    if not total_shares or not industry_pe or not revenue:
+        return 0
+    return round(revenue * 10000 / total_shares / industry_pe, 2)
 
 def compute_price(stock):
     prev = row_get(stock, "previous_close") or row_get(stock, "current_price") or 50
@@ -321,20 +348,22 @@ def get_stock(sid):
         r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone()
     return dict(r) if r else None
 
-def add_stock(sym, name, price):
+def add_stock(sym, name, total_shares, revenue, industry_pe):
     try:
         with get_db_cm() as conn:
+            price = calc_initial_price(revenue, total_shares, industry_pe)
             funds = price * 10000 * 20 / 10000
-            conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym.upper(), name, price, price, funds))
+            conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,total_shares,revenue,industry_pe) VALUES(?,?,?,?,?,?,?,?)",
+                (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
             conn.commit()
-        return True, "添加成功"
+        return True, f"添加成功，初始价={price}"
     except sqlite3.IntegrityError:
         return False, "代码已存在"
 
 def update_stock_params(sid, **kw):
     """仅允许安全字段更新"""
-    allowed = {"carbon_price", "premium_rate", "industry_carbon_mean", "revenue", "total_shares"}
+    allowed = {"carbon_price", "premium_rate", "industry_carbon_mean", "revenue", "total_shares", "industry_pe"}
     safe = {k: v for k, v in kw.items() if k in allowed}
     if not safe: return
     with get_db_cm() as conn:
@@ -1360,35 +1389,42 @@ def page_admin_stock_mgmt():
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
     if st.session_state.get("stock_add_ok"): st.success(st.session_state.stock_add_ok); st.session_state.stock_add_ok = ""
     if st.session_state.get("stock_add_err"): st.error(st.session_state.stock_add_err); st.session_state.stock_add_err = ""
-    with st.expander("添加新股票"):
+    with st.expander("添加新股票（Excel基础信息表）"):
         with st.form("add_stock_form"):
             c1, c2, c3 = st.columns(3)
-            with c1: sym = st.text_input("代码", max_chars=10, key="asym")
-            with c2: name = st.text_input("名称", key="aname")
-            with c3: price = st.number_input("初始价", min_value=0.01, step=0.5, format="%.2f", key="aprice")
+            with c1: sym = st.text_input("股票代码", max_chars=10, key="asym")
+            with c2: name = st.text_input("公司名称", key="aname")
+            with c3: ts_ = st.number_input("总股本（万股）", min_value=1.0, value=10000.0, step=1000.0, format="%.0f", key="ats")
+            c4, c5 = st.columns(2)
+            with c4: rev = st.number_input("初始净利润（万）", min_value=1.0, value=100.0, step=10.0, format="%.0f", key="arev")
+            with c5: ipe = st.number_input("行业PE", min_value=1.0, value=20.0, step=1.0, format="%.1f", key="aipe")
+            # 预览自动计算的初始价
+            preview_price = calc_initial_price(rev, ts_, ipe)
+            st.caption(f"📌 初始价（自动计算）= {rev}×10000÷{ts_:.0f}÷{ipe} = **¥{preview_price}**")
             if st.form_submit_button("添加", type="primary", use_container_width=True):
-                s, n, p = sym.strip().upper(), name.strip(), price
-                if s and n and p > 0:
-                    ok, msg = add_stock(s, n, p)
+                s, n = sym.strip().upper(), name.strip()
+                if s and n and ts_ > 0 and rev > 0 and ipe > 0:
+                    ok, msg = add_stock(s, n, ts_, rev, ipe)
                     if ok:
-                        log_action(st.session_state.username, "stock_add", s, f"name={n}, price={p}")
+                        log_action(st.session_state.username, "stock_add", s, f"name={n}, ts={ts_}, rev={rev}, pe={ipe}")
                         st.session_state.stock_add_ok = msg
                     else: st.session_state.stock_add_err = msg
-                else: st.session_state.stock_add_err = "请完整填写"
+                else: st.session_state.stock_add_err = "请完整填写所有字段"
                 st.rerun()
     stocks = get_stocks()
     if not stocks: st.info("无"); return
     sdf = pd.DataFrame(stocks)
     sdf["price"] = sdf["current_price"].apply(lambda x: f"¥{x:,.2f}")
-    sdf["总股数"] = sdf.get("total_shares", 10000).apply(lambda x: f"{x:,.0f}")
-    sdf["营收"] = sdf.get("revenue", 100000).apply(lambda x: f"{x:,.0f}")
-    sdf["PE"] = [calc_pe(s) for s in stocks]
+    sdf["总股本"] = sdf.get("total_shares", 10000).apply(lambda x: f"{x:,.0f}")
+    sdf["净利润"] = sdf.get("revenue", 100000).apply(lambda x: f"{x:,.0f}")
+    sdf["行业PE"] = sdf.get("industry_pe", 20).apply(lambda x: f"{x:.1f}")
+    sdf["碳排"] = sdf.get("carbon_price", 50).apply(lambda x: f"{x:.1f}")
+    sdf["碳排均值"] = sdf.get("industry_carbon_mean", 50).apply(lambda x: f"{x:.1f}")
+    sdf["幸福度"] = sdf.get("premium_rate", 50).apply(lambda x: f"{x:.0f}%")
     sdf["lu"] = sdf["last_update"].apply(lambda x: str(x)[:19] if x else "-")
-    global_open = is_market_open()
-    mkt_status = "交易中" if global_open else "已闭市"
-    sdf["status"] = mkt_status
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(sdf[["symbol", "name", "price", "status", "总股数", "营收", "PE", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "status": "状态", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
+    st.dataframe(sdf[["symbol", "name", "总股本", "净利润", "行业PE", "price", "碳排", "碳排均值", "幸福度", "lu"]].rename(
+        columns={"symbol": "代码", "name": "名称", "price": "当前价", "lu": "更新"}), use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 因子可视化
@@ -1428,45 +1464,36 @@ def page_admin_stock_mgmt():
         </div>""", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">股票操作</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">股票信息（Excel基础信息表）</div>""", unsafe_allow_html=True)
+    st.caption("价格由撮合逻辑自动生成，不可手动修改。修改基础参数后系统自动计算理论价。")
     for s in stocks:
-        with st.expander(f"{s['name']} ({s['symbol']})"):
-            c1, c2, c3 = st.columns(3)
+        with st.expander(f"{s['name']} ({s['symbol']}) — 当前价 {fmt_money(s['current_price'])}"):
+            c1, c2 = st.columns([3, 1])
             with c1:
-                np_ = st.number_input("新价格", min_value=0.01, step=0.5, format="%.2f", value=float(s["current_price"]), key=f"np_{s['id']}")
-                if st.button("修改价格", key=f"up_{s['id']}"):
-                    st.session_state[f"confirm_price_{s['id']}"] = True; st.rerun()
-                if st.session_state.get(f"confirm_price_{s['id']}"):
-                    st.warning(f"确认将 {s['symbol']} 价格改为 {np_:.2f}？")
-                    cc1, cc2 = st.columns(2)
-                    if cc1.button("确认改价", key=f"cf_up_{s['id']}", type="primary", use_container_width=True):
-                        old_price = s["current_price"]
-                        with get_db_cm() as conn:
-                            conn.execute("BEGIN IMMEDIATE")
-                            conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"]))
-                            conn.commit()
-                        log_action(st.session_state.username, "stock_price_update", s["symbol"], f"{old_price} -> {np_}")
-                        st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
-                    if cc2.button("取消", key=f"cx_up_{s['id']}", use_container_width=True):
-                        st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
-            with c2:
-                cp = st.number_input("碳价【0~200】", min_value=0.0, max_value=200.0, value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
-                pr = st.number_input("溢价率【0~100】", min_value=0.0, max_value=100.0, value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
-                rev = st.number_input("营业收入(万)", min_value=1.0, value=float(row_get(s,"revenue",100000)), step=1000.0, format="%.0f", key=f"rev_{s['id']}")
-                ts_ = st.number_input("总股数(万手)", min_value=1.0, value=float(row_get(s,"total_shares",10000)), step=1000.0, format="%.0f", key=f"ts_{s['id']}")
-                pe_val = calc_pe(s)
-                st.caption(f"PE = {fmt_money(s['current_price'])} x {row_get(s,'total_shares',10000):,.0f} / {row_get(s,'revenue',100000):,.0f} = {pe_val}")
-                if st.button("保存参数", key=f"sv_{s['id']}"):
-                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr, revenue=rev, total_shares=ts_)
-                    log_action(st.session_state.username, "stock_params_update", s["symbol"], f"carbon_price={cp}, premium_rate={pr}")
+                st.markdown("**基础参数**")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    ts_ = st.number_input("总股本（万股）", min_value=1.0, value=float(row_get(s,"total_shares",10000)), step=1000.0, format="%.0f", key=f"ts_{s['id']}")
+                    rev = st.number_input("初始净利润（万）", min_value=1.0, value=float(row_get(s,"revenue",100000)), step=1000.0, format="%.0f", key=f"rev_{s['id']}")
+                    ipe = st.number_input("行业PE", min_value=1.0, value=float(row_get(s,"industry_pe",20)), step=1.0, format="%.1f", key=f"ipe_{s['id']}")
+                with col_b:
+                    cp = st.number_input("当前碳排", min_value=0.0, max_value=200.0, value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
+                    icm = st.number_input("行业碳排均值", min_value=1.0, max_value=200.0, value=float(s["industry_carbon_mean"]), step=1.0, format="%.1f", key=f"icm_{s['id']}")
+                    pr = st.number_input("当前幸福度（%）", min_value=0.0, max_value=100.0, value=float(s["premium_rate"]), step=1.0, format="%.0f", key=f"pr_{s['id']}")
+                # 显示自动计算
+                init_p = calc_initial_price(rev, ts_, ipe)
+                st.info(f"📐 理论初始价 = {rev:,.0f}×10000÷{ts_:,.0f}÷{ipe} = **¥{init_p}**  ｜  当前市价 **¥{s['current_price']:.2f}**（由交易撮合决定）")
+                if st.button("💾 保存参数", key=f"sv_{s['id']}", type="primary"):
+                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr, industry_carbon_mean=icm, revenue=rev, total_shares=ts_, industry_pe=ipe)
+                    log_action(st.session_state.username, "stock_params_update", s["symbol"], f"carbon={cp}, premium={pr}, icm={icm}, rev={rev}, ts={ts_}, pe={ipe}")
                     st.rerun()
-            with c3:
-                if st.button("删除", key=f"del_{s['id']}"):
+            with c2:
+                if st.button("🗑 删除", key=f"del_{s['id']}"):
                     st.session_state[f"confirm_delete_{s['id']}"] = True; st.rerun()
                 if st.session_state.get(f"confirm_delete_{s['id']}"):
-                    st.error(f"确认删除 {s['name']} ({s['symbol']})？该股票将从列表隐藏。")
+                    st.error(f"确认删除 {s['name']} ({s['symbol']})？")
                     dc1, dc2 = st.columns(2)
-                    if dc1.button("确认删除", key=f"cf_del_{s['id']}", type="primary", use_container_width=True):
+                    if dc1.button("确认", key=f"cf_del_{s['id']}", type="primary", use_container_width=True):
                         delete_stock(s["id"])
                         log_action(st.session_state.username, "stock_delete", s["symbol"], s["name"])
                         st.session_state[f"confirm_delete_{s['id']}"] = False; st.rerun()
