@@ -1116,28 +1116,18 @@ def page_public_dashboard():
     # 底部
     st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
 
-    # 自动刷新 + 手动刷新
+    # 手动刷新
     col1, col2, col3 = st.columns([4, 1, 4])
     with col2:
         if st.button("🔄 刷新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-    # 每10秒自动rerun（Streamlit websocket，页面不刷新）
+    # 自动刷新：meta refresh 每15秒（有淡入过渡减少闪烁感）
     st.markdown("""
-    <div style="text-align:center;color:rgba(255,255,255,.1);font-size:10px;font-family:monospace;">
-        自动刷新中 · 10秒间隔
+    <meta http-equiv="refresh" content="15">
+    <div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">
+        ⏱ 数据每15秒自动刷新
     </div>
-    <script>
-    setTimeout(function() {
-        var btns = window.parent.document.querySelectorAll('button');
-        for(var i=0; i<btns.length; i++) {
-            if(btns[i].textContent.trim() === '🔄 刷新') {
-                btns[i].click();
-                break;
-            }
-        }
-    }, 10000);
-    </script>
     """, unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
