@@ -1198,21 +1198,28 @@ def page_kline():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── A股标准色：红涨绿跌 ──
+    # ── A股标准色：红涨绿跌（实体填充） ──
     RED_UP   = "#ef5350"   # 阳线红
     GREEN_DN = "#2ecc71"   # 阴线绿
-    up   = df_k["close_price"] >= df_k["open_price"]
-    vol_color    = ["rgba(239,83,80,0.5)" if u else "rgba(46,204,113,0.5)" for u in up]
+    up_mask  = df_k["close_price"] >= df_k["open_price"]
+    vol_color = ["rgba(239,83,80,0.4)" if u else "rgba(46,204,113,0.4)" for u in up_mask]
 
     # ── 主图蜡烛 + 成交量副图 ──
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        vertical_spacing=0.02, row_heights=[0.72, 0.28])
+                        vertical_spacing=0.03, row_heights=[0.75, 0.25])
 
     fig.add_trace(go.Candlestick(
         x=x_values, open=df_k["open_price"], high=df_k["high_price"],
         low=df_k["low_price"], close=df_k["close_price"],
-        increasing_line_color=RED_UP, decreasing_line_color=GREEN_DN,
-        whiskerwidth=0.35,
+        increasing=dict(
+            line=dict(color=RED_UP, width=1.2),
+            fillcolor=RED_UP,
+        ),
+        decreasing=dict(
+            line=dict(color=GREEN_DN, width=1.2),
+            fillcolor=GREEN_DN,
+        ),
+        whiskerwidth=0.5,
         name="", showlegend=False,
     ), row=1, col=1)
 
@@ -1225,67 +1232,72 @@ def page_kline():
     if len(df_k) >= 5:
         ma5 = df_k["close_price"].rolling(5).mean()
         fig.add_trace(go.Scatter(x=x_values, y=ma5, mode="lines",
-            line=dict(color="#f59e0b", width=1), name="MA5"), row=1, col=1)
+            line=dict(color="#f59e0b", width=1.5), name="MA5"), row=1, col=1)
     if len(df_k) >= 10:
         ma10 = df_k["close_price"].rolling(10).mean()
         fig.add_trace(go.Scatter(x=x_values, y=ma10, mode="lines",
-            line=dict(color="#6366f1", width=1), name="MA10"), row=1, col=1)
+            line=dict(color="#a78bfa", width=1.5), name="MA10"), row=1, col=1)
 
-    # ── 布局：专业极简金融风 ──
+    # ── 布局：同花顺/东方财富风格 ──
     fig.update_layout(
-        height=520,
-        margin=dict(t=18, b=18, l=0, r=8),
+        height=540,
+        margin=dict(t=12, b=12, l=0, r=16),
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis_rangeslider_visible=False,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                    bgcolor="rgba(255,255,255,0.8)"),
+                    bgcolor="rgba(255,255,255,0.9)", bordercolor="#e0e0e0", borderwidth=1),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_color="#333333",
-                        bordercolor="#e0e0e0"),
-        font=dict(family="-apple-system, BlinkMacSystemFont, sans-serif", size=11, color="#555555"),
+        hoverlabel=dict(bgcolor="#1e293b", font_size=12, font_color="#ffffff",
+                        bordercolor="#334155"),
+        font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
+                  size=11, color="#555555"),
         # 十字光标
         xaxis=dict(type="category", categoryorder="array", categoryarray=list(x_values),
                    showspikes=True, spikemode="across", spikethickness=1,
-                   spikecolor="#cccccc", spikedash="dot"),
+                   spikecolor="#94a3b8", spikedash="solid"),
         yaxis=dict(showspikes=True, spikethickness=1,
-                   spikecolor="#cccccc", spikedash="dot"),
-        bargap=0.35,
+                   spikecolor="#94a3b8", spikedash="solid"),
+        bargap=0.25,
     )
 
-    # 主图 Y 轴：自动适配 + 8% 边距
+    # 主图 Y 轴：自动适配 + 8% 边距，价格标签在右侧
     y_min = low_price
     y_max = high_price
     pad = (y_max - y_min) * 0.08 if y_max > y_min else 10
     fig.update_yaxes(
         range=[y_min - pad, y_max + pad],
-        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, griddash="dot",
-        tickformat=",.2f", tickfont=dict(size=11, color="#666666"),
+        showgrid=True, gridcolor="#e8ecf1", gridwidth=1, griddash="dot",
+        tickformat=",.2f", tickfont=dict(size=11, color="#64748b"),
         side="right", row=1, col=1,
+        zeroline=False,
     )
     fig.update_xaxes(showgrid=False, row=1, col=1)
 
     # 成交量副图
     fig.update_yaxes(
-        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, griddash="dot",
-        tickfont=dict(size=10, color="#999999"), side="right", row=2, col=1,
+        showgrid=True, gridcolor="#e8ecf1", gridwidth=1, griddash="dot",
+        tickfont=dict(size=10, color="#94a3b8"), side="right", row=2, col=1,
+        zeroline=False,
     )
     fig.update_xaxes(
         showgrid=False, type="category",
-        tickvals=x_values.iloc[::max(1,len(df_k)//10)],
-        ticktext=df_k["x_label"].iloc[::max(1,len(df_k)//10)],
-        tickfont=dict(size=10, color="#888888"),
+        tickvals=x_values.iloc[::max(1, len(df_k)//8)],
+        ticktext=df_k["x_label"].iloc[::max(1, len(df_k)//8)],
+        tickfont=dict(size=10, color="#94a3b8"),
         row=2, col=1,
     )
 
-    # 工具栏：只保留下载
+    # 工具栏：只保留下载和缩放
     config = {
         "displayModeBar": True,
         "modeBarButtonsToRemove": ["lasso2d", "select2d", "sendDataToCloud",
-                                     "autoScale2d", "toggleSpikelines"],
-        "modeBarButtonsToAdd": [],
+                                     "autoScale2d", "toggleSpikelines",
+                                     "zoomIn2d", "zoomOut2d", "pan2d"],
+        "modeBarButtonsToAdd": ["drawline", "eraseshape"],
         "displaylogo": False,
         "scrollZoom": True,
+        "responsive": True,
     }
     st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True, config=config)
