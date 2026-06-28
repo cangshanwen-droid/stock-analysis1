@@ -589,7 +589,7 @@ def get_holder_detail(symbol):
     return pd.DataFrame(r)
 
 def get_kline_data(symbol):
-    """直接读库K线数据"""
+    """K线数据 + 实时追加当前未结算轮次"""
     with get_db_cm() as conn:
         r = conn.execute("""
             SELECT k.*
@@ -602,7 +602,31 @@ def get_kline_data(symbol):
             ) latest ON latest.id = k.id
             ORDER BY k.round
         """, (symbol,)).fetchall()
-    return [dict(x) for x in r]
+        result = [dict(x) for x in r]
+
+        # 查找当前未结算轮次（选手正在交易的轮次）
+        open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+        cr = open_r[0] if open_r and open_r[0] else 0
+        if cr:
+            stock = conn.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone()
+            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
+            if txns and stock:
+                prev = stock["previous_close"] or stock["current_price"]
+                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                tv = sum(t["shares"] for t in txns)
+                np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
+                hi = max(np_, prev); lo = min(np_, prev)
+                cpct = round((np_-prev)/prev*100,2) if prev else 0
+                # 移除可能存在的旧数据（闭市产生的同轮次K线），用实时数据替换
+                result = [x for x in result if x["round"] != cr]
+                result.append({
+                    "stock_symbol": symbol, "round": cr,
+                    "open_price": prev, "high_price": hi, "low_price": lo,
+                    "close_price": np_, "volume": tv,
+                    "buy_total": bt, "sell_total": st_amt, "change_pct": cpct,
+                })
+    return sorted(result, key=lambda x: x["round"])
 
 def get_platform_stats():
     s = get_admin_summary()
