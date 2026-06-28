@@ -158,13 +158,24 @@ def init_db():
             last_c = klines[-1][3]
             conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
         conn.commit()
-        # 设置市场轮次 = 最大K线轮次 + 1（供交易使用）
-        max_round = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
-        next_round = max_round + 1
-        conn.execute("UPDATE market_state SET round=?, state='open' WHERE id=1", (next_round,))
-        for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], next_round))
-        conn.commit()
+        # 首次启动时设置市场轮次 = 最大K线轮次 + 1，后续不覆盖
+        if first_boot:
+            max_round = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
+            next_round = max_round + 1
+            conn.execute("UPDATE market_state SET round=?, state='open' WHERE id=1", (next_round,))
+            for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], next_round))
+            conn.commit()
+        else:
+            # 非首次：确保有未结算轮次，但不修改 market_state.round
+            current_r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+            cr = current_r["round"] if current_r else 1
+            for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+                has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND round=? AND is_settled=0", (s["symbol"], cr)).fetchone()
+                if not has_open:
+                    mr = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr + 1))
+            conn.commit()
 
 def _seed(conn):
     cur = conn.cursor()
