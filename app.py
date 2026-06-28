@@ -108,8 +108,8 @@ def init_db():
                 if sym not in [s[0] for s in stock_defs]:
                     conn.execute("UPDATE stocks SET is_deleted=1 WHERE symbol=?", (sym,))
             # 清空旧K线数据，准备重新生成标准K线
-            for sym, _, _ in stock_defs:
-                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
+            for s_def in stock_defs:
+                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s_def[0],))
             conn.commit()
 
         # 生成标准K线数据 — 每只股票20轮，模拟真实走势
