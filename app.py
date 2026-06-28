@@ -67,6 +67,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1), state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
             CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS order_book(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         """)
         conn.commit()
         # 迁移：revenue 字段
@@ -404,6 +405,7 @@ def delete_stock(sid):
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
 def add_trade(username, symbol, tt, price, shares):
+    """订单簿撮合：可立即成交则成交，否则挂单"""
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
@@ -411,24 +413,112 @@ def add_trade(username, symbol, tt, price, shares):
         if cr == 0: return False, "市场已闭市，无法交易"
         stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
         if not stock: return False, "股票不存在或已停用"
-        cost = price * shares
+
+        remaining = shares
+        matched = []
+
         if tt == "buy":
+            # 余额检查（按最大可能成本）
+            max_cost = price * remaining
             bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
-            if not bal or bal["balance"] < cost: return False, "余额不足"
-            conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
-        else:
+            if not bal or bal["balance"] < max_cost:
+                # 允许部分成交：减少数量到余额够买
+                max_can_buy = int(bal["balance"] / price)
+                if max_can_buy <= 0:
+                    return False, f"余额不足，最多可买 {int(bal['balance']/price)} 股"
+                remaining = min(remaining, max_can_buy)
+
+            # 扫卖一（最低卖单），直到全部成交或没有可匹配的卖单
+            while remaining > 0:
+                sell_order = conn.execute("""
+                    SELECT id, username, price, shares FROM order_book
+                    WHERE stock_symbol=? AND trade_type='sell' AND price<=?
+                    ORDER BY price ASC, id ASC LIMIT 1
+                """, (symbol, price)).fetchone()
+                if not sell_order:
+                    break
+                match_shares = min(remaining, sell_order["shares"])
+                match_price = sell_order["price"]
+                match_cost = match_shares * match_price
+
+                # 扣买家钱
+                conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, username))
+                # 加卖家钱
+                conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, sell_order["username"]))
+                # 记录成交
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "buy", match_price, match_shares, cr))
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (sell_order["username"], symbol, "sell", match_price, match_shares, cr))
+                matched.append((match_price, match_shares))
+
+                remaining -= match_shares
+                new_sell_shares = sell_order["shares"] - match_shares
+                if new_sell_shares <= 0:
+                    conn.execute("DELETE FROM order_book WHERE id=?", (sell_order["id"],))
+                else:
+                    conn.execute("UPDATE order_book SET shares=? WHERE id=?", (new_sell_shares, sell_order["id"]))
+
+            # 有未成交部分 → 挂单
+            if remaining > 0:
+                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "buy", price, remaining, cr))
+                msg = f"部分成交 {shares - remaining} 股，剩余 {remaining} 股已挂单"
+            else:
+                msg = f"全部成交 {shares} 股"
+
+        else:  # sell
+            # 持仓检查
             holding = get_holding_shares(username, symbol, conn)
-            if holding < shares:
+            if holding < remaining:
                 return False, f"持仓不足：当前仅持有 {holding} 股"
-            conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
-        conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
-        log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
+
+            # 扫买一（最高买单），直到全部成交或没有可匹配的买单
+            while remaining > 0:
+                buy_order = conn.execute("""
+                    SELECT id, username, price, shares FROM order_book
+                    WHERE stock_symbol=? AND trade_type='buy' AND price>=?
+                    ORDER BY price DESC, id ASC LIMIT 1
+                """, (symbol, price)).fetchone()
+                if not buy_order:
+                    break
+                match_shares = min(remaining, buy_order["shares"])
+                match_price = buy_order["price"]
+                match_cost = match_shares * match_price
+
+                # 买家扣钱
+                conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, buy_order["username"]))
+                # 卖家加钱
+                conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, username))
+                # 记录成交
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (buy_order["username"], symbol, "buy", match_price, match_shares, cr))
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "sell", match_price, match_shares, cr))
+                matched.append((match_price, match_shares))
+
+                remaining -= match_shares
+                new_buy_shares = buy_order["shares"] - match_shares
+                if new_buy_shares <= 0:
+                    conn.execute("DELETE FROM order_book WHERE id=?", (buy_order["id"],))
+                else:
+                    conn.execute("UPDATE order_book SET shares=? WHERE id=?", (new_buy_shares, buy_order["id"]))
+
+            # 有未成交部分 → 挂单
+            if remaining > 0:
+                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "sell", price, remaining, cr))
+                msg = f"部分成交 {shares - remaining} 股，剩余 {remaining} 股已挂单"
+            else:
+                msg = f"全部成交 {shares} 股"
+
+        log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, matched={len(matched)}", conn)
         conn.commit()
     try:
         get_public_quote_snapshot.clear()
     except Exception:
         pass
-    return True, "交易成功"
+    return True, msg
 
 def get_user_balance(username):
     with get_db_cm() as conn:
@@ -468,6 +558,8 @@ def close_market():
                 conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
+        # 闭市时取消所有剩余挂单
+        conn.execute("DELETE FROM order_book")
         conn.commit()
 
     try:
@@ -522,6 +614,7 @@ def reset_to_round1():
         conn.execute("BEGIN IMMEDIATE")
         stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
         conn.execute("DELETE FROM transactions")
+        conn.execute("DELETE FROM order_book")
         conn.execute("DELETE FROM kline")
         conn.execute("DELETE FROM rounds")
         conn.execute("UPDATE users SET balance=1000000 WHERE role='player'")
