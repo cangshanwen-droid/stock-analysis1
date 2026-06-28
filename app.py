@@ -396,12 +396,12 @@ SIDEBAR_CSS = """
 
     .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid #21262d; }
     .sb-brand .name { font-size: 24px; font-weight: 700; color: #f0f6fc; }
-    .sb-brand .sub { font-size: 12px; color: #8b949e; margin-top: 4px; letter-spacing: 1px; }
+    .sb-brand .sub { font-size: 12px; color: #b0b8c0; margin-top: 4px; letter-spacing: 1px; }
     .sb-user { padding: 18px 20px 20px 20px; border-bottom: 1px solid #21262d; }
     .sb-user .uname { font-size: 15px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
     .sb-user .urole { font-size: 13px; color: #c9d1d9; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3fb950; margin-right: 8px; vertical-align: middle; }
-    .menu-group-label { font-size: 11px; font-weight: 600; color: #8b949e; letter-spacing: .5px; padding: 20px 20px 8px 20px; }
+    .menu-group-label { font-size: 11px; font-weight: 600; color: #c9d1d9; letter-spacing: .5px; padding: 20px 20px 8px 20px; }
 
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         padding: 10px 14px !important; margin: 2px 10px !important; border-radius: 6px !important;
