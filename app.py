@@ -2,11 +2,10 @@
 股票交易系统 — 移动端优先响应式版本
 商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
-import os, sqlite3, hashlib, json, tempfile
+import os, sqlite3, hashlib, tempfile
 from datetime import datetime
 
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -398,112 +397,73 @@ SIDEBAR_CSS = """
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LOGIN_HTML = r"""
-<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F5F7FA;display:flex;justify-content:center;align-items:center;min-height:100vh;}
-.card{display:flex;width:880px;height:520px;background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.06);overflow:hidden;}
-.brand{flex:0 0 38%;background:#1A1A2E;padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;}
-.brand .ver{font-size:11px;color:#4A4A6A;letter-spacing:1px;}
-.brand .title{font-size:28px;font-weight:600;color:#fff;letter-spacing:2px;}
-.brand .line{width:32px;height:2px;background:#2D6AFF;margin:16px 0;}
-.brand .desc{font-size:14px;color:#8A8AAA;line-height:1.6;}
-.brand .copy{font-size:11px;color:#4A4A6A;}
-.form{flex:1;padding:48px 44px;display:flex;flex-direction:column;justify-content:center;}
-.form h2{font-size:20px;font-weight:600;color:#1A1A2E;}
-.form .sub{font-size:14px;color:#8A8AAA;margin:4px 0 28px;}
-.tabs{display:flex;gap:24px;border-bottom:1px solid #E8E8F0;padding-bottom:12px;margin-bottom:24px;}
-.tabs button{background:none;border:none;font-size:14px;font-weight:500;color:#8A8AAA;cursor:pointer;padding:4px 0;font-family:inherit;}
-.tabs button.active{color:#1A1A2E;border-bottom:2px solid #2D6AFF;padding-bottom:10px;}
-.ig{margin-bottom:16px;}
-.ig label{display:block;font-size:12px;font-weight:500;color:#1A1A2E;margin-bottom:4px;}
-.ig input{width:100%;height:42px;border:1.5px solid #E8E8F0;border-radius:6px;padding:0 12px;font-size:14px;font-family:inherit;outline:none;transition:border .15s;}
-.ig input:focus{border-color:#2D6AFF;box-shadow:0 0 0 3px rgba(45,106,255,.08);}
-.opts{display:flex;justify-content:space-between;font-size:12px;margin:4px 0 20px;}
-.opts a{color:#2D6AFF;text-decoration:none;}
-.opts input[type="checkbox"]{accent-color:#2D6AFF;}
-.btn{width:100%;height:42px;background:#2D6AFF;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:transform .08s,background .15s;}
-.btn:hover{background:#1D4ED8;}
-.btn:active{transform:scale(.97);}
-.divider{display:flex;align-items:center;gap:16px;margin:20px 0 16px;font-size:11px;color:#8A8AAA;}
-.divider span{flex:1;height:1px;background:#E8E8F0;}
-.ghost{width:100%;height:42px;background:none;border:1.5px solid #E8E8F0;border-radius:6px;font-size:13px;font-family:inherit;color:#4A4A6A;cursor:pointer;}
-.ghost:hover{border-color:#2D6AFF;color:#2D6AFF;}
-.msg{margin-top:12px;font-size:13px;}
-.msg.error{color:#FF1744;} .msg.success{color:#00C853;}
-@media(max-width:768px){.card{flex-direction:column;width:92vw;height:auto;max-width:400px}.brand{flex:0 0 auto;padding:28px 24px;min-height:100px}.form{padding:28px 24px}}
-</style></head>
-<body>
-<div class="card">
-<div class="brand"><div class="ver">V2.0</div><div><div class="title">双镜</div><div class="line"></div><div class="desc">智能投资<br>分析系统</div></div><div class="copy">(c) 2026</div></div>
-<div class="form">
-<h2 id="formTitle">欢迎回来</h2><div class="sub" id="formSub">登录您的账户</div>
-<div class="tabs">
-<button class="active" id="tabLogin" onclick="switchTab('login')">登录</button>
-<button id="tabRegister" onclick="switchTab('register')">注册</button>
-</div>
-<div id="loginForm">
-<div class="ig"><label>用户名</label><input type="text" id="loginUser" placeholder="请输入用户名"></div>
-<div class="ig"><label>密码</label><input type="password" id="loginPass" placeholder="请输入密码"></div>
-<div class="opts"><label><input type="checkbox"> 记住我</label><a href="#">忘记密码？</a></div>
-<button class="btn" onclick="doLogin()">登录</button>
-</div>
-<div id="registerForm" style="display:none">
-<div class="ig"><label>用户名</label><input type="text" id="regUser" placeholder="请设置用户名"></div>
-<div class="ig"><label>密码</label><input type="password" id="regPass" placeholder="请设置密码"></div>
-<div class="ig"><label>确认密码</label><input type="password" id="regPass2" placeholder="请再次输入"></div>
-<button class="btn" onclick="doRegister()">注册</button>
-</div>
-<div class="divider"><span></span> 或 <span></span></div>
-<button class="ghost" onclick="doGuest()">以访客身份浏览</button>
-<div id="msg" class="msg"></div>
-</div></div>
-<script>
-var msgs = __MESSAGES__;
-if(msgs.error) showMsg(msgs.error,'error');
-if(msgs.success) showMsg(msgs.success,'success');
-function send(d){if(window.Streamlit){window.Streamlit.setComponentValue(d);window.Streamlit.setFrameHeight(600);}}
-function showMsg(t,s){var e=document.getElementById('msg');e.textContent=t;e.className='msg '+s;}
-function switchTab(t){
-    var L=document.getElementById('loginForm'),R=document.getElementById('registerForm');
-    var TL=document.getElementById('tabLogin'),TR=document.getElementById('tabRegister');
-    if(t==='login'){L.style.display='block';R.style.display='none';TL.className='active';TR.className='';document.getElementById('formTitle').textContent='欢迎回来';document.getElementById('formSub').textContent='登录您的账户';}
-    else{L.style.display='none';R.style.display='block';TR.className='active';TL.className='';document.getElementById('formTitle').textContent='创建账户';document.getElementById('formSub').textContent='注册成为新用户';}
-    document.getElementById('msg').textContent='';
-}
-function doLogin(){var u=document.getElementById('loginUser').value,p=document.getElementById('loginPass').value;if(!u||!p){showMsg('请输入用户名和密码','error');return;}send({type:'login',user:u,pass:p});}
-function doRegister(){var u=document.getElementById('regUser').value,p=document.getElementById('regPass').value,p2=document.getElementById('regPass2').value;if(!u||!p||!p2){showMsg('请完整填写','error');return;}if(p!==p2){showMsg('两次密码不一致','error');return;}if(u.length<3){showMsg('用户名至少3位','error');return;}if(p.length<4){showMsg('密码至少4位','error');return;}send({type:'register',user:u,pass:p});}
-function doGuest(){send({type:'guest'});}
-</script>
-</body></html>
-"""
-
 def page_login():
-    st.markdown("""
-    <style>
-        .stApp > header { display:none !important; }
-        section.main > div.block-container { padding:0 !important; max-width:100% !important; }
-        .stApp { background:#F5F7FA !important; }
-        .stDeployButton, footer, [data-testid="stStatusWidget"], [data-testid="stDecoration"] { display:none !important; }
-    </style>""", unsafe_allow_html=True)
-    msgs = {"error": st.session_state.pop("login_error", ""), "success": st.session_state.pop("login_ok", "")}
-    html = LOGIN_HTML.replace("__MESSAGES__", json.dumps(msgs))
-    result = components.html(html, height=620, scrolling=False)
-    if result and isinstance(result, dict):
-        t = result.get("type")
-        if t == "login":
-            ok, role = auth_user(result["user"], result["pass"])
-            if ok: st.session_state.logged_in = True; st.session_state.username = result["user"]; st.session_state.role = role
-            else: st.session_state.login_error = "用户名或密码错误"; st.rerun()
-        elif t == "register":
-            ok, msg = register_user(result["user"], result["pass"])
-            if ok: st.session_state.login_ok = "注册成功，请登录"
-            else: st.session_state.login_error = msg
-            st.rerun()
-        elif t == "guest":
-            st.session_state.logged_in = True; st.session_state.username = "guest"; st.session_state.role = "player"
-        st.rerun()
+    cl, cc, cr = st.columns([1, 3, 1])
+    with cc:
+        st.markdown("<div style='height:6vh'></div>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:#1A1A2E;border-radius:12px 12px 0 0;padding:32px 32px 24px 32px;text-align:center;">
+            <div style="font-size:11px;color:#4A4A6A;letter-spacing:1px;">V2.0</div>
+            <div style="font-size:28px;font-weight:600;color:#fff;letter-spacing:2px;margin-top:8px;">双镜</div>
+            <div style="width:32px;height:2px;background:#2D6AFF;margin:16px auto;"></div>
+            <div style="font-size:14px;color:#8A8AAA;">智能投资分析系统</div>
+        </div>
+        <div style="background:#fff;border-radius:0 0 12px 12px;padding:32px;box-shadow:0 12px 48px rgba(0,0,0,.06);">
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div style="font-size:20px;font-weight:600;color:#1A1A2E;margin-bottom:2px;">欢迎回来</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:14px;color:#8A8AAA;margin-bottom:24px;">登录您的账户</div>', unsafe_allow_html=True)
+
+        # 消息显示
+        if st.session_state.get("login_error"):
+            st.error(st.session_state.login_error)
+            st.session_state.login_error = ""
+        if st.session_state.get("login_ok"):
+            st.success(st.session_state.login_ok)
+            st.session_state.login_ok = ""
+
+        with st.form("login_form"):
+            st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
+            st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
+            if st.form_submit_button("登录", type="primary", use_container_width=True):
+                u = st.session_state.get("login_u", "")
+                p = st.session_state.get("login_p", "")
+                if not u or not p:
+                    st.session_state.login_error = "请输入用户名和密码"
+                else:
+                    ok, role = auth_user(u, p)
+                    if ok:
+                        st.session_state.logged_in = True
+                        st.session_state.username = u
+                        st.session_state.role = role
+                    else:
+                        st.session_state.login_error = "用户名或密码错误"
+                st.rerun()
+
+        st.markdown('<div style="display:flex;align-items:center;gap:12px;margin:24px 0 16px;font-size:11px;color:#8A8AAA;"><div style="flex:1;height:1px;background:#E8E8F0;"></div>或<div style="flex:1;height:1px;background:#E8E8F0;"></div></div>', unsafe_allow_html=True)
+
+        with st.form("register_form"):
+            st.markdown('<div style="font-size:20px;font-weight:600;color:#1A1A2E;margin-bottom:2px;">创建账户</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:14px;color:#8A8AAA;margin-bottom:20px;">注册成为新用户</div>', unsafe_allow_html=True)
+            st.text_input("用户名", placeholder="至少3位", label_visibility="collapsed", key="reg_u")
+            st.text_input("密码", type="password", placeholder="至少4位", label_visibility="collapsed", key="reg_p")
+            st.text_input("确认密码", type="password", placeholder="再次输入", label_visibility="collapsed", key="reg_p2")
+            if st.form_submit_button("注册", type="primary", use_container_width=True):
+                u2 = st.session_state.get("reg_u", "")
+                p2 = st.session_state.get("reg_p", "")
+                p3 = st.session_state.get("reg_p2", "")
+                if not u2 or not p2: st.session_state.login_error = "请完整填写"
+                elif len(u2) < 3: st.session_state.login_error = "用户名至少3位"
+                elif len(p2) < 4: st.session_state.login_error = "密码至少4位"
+                elif p2 != p3: st.session_state.login_error = "两次密码不一致"
+                else:
+                    ok, msg = register_user(u2, p2)
+                    if ok: st.session_state.login_ok = "注册成功，请登录"
+                    else: st.session_state.login_error = msg
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;font-size:11px;color:#8A8AAA;margin-top:16px;">(c) 2026</div>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 通用组件
