@@ -75,6 +75,11 @@ def init_db():
         first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
         if first_boot:
             _seed(conn)
+        else:
+            # 确保 admin 密码与当前环境变量/默认值一致（解决部署后密码重置问题）
+            admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
+            conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
+            conn.commit()
 
         # 补全首轮K线
         for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
