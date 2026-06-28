@@ -628,6 +628,39 @@ def get_kline_data(symbol):
                 })
     return sorted(result, key=lambda x: x["round"])
 
+def get_market_card_data(stock):
+    """Return dashboard quote data from latest K-line instead of stale stock columns."""
+    symbol = stock["symbol"]
+    klines = get_kline_data(symbol)
+    if klines:
+        latest = klines[-1]
+        ref_price = row_get(latest, "open_price", None) or row_get(stock, "previous_close", None) or row_get(stock, "current_price", 0)
+        price = row_get(latest, "close_price", ref_price) or ref_price
+        change = price - ref_price
+        pct = change / ref_price * 100 if ref_price else 0
+        total_vol = int(sum(row_get(d, "volume", 0) or 0 for d in klines[-5:]))
+        buy_amt = sum(row_get(d, "buy_total", 0) or 0 for d in klines[-5:])
+        sell_amt = sum(row_get(d, "sell_total", 0) or 0 for d in klines[-5:])
+        latest_round = row_get(latest, "round", "-")
+    else:
+        price = row_get(stock, "current_price", 0) or 0
+        ref_price = row_get(stock, "previous_close", price) or price
+        change = price - ref_price
+        pct = change / ref_price * 100 if ref_price else 0
+        total_vol = 0
+        buy_amt = sell_amt = 0
+        latest_round = "-"
+    return {
+        "price": float(price or 0),
+        "ref_price": float(ref_price or 0),
+        "change": float(change or 0),
+        "pct": float(pct or 0),
+        "volume5": total_vol,
+        "buy5": float(buy_amt or 0),
+        "sell5": float(sell_amt or 0),
+        "round": latest_round,
+    }
+
 def get_platform_stats():
     s = get_admin_summary()
     if s.empty: return {"total_mv": 0, "total_pnl": 0, "active_users": 0}
@@ -1032,21 +1065,21 @@ def page_public_dashboard():
     # 四只股票行情卡片
     cards = ""
     for s in stocks:
-        p = s["current_price"]
-        prev = s["previous_close"] or p
-        chg = p - prev
-        pct = (chg / prev * 100) if prev else 0
+        q = get_market_card_data(s)
+        p = q["price"]
+        prev = q["ref_price"]
+        chg = q["change"]
+        pct = q["pct"]
         cls = "up" if chg >= 0 else "down"
         sign = "+" if chg >= 0 else ""
-        vol_data = get_kline_data(s["symbol"])
-        total_vol = int(sum(d.get("volume", 0) for d in vol_data[-5:])) if vol_data else 0
         cards += f"""
         <div class="s-card {cls}">
             <div class="sym">{s['symbol']}</div>
             <div class="nm">{esc(s['name'])}</div>
             <div class="pr {cls}">¥{p:,.2f}</div>
             <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
-            <div class="extra">上轮收盘 ¥{prev:,.2f} ｜ 近5轮成交量 {total_vol:,}</div>
+            <div class="extra">第 {q['round']} 轮 ｜ 参考 ¥{prev:,.2f} ｜ 近5轮量 {q['volume5']:,}</div>
+            <div class="extra">近5轮买额 ¥{q['buy5']:,.0f} ｜ 卖额 ¥{q['sell5']:,.0f}</div>
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
 
