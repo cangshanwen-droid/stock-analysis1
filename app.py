@@ -653,21 +653,6 @@ def page_overview():
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # 每轮数据明细表
-    st.divider()
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
-    if data:
-        disp = pd.DataFrame(data).tail(30).copy()
-        disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
-        disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
-        st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
-    else:
-        st.info("暂无K线数据")
-
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
     if pf.empty: st.info("暂无持仓"); return
@@ -938,6 +923,18 @@ def page_kline():
         "modeBarButtonsToRemove": ["lasso2d", "select2d"],
         "displaylogo": False,
     })
+
+    if data:
+        st.divider()
+        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
+        disp = pd.DataFrame(data).tail(30).copy()
+        disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
+        disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
+        st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
 
 def page_admin_stock_summary():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
