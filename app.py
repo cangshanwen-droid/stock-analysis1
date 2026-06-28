@@ -73,12 +73,26 @@ def init_db():
         cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
         conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
         first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+        admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
         if first_boot:
             _seed(conn)
         else:
-            # 确保 admin 密码与当前环境变量/默认值一致（解决部署后密码重置问题）
-            admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
+            # 确保 admin 密码与当前环境变量/默认值一致
             conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
+            # 每次启动同步股票数据（覆盖更新）
+            stock_defs = [("WULIU", "物流1公司", 10.0), ("JXIAO", "经销1公司", 15.0), ("JGONG", "加工1公司", 20.0), ("YLIAO", "原料1公司", 25.0)]
+            for sym, name, price in stock_defs:
+                exists = conn.execute("SELECT id FROM stocks WHERE symbol=?", (sym,)).fetchone()
+                if exists:
+                    conn.execute("UPDATE stocks SET name=?,current_price=?,previous_close=?,is_deleted=0 WHERE symbol=?", (name, price, price, sym))
+                else:
+                    conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, price * 10000 * 20 / 10000))
+                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
+            # 隐藏多余的旧股票
+            existing = [r[0] for r in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
+            for sym in existing:
+                if sym not in [s[0] for s in stock_defs]:
+                    conn.execute("UPDATE stocks SET is_deleted=1 WHERE symbol=?", (sym,))
             conn.commit()
 
         # 补全首轮K线
