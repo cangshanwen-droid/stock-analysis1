@@ -392,6 +392,8 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
             conn.commit()
+        try: get_public_quote_snapshot.clear()
+        except: pass
         return True, f"添加成功，初始价={price}"
     except sqlite3.IntegrityError:
         return False, "代码已存在"
@@ -411,6 +413,9 @@ def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
+    try: get_public_quote_snapshot.clear()
+    except: pass
+
 def add_trade(username, symbol, tt, price, shares):
     """订单簿撮合：可立即成交则成交，否则挂单"""
     direction = "买入" if tt == "buy" else "卖出"
