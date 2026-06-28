@@ -340,10 +340,15 @@ def reset_pwd(u, np_):
         conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u))
         conn.commit()
 
-def get_stocks():
+@st.cache_data(ttl=5, show_spinner=False)
+def get_stocks_cached():
+    """缓存5秒的股票行情数据，支撑几百人并发读取"""
     with get_db_cm() as conn:
         r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
     return [dict(x) for x in r]
+
+def get_stocks():
+    return get_stocks_cached()
 
 def get_stock(sid):
     with get_db_cm() as conn:
@@ -546,7 +551,9 @@ def get_holder_detail(symbol):
         rr = h.iloc[0]; r.append({"用户名": p["username"], "持仓量": int(rr["shares"]), "成本价": rr["avg_cost"], "当前价": rr["current_price"], "盈亏": rr["pnl"], "收益率": rr["pnl_ratio"]})
     return pd.DataFrame(r)
 
-def get_kline_data(symbol):
+@st.cache_data(ttl=5, show_spinner=False)
+def get_kline_data_cached(symbol):
+    """缓存5秒的K线数据"""
     with get_db_cm() as conn:
         r = conn.execute("""
             SELECT k.*
@@ -560,6 +567,9 @@ def get_kline_data(symbol):
             ORDER BY k.round
         """, (symbol,)).fetchall()
     return [dict(x) for x in r]
+
+def get_kline_data(symbol):
+    return get_kline_data_cached(symbol)
 
 def get_platform_stats():
     s = get_admin_summary()
@@ -852,6 +862,193 @@ SIDEBAR_CSS = """
 </style>
 """
 
+DASHBOARD_CSS = """
+<style>
+    .stApp { background: #080c17 !important; }
+    section.main > div.block-container { padding: 12px 20px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
+    [data-testid="stDecoration"], [data-testid="stToolbar"], header { display: none !important; }
+
+    .dash-top { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px 0; }
+    .dash-brand { font-size: 28px; font-weight: 800; letter-spacing: 5px;
+        background: linear-gradient(135deg, #f0e6d3, #d4a853);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .dash-sub { font-size: 11px; color: rgba(255,255,255,.3); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
+    .dash-clock { font-size: 13px; color: rgba(255,255,255,.35); font-family: monospace; letter-spacing: 1px; }
+
+    .mkt-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+        background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+        border-radius: 10px; margin-bottom: 18px; }
+    .mkt-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .mkt-dot.open { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,.5); }
+    .mkt-dot.closed { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,.5); }
+    .mkt-text { font-size: 13px; color: rgba(255,255,255,.5); }
+    .mkt-text strong { color: rgba(255,255,255,.9); }
+    .mkt-round { margin-left: auto; font-size: 12px; color: rgba(255,255,255,.25); font-family: monospace; }
+
+    .stock-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .s-card {
+        background: linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
+        border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
+        padding: 16px 18px; position: relative; overflow: hidden; transition: border-color .2s;
+        cursor: default;
+    }
+    .s-card:hover { border-color: rgba(255,255,255,.15); }
+    .s-card .sym { font-size: 11px; color: rgba(255,255,255,.35); letter-spacing: 1px; text-transform: uppercase; }
+    .s-card .nm { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.85); margin: 2px 0 6px 0; }
+    .s-card .pr { font-size: 30px; font-weight: 700; font-feature-settings: "tnum"; }
+    .s-card .pr.up { color: #ef5350; } .s-card .pr.down { color: #2ecc71; }
+    .s-card .chg { font-size: 13px; margin-top: 2px; font-weight: 500; }
+    .s-card .chg.up { color: #ef5350; } .s-card .chg.down { color: #2ecc71; }
+    .s-card .extra { font-size: 11px; color: rgba(255,255,255,.25); margin-top: 6px; font-family: monospace; }
+    .s-card::after { content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 2px; border-radius: 2px 2px 0 0; }
+    .s-card.up::after { background: #ef5350; }
+    .s-card.down::after { background: #2ecc71; }
+
+    .tab-row { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tab-btn { padding: 6px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+        cursor: pointer; border: 1px solid rgba(255,255,255,.08); background: transparent;
+        color: rgba(255,255,255,.4); transition: all .15s; font-family: inherit; }
+    .tab-btn:hover { background: rgba(255,255,255,.05); color: rgba(255,255,255,.7); }
+    .tab-btn.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.3); color: #60a5fa; }
+
+    .chart-box { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06);
+        border-radius: 12px; padding: 8px; margin-bottom: 12px; }
+    .dash-ft { display: flex; justify-content: space-between; padding: 10px 0 0 0;
+        border-top: 1px solid rgba(255,255,255,.06); margin-top: 4px;
+        font-size: 11px; color: rgba(255,255,255,.18); font-family: monospace; }
+
+    .login-btn { padding: 6px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
+        cursor: pointer; border: 1px solid rgba(255,255,255,.15); background: transparent;
+        color: rgba(255,255,255,.5); font-family: inherit; text-decoration: none; transition: all .15s;
+        display: inline-block; text-align: center; }
+    .login-btn:hover { background: rgba(255,255,255,.08); color: rgba(255,255,255,.8); }
+
+    @media (max-width: 768px) { .stock-grid { grid-template-columns: repeat(2, 1fr); } .s-card .pr { font-size: 22px; } }
+</style>
+"""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 公开行情大屏（无需登录）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def page_public_dashboard():
+    st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
+    stocks = get_stocks()
+    if not stocks:
+        st.markdown('<div style="color:rgba(255,255,255,.3);text-align:center;padding:40px;">暂无行情数据</div>', unsafe_allow_html=True)
+        return
+
+    # 市场状态
+    mkt_open = is_market_open()
+    mkt_round = get_market_round()
+    mkt_cls = "open" if mkt_open else "closed"
+    mkt_text = "交易中" if mkt_open else "已闭市"
+
+    # 顶栏
+    from datetime import datetime as _dt
+    now_str = _dt.now().strftime("%Y/%m/%d %H:%M:%S")
+    c1, c2, c3 = st.columns([3, 2, 1])
+    with c1:
+        st.markdown(f'<div class="dash-brand">双镜</div><div class="dash-sub">智能投资分析系统</div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(f'<div class="dash-clock" style="text-align:center;">{now_str}</div>', unsafe_allow_html=True)
+    with c3:
+        if st.button("登录交易", key="dash_login_btn"):
+            st.session_state.show_login = True
+            st.rerun()
+
+    # 市场状态条
+    st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round">⏱ {now_str}</span></div>', unsafe_allow_html=True)
+
+    # 四只股票行情卡片
+    cards = ""
+    for s in stocks:
+        p = s["current_price"]
+        prev = s["previous_close"] or p
+        chg = p - prev
+        pct = (chg / prev * 100) if prev else 0
+        cls = "up" if chg >= 0 else "down"
+        sign = "+" if chg >= 0 else ""
+        vol_data = get_kline_data_cached(s["symbol"])
+        total_vol = int(sum(d.get("volume", 0) for d in vol_data[-5:])) if vol_data else 0
+        cards += f"""
+        <div class="s-card {cls}">
+            <div class="sym">{s['symbol']}</div>
+            <div class="nm">{esc(s['name'])}</div>
+            <div class="pr {cls}">¥{p:,.2f}</div>
+            <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
+            <div class="extra">昨收 ¥{prev:,.2f} ｜ 近5轮成交量 {total_vol:,}</div>
+        </div>"""
+    st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
+
+    # 股票选择 + K线图
+    st.markdown('<div class="tab-row">', unsafe_allow_html=True)
+    cols = st.columns([1] * len(stocks))
+    if "dash_sym" not in st.session_state:
+        st.session_state.dash_sym = stocks[0]["symbol"]
+    for i, s in enumerate(stocks):
+        active = "active" if st.session_state.dash_sym == s["symbol"] else ""
+        if cols[i].button(f"{s['name']}", key=f"tab_{s['symbol']}", use_container_width=True):
+            st.session_state.dash_sym = s["symbol"]
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # K线图
+    sym = st.session_state.dash_sym
+    data = get_kline_data_cached(sym)
+    if data:
+        import pandas as pd
+        df_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
+        df_k["x"] = df_k["round"].apply(lambda r: f"第{r}轮")
+
+        RED_UP = "#ef5350"
+        GREEN_DN = "#2ecc71"
+        up_mask = df_k["close_price"] >= df_k["open_price"]
+        vol_c = ["rgba(239,83,80,0.4)" if u else "rgba(46,204,113,0.4)" for u in up_mask]
+
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.75, 0.25])
+        fig.add_trace(go.Candlestick(x=df_k["x"], open=df_k["open_price"], high=df_k["high_price"],
+            low=df_k["low_price"], close=df_k["close_price"],
+            increasing=dict(line=dict(color=RED_UP, width=1.2), fillcolor=RED_UP),
+            decreasing=dict(line=dict(color=GREEN_DN, width=1.2), fillcolor=GREEN_DN),
+            whiskerwidth=0.5, name="", showlegend=False), row=1, col=1)
+        fig.add_trace(go.Bar(x=df_k["x"], y=df_k["volume"], marker_color=vol_c, name="", showlegend=False), row=2, col=1)
+
+        for period, color, name in [(5, "#f59e0b", "MA5"), (10, "#a78bfa", "MA10")]:
+            if len(df_k) >= period:
+                ma = df_k["close_price"].rolling(period).mean()
+                fig.add_trace(go.Scatter(x=df_k["x"], y=ma, mode="lines", line=dict(color=color, width=1.2), name=name), row=1, col=1)
+
+        fig.update_layout(height=520, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            margin=dict(t=8, b=8, l=0, r=12), xaxis_rangeslider_visible=False,
+            font=dict(color="rgba(255,255,255,.5)", size=10), hovermode="x unified",
+            hoverlabel=dict(bgcolor="#1e293b", font_size=12, font_color="#ffffff"),
+            xaxis=dict(showspikes=True, spikemode="across", spikecolor="rgba(255,255,255,.1)"),
+            yaxis=dict(showspikes=True, spikecolor="rgba(255,255,255,.1)"),
+            showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
+                font=dict(color="rgba(255,255,255,.4)", size=10)),
+            bargap=0.1)
+        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,.05)", griddash="dot",
+            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10))
+        fig.update_xaxes(showgrid=False, row=1, col=1)
+        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,.05)", griddash="dot",
+            side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9))
+
+        st.markdown('<div class="chart-box">', unsafe_allow_html=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": True})
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="color:rgba(255,255,255,.3);text-align:center;padding:30px;">暂无K线数据</div>', unsafe_allow_html=True)
+
+    # 底部
+    st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
+
+    # 自动刷新
+    st.markdown(
+        '<meta http-equiv="refresh" content="5">',
+        unsafe_allow_html=True,
+    )
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -898,7 +1095,7 @@ def page_login():
         with c_t:
             t = "primary" if st.session_state.login_tab == "login" else "secondary"
             if st.button("登录", key="tab_l", type=t, use_container_width=True):
-                st.session_state.login_tab = "login"; st.rerun()
+                st.session_state.login_tab = "login"; st.session_state.show_login = True; st.rerun()
         with c_r:
             if st.button("注册已关闭", key="tab_r", type="secondary", use_container_width=True):
                 st.session_state.login_error = "比赛账号由管理员统一创建，请联系赛事管理员"
@@ -927,6 +1124,9 @@ def page_login():
             st.info("公开注册已关闭。比赛账号由管理员统一创建。")
 
         st.markdown('</div>', unsafe_allow_html=True)
+        if st.button("← 返回行情看板", key="back_to_dash"):
+            st.session_state.show_login = False
+            st.rerun()
         st.markdown('<p style="text-align:center;color:#a0aec0;font-size:12px;margin-top:16px;">(c) 2026</p>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1779,7 +1979,13 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False; st.session_state.username = ""; st.session_state.role = ""
 
 def main():
-    if not st.session_state.logged_in: page_login(); return
+    if not st.session_state.logged_in:
+        # 未登录时显示公开行情大屏，点击"登录交易"才显示登录页
+        if st.session_state.get("show_login"):
+            page_login()
+        else:
+            page_public_dashboard()
+        return
     nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
     if st.session_state.get("nav_current") not in nav:
         st.session_state.nav_current = nav[0]
