@@ -1125,7 +1125,8 @@ def page_public_dashboard():
             <div class="nm">{esc(s['name'])}</div>
             <div class="pr {cls}">¥{p:,.2f}</div>
             <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
-            <div class="extra">第 {q['round']} 轮 ｜ 参考 ¥{prev:,.2f} ｜ 近5轮量 {q['volume5']:,}</div>
+            <div class="extra">当前第 {mkt_round} 轮 ｜ 最新成交第 {q['round']} 轮</div>
+            <div class="extra">参考 ¥{prev:,.2f} ｜ 近5轮量 {q['volume5']:,}</div>
             <div class="extra">近5轮买额 ¥{q['buy5']:,.0f} ｜ 卖额 ¥{q['sell5']:,.0f}</div>
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
