@@ -19,6 +19,12 @@ def get_db():
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON"); return conn
 
+def row_get(row, key, default=None):
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
 def hash_pwd(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def init_db():
@@ -40,28 +46,27 @@ def init_db():
     except: pass
     cur.execute("UPDATE users SET status='active' WHERE status IS NULL")
     cur.execute("UPDATE users SET balance=1000000 WHERE balance IS NULL OR balance=0")
-    if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+    first_boot = cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+    if first_boot:
         _seed(conn)
-        for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-            cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,2,0)", (s["symbol"],))
-    # 强制补全首轮K线
+
+    # 补全缺失的首轮K线，但不覆盖已有历史，避免重启后污染第1轮价格。
     for s in cur.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
+        exists = cur.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1 LIMIT 1", (s["symbol"],)).fetchone()
+        if exists:
+            continue
         txns = cur.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
         bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
         st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
         tv = sum(t["shares"] for t in txns)
         np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
         pc = s["previous_close"] or s["current_price"]
-        cur.execute("DELETE FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],))
         cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
     for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
         has_open = cur.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
         if not has_open:
             max_r = cur.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
             cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
-            if not has_open:
-                max_r = cur.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
-                cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
     conn.commit(); conn.close()
 
 def _seed(conn):
@@ -76,9 +81,9 @@ def _seed(conn):
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
     # 为种子交易生成首轮K线
     for sym, price in [("TSLA", 250.0), ("AAPL", 175.0), ("NVDA", 450.0)]:
-        bt = sum(t[4] * t[5] for t in trades if t[1] == sym and t[2] == "buy")
-        st_amt = sum(t[4] * t[5] for t in trades if t[1] == sym and t[2] == "sell")
-        tv = sum(t[5] for t in trades if t[1] == sym)
+        bt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "buy")
+        st_amt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "sell")
+        tv = sum(t[4] for t in trades if t[1] == sym)
         np_ = compute_price({"previous_close": price, "current_price": price, "premium_rate": 50, "carbon_price": 50, "industry_carbon_mean": 50, "buy_total": bt, "sell_total": st_amt})
         cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (sym, price, max(np_, price), min(np_, price), np_, tv, bt, st_amt, round((np_ - price) / price * 100, 2)))
     conn.commit()
@@ -87,11 +92,12 @@ def _seed(conn):
 # 价格引擎（Excel公式）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def compute_price(stock):
-    prev = stock.get("previous_close") or stock.get("current_price") or 50
-    bt, st_ = max(stock.get("buy_total", 0), 1), max(stock.get("sell_total", 0), 1)
-    pf = 1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50
-    cm = max(stock.get("industry_carbon_mean", 50), 1)
-    cf = 1 - 0.5 * (stock.get("carbon_price", 50) - cm) / cm
+    prev = row_get(stock, "previous_close") or row_get(stock, "current_price") or 50
+    bt = max(row_get(stock, "buy_total", 0), 1)
+    st_ = max(row_get(stock, "sell_total", 0), 1)
+    pf = 1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50
+    cm = max(row_get(stock, "industry_carbon_mean", 50), 1)
+    cf = 1 - 0.5 * (row_get(stock, "carbon_price", 50) - cm) / cm
     t = prev * (bt / st_) * pf * cf
     return max(round(prev * 0.9, 2), min(round(prev * 1.1, 2), round(t, 2)))
 
@@ -113,14 +119,15 @@ def settle_round(symbol):
     bt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
     st_amt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
     tv = sum(t["shares"] for t in txns)
-    pf = round(1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50, 4)
-    icm = max(stock.get("industry_carbon_mean", 50), 1)
-    cf = round(1 - 0.5 * (stock.get("carbon_price", 50) - icm) / icm, 4)
+    pf = round(1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50, 4)
+    icm = max(row_get(stock, "industry_carbon_mean", 50), 1)
+    cf = round(1 - 0.5 * (row_get(stock, "carbon_price", 50) - icm) / icm, 4)
     np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
     raw = round((stock["previous_close"] or stock["current_price"]), 2) * (bt / max(st_amt, 1)) * pf * cf
     pc = stock["previous_close"] or stock["current_price"]
     cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
     hi = max(np_, pc); lo = min(np_, pc)
+    cur.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, cr))
     cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
     nr = cr + 1
     cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
@@ -231,6 +238,7 @@ def close_market():
             pc = s["previous_close"] or s["current_price"]
             hi = max(np_, pc); lo = min(np_, pc)
             cpct = round((np_-pc)/pc*100,2) if pc else 0
+            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
             conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
             conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
             conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
@@ -295,7 +303,7 @@ def get_user_portfolio(username):
         sym = b["stock_symbol"]; net = b["s"] - sm.get(sym, 0)
         if net <= 0: continue
         avg = round(b["c"] / b["s"], 2); info = stocks.get(sym, {"name": sym, "current_price": avg})
-        cp = info.get("current_price", avg); mv_ = round(cp * net, 2); pnl = round((cp - avg) * net, 2)
+        cp = row_get(info, "current_price", avg); mv_ = round(cp * net, 2); pnl = round((cp - avg) * net, 2)
         rows.append({"symbol": sym, "name": info["name"], "shares": int(net), "avg_cost": avg, "current_price": cp, "market_value": mv_, "pnl": pnl, "pnl_ratio": round((cp - avg) / avg * 100, 2) if avg else 0})
     return pd.DataFrame(rows)
 
@@ -342,7 +350,19 @@ def get_holder_detail(symbol):
     return pd.DataFrame(r)
 
 def get_kline_data(symbol):
-    conn = get_db(); r = conn.execute("SELECT * FROM kline WHERE stock_symbol=? ORDER BY round", (symbol,)).fetchall(); conn.close()
+    conn = get_db()
+    r = conn.execute("""
+        SELECT k.*
+        FROM kline k
+        JOIN (
+            SELECT round, MAX(id) AS id
+            FROM kline
+            WHERE stock_symbol=?
+            GROUP BY round
+        ) latest ON latest.id = k.id
+        ORDER BY k.round
+    """, (symbol,)).fetchall()
+    conn.close()
     return [dict(x) for x in r]
 
 def get_platform_stats():
@@ -376,6 +396,7 @@ html, body, [class*="css"] {
     --primary:  #2D6AFF;
     --green:    #16a34a;
     --red:      #ef4444;
+    --border:   #e5e7eb;
 }
 
 /* ===== 移动端基础 ===== */
@@ -398,7 +419,8 @@ section.main > div.block-container {
 }
 .kpi-card {
     background: var(--card); border-radius: 10px; padding: 24px 20px;
-    box-shadow: 0 2px 10px rgba(0,0,0,.04);
+    box-shadow: 0 2px 10px rgba(15,23,42,.04);
+    border: 1px solid var(--border);
 }
 .kpi-card .label { font-size: 13px; color: #666; margin-bottom: 6px; }
 .kpi-card .value {
@@ -459,6 +481,30 @@ section.main > div.block-container {
 .trade-bar button:active { transform: scale(.97); }
 .trade-bar-spacer { height: 60px; } /* 防止固定栏遮挡内容 */
 
+.section-title {
+    font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 12px;
+    letter-spacing: 0;
+}
+.chart-summary {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+    margin: 12px 0;
+}
+.chart-metric {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; box-shadow: 0 1px 3px rgba(15,23,42,.04);
+}
+.chart-metric .label { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+.chart-metric .value { font-size: 18px; line-height: 1.2; font-weight: 700; color: #111827; }
+.chart-metric .value.up { color: var(--red); }
+.chart-metric .value.down { color: var(--green); }
+.chart-panel {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 10px 10px 2px 10px; box-shadow: 0 2px 12px rgba(15,23,42,.05);
+}
+.mobile-nav {
+    margin: 0 0 12px 0;
+}
+
 /* 桌面端可见/隐藏 */
 .desktop-only { display: none; }
 .mobile-only { display: block; }
@@ -473,6 +519,7 @@ section.main > div.block-container {
     .mobile-only { display: none; }
     .trade-bar { display: none; }
     .trade-bar-spacer { display: none; }
+    .chart-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 
     /* 桌面端表格替代卡片 */
     .desktop-table {
@@ -837,7 +884,7 @@ def page_kline():
     stocks = get_stocks()
     if not stocks: st.info("无数据"); return
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">K 线展板</div>""", unsafe_allow_html=True)
+    st.markdown("""<div class="section-title">K 线展板</div>""", unsafe_allow_html=True)
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
     sym = opts[sel]["symbol"]
@@ -851,10 +898,13 @@ def page_kline():
     cleaned = []
     dirty = 0
     for d in data:
-        o, h, l, c = d.get("open_price",0), d.get("high_price",0), d.get("low_price",0), d.get("close_price",0)
+        o = row_get(d, "open_price", 0)
+        h = row_get(d, "high_price", 0)
+        l = row_get(d, "low_price", 0)
+        c = row_get(d, "close_price", 0)
         if any(v is None or v < 0 for v in [o,h,l,c]) or h < max(o,c) or l > min(o,c):
             dirty += 1; continue
-        d["round"] = d.get("round", len(cleaned)+1)
+        d["round"] = row_get(d, "round", len(cleaned)+1)
         cleaned.append(d)
     if dirty:
         st.warning(f"已过滤 {dirty} 条异常数据")
@@ -874,6 +924,26 @@ def page_kline():
     # X轴用轮次序号（时间升序）
     df_k = df_k.sort_values("round").reset_index(drop=True)
     df_k["x_label"] = df_k["round"].apply(lambda r: f"第{r}轮")
+    x_values = df_k["x_label"]
+
+    latest = df_k.iloc[-1]
+    first_open = float(df_k.iloc[0]["open_price"])
+    latest_close = float(latest["close_price"])
+    total_change = round((latest_close - first_open) / first_open * 100, 2) if first_open else 0
+    latest_change = float(latest.get("change_pct", 0) or 0)
+    total_volume = int(df_k["volume"].sum())
+    high_price = float(df_k["high_price"].max())
+    low_price = float(df_k["low_price"].min())
+    latest_cls = "up" if latest_change >= 0 else "down"
+    total_cls = "up" if total_change >= 0 else "down"
+    st.markdown(f"""
+    <div class="chart-summary">
+        <div class="chart-metric"><div class="label">最新收盘</div><div class="value {latest_cls}">{fmt_money(latest_close)}</div></div>
+        <div class="chart-metric"><div class="label">本轮涨跌</div><div class="value {latest_cls}">{latest_change:+.2f}%</div></div>
+        <div class="chart-metric"><div class="label">区间涨跌</div><div class="value {total_cls}">{total_change:+.2f}%</div></div>
+        <div class="chart-metric"><div class="label">区间成交量</div><div class="value">{fmt_num(total_volume)}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # ── A股标准色：红涨绿跌 ──
     RED_UP   = "#ef5350"   # 阳线红
@@ -886,31 +956,32 @@ def page_kline():
                         vertical_spacing=0.02, row_heights=[0.72, 0.28])
 
     fig.add_trace(go.Candlestick(
-        x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
+        x=x_values, open=df_k["open_price"], high=df_k["high_price"],
         low=df_k["low_price"], close=df_k["close_price"],
         increasing_line_color=RED_UP, decreasing_line_color=GREEN_DN,
+        whiskerwidth=0.35,
         name="", showlegend=False,
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
-        x=df_k.index, y=df_k["volume"], marker_color=vol_color,
+        x=x_values, y=df_k["volume"], marker_color=vol_color,
         name="", showlegend=False,
     ), row=2, col=1)
 
     # ── MA5 / MA10 ──
     if len(df_k) >= 5:
         ma5 = df_k["close_price"].rolling(5).mean()
-        fig.add_trace(go.Scatter(x=df_k.index, y=ma5, mode="lines",
+        fig.add_trace(go.Scatter(x=x_values, y=ma5, mode="lines",
             line=dict(color="#f59e0b", width=1), name="MA5"), row=1, col=1)
     if len(df_k) >= 10:
         ma10 = df_k["close_price"].rolling(10).mean()
-        fig.add_trace(go.Scatter(x=df_k.index, y=ma10, mode="lines",
+        fig.add_trace(go.Scatter(x=x_values, y=ma10, mode="lines",
             line=dict(color="#6366f1", width=1), name="MA10"), row=1, col=1)
 
     # ── 布局：专业极简金融风 ──
     fig.update_layout(
-        height=460,
-        margin=dict(t=10, b=0, l=0, r=10),
+        height=520,
+        margin=dict(t=18, b=18, l=0, r=8),
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis_rangeslider_visible=False,
         showlegend=True,
@@ -921,15 +992,17 @@ def page_kline():
                         bordercolor="#e0e0e0"),
         font=dict(family="-apple-system, BlinkMacSystemFont, sans-serif", size=11, color="#555555"),
         # 十字光标
-        xaxis=dict(showspikes=True, spikemode="across", spikethickness=1,
+        xaxis=dict(type="category", categoryorder="array", categoryarray=list(x_values),
+                   showspikes=True, spikemode="across", spikethickness=1,
                    spikecolor="#cccccc", spikedash="dot"),
         yaxis=dict(showspikes=True, spikethickness=1,
                    spikecolor="#cccccc", spikedash="dot"),
+        bargap=0.35,
     )
 
     # 主图 Y 轴：自动适配 + 8% 边距
-    y_min = df_k["low_price"].min()
-    y_max = df_k["high_price"].max()
+    y_min = low_price
+    y_max = high_price
     pad = (y_max - y_min) * 0.08 if y_max > y_min else 10
     fig.update_yaxes(
         range=[y_min - pad, y_max + pad],
@@ -945,7 +1018,8 @@ def page_kline():
         tickfont=dict(size=10, color="#999999"), side="right", row=2, col=1,
     )
     fig.update_xaxes(
-        showgrid=False, tickvals=df_k.index[::max(1,len(df_k)//10)],
+        showgrid=False, type="category",
+        tickvals=x_values.iloc[::max(1,len(df_k)//10)],
         ticktext=df_k["x_label"].iloc[::max(1,len(df_k)//10)],
         tickfont=dict(size=10, color="#888888"),
         row=2, col=1,
@@ -960,7 +1034,9 @@ def page_kline():
         "displaylogo": False,
         "scrollZoom": True,
     }
+    st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True, config=config)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # 数据明细表
     st.divider()
@@ -1076,7 +1152,7 @@ def page_admin_user_mgmt():
         st.markdown("**启用/禁用账户**")
         with st.form("toggle_user"):
             target2 = st.selectbox("用户", [u["username"] for u in users if u["role"] == "player"], key="tg_user")
-            cur_status = next((u.get("status", "active") for u in users if u["username"] == target2), "active")
+            cur_status = next((row_get(u, "status", "active") for u in users if u["username"] == target2), "active")
             btn_label = "禁用" if cur_status != "disabled" else "启用"
             if st.form_submit_button(btn_label, type="primary", use_container_width=True):
                 toggle_user(target2); st.success(f"{target2} 已{btn_label}"); st.rerun()
@@ -1192,7 +1268,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
 ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
 
-st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="auto")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
@@ -1201,6 +1277,9 @@ if "logged_in" not in st.session_state:
 
 def main():
     if not st.session_state.logged_in: page_login(); return
+    nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
+    if st.session_state.get("nav_current") not in nav:
+        st.session_state.nav_current = nav[0]
     with st.sidebar:
         role_text = "管理员" if st.session_state.role == "admin" else "选手"
         bal = get_user_balance(st.session_state.username)
@@ -1209,15 +1288,22 @@ def main():
         <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
         <div class="sb-user"><div class="uname">{st.session_state.username}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
         """, unsafe_allow_html=True)
-        nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
-        sel = st.radio("", nav, key="nav_main", label_visibility="collapsed")
+        sel = st.radio("", nav, index=nav.index(st.session_state.nav_current), key=f"nav_main_{st.session_state.nav_current}", label_visibility="collapsed")
+        if sel != st.session_state.nav_current:
+            st.session_state.nav_current = sel
         st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", type="primary", use_container_width=True, key="sb_exit"):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
             st.rerun()
+    st.markdown('<div class="mobile-only mobile-nav">', unsafe_allow_html=True)
+    mobile_sel = st.selectbox("导航", nav, index=nav.index(st.session_state.nav_current), key=f"nav_mobile_{st.session_state.nav_current}")
+    st.markdown('</div>', unsafe_allow_html=True)
+    if mobile_sel != st.session_state.nav_current:
+        st.session_state.nav_current = mobile_sel
+    sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
 
