@@ -1040,9 +1040,19 @@ section.main > div.block-container {
         font-weight: 600 !important; padding: 12px 16px !important; color: var(--text) !important;
     }
     /* 输入框深色 */
-    input, select, textarea, div[data-baseweb="select"] > div {
-        background: rgba(255,255,255,.05) !important;
-        border-color: var(--border) !important; color: var(--text) !important;
+    input, select, textarea,
+    div[data-baseweb="input"] input,
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="textarea"] textarea {
+        background: rgba(255,255,255,.06) !important;
+        border: 1px solid rgba(6,182,212,.2) !important;
+        color: #e2e8f0 !important;
+        border-radius: 8px !important;
+        transition: all .2s !important;
+    }
+    input:focus, div[data-baseweb="input"] input:focus {
+        border-color: #06b6d4 !important;
+        box-shadow: 0 0 16px rgba(6,182,212,.1) !important;
     }
     div[data-testid="stMarkdown"] { color: var(--text) !important; }
 }
@@ -1379,11 +1389,55 @@ def page_public_dashboard():
 def page_login():
     st.markdown("""
     <style>
-        .stApp { background: #f0f2f5; }
+        .stApp { background: linear-gradient(160deg, #060b1a, #0c1630) !important; }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
-        div[data-testid="stButton"] button[kind="primary"] { border-radius: 8px !important; padding: 12px !important; font-size: 16px !important; }
-        div[data-testid="stButton"] button { border-radius: 8px !important; padding: 12px !important; }
+        input, div[data-baseweb="input"] input {
+            background: rgba(255,255,255,.08) !important;
+            border: 1px solid rgba(6,182,212,.25) !important;
+            color: #e2e8f0 !important;
+            border-radius: 10px !important;
+            padding: 14px 16px !important;
+            font-size: 16px !important;
+            transition: all .2s !important;
+        }
+        input:focus, div[data-baseweb="input"] input:focus {
+            border-color: #06b6d4 !important;
+            box-shadow: 0 0 20px rgba(6,182,212,.15) !important;
+        }
+        div[data-testid="stTextInput"] label, div[data-testid="stForm"] label {
+            color: rgba(255,255,255,.5) !important;
+            font-size: 13px !important;
+        }
+        div[data-testid="stButton"] button {
+            border-radius: 10px !important;
+            padding: 14px !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            transition: all .2s !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"] {
+            background: linear-gradient(135deg, #2563eb, #06b6d4) !important;
+            border: none !important;
+            color: #fff !important;
+            box-shadow: 0 4px 20px rgba(6,182,212,.3) !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 28px rgba(6,182,212,.4) !important;
+        }
+        div[data-testid="stButton"] button[kind="secondary"] {
+            background: transparent !important;
+            border: 1px solid rgba(255,255,255,.15) !important;
+            color: rgba(255,255,255,.5) !important;
+        }
+        div[data-testid="stButton"] button[kind="secondary"]:hover {
+            border-color: rgba(255,255,255,.3) !important;
+            color: rgba(255,255,255,.8) !important;
+        }
+        /* 调整列宽使输入框更舒适 */
+        section.main > div.block-container { padding: 0 !important; }
+        .stAlert { background: rgba(255,255,255,.05) !important; border: 1px solid rgba(255,255,255,.1) !important; color: #e2e8f0 !important; }
     </style>""", unsafe_allow_html=True)
 
     # 初始化 tab
@@ -1411,8 +1465,8 @@ def page_login():
             st.balloons()
             st.session_state.login_ok = ""
 
-        # 卡片体
-        st.markdown('<div style="background:#fff;padding:28px 32px;border-radius:0 0 16px 16px;box-shadow:0 8px 32px rgba(0,0,0,.1);">', unsafe_allow_html=True)
+        # 卡片体 — 磨砂玻璃
+        st.markdown('<div style="background:rgba(12,22,48,.85);backdrop-filter:blur(20px);padding:28px 32px;border-radius:0 0 16px 16px;border:1px solid rgba(6,182,212,.15);border-top:none;box-shadow:0 8px 40px rgba(0,0,0,.3);">', unsafe_allow_html=True)
 
         # Tab 行
         c_t, c_r = st.columns(2)
@@ -1421,9 +1475,8 @@ def page_login():
             if st.button("登录", key="tab_l", type=t, use_container_width=True):
                 st.session_state.login_tab = "login"; st.session_state.show_login = True; st.rerun()
         with c_r:
-            if st.button("注册已关闭", key="tab_r", type="secondary", use_container_width=True):
-                st.session_state.login_error = "比赛账号由管理员统一创建，请联系赛事管理员"
-                st.rerun()
+            if st.button("返回行情", key="tab_r", type="secondary", use_container_width=True):
+                st.session_state.show_login = False; st.rerun()
 
         # 表单
         if st.session_state.login_tab == "login":
