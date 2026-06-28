@@ -10,14 +10,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Supabase PostgreSQL
-DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
-
 def get_db():
     """SQLite 本地数据库"""
-    import sqlite3, tempfile
-    DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(os.path.join(tempfile.gettempdir(), "stock_analysis.db"))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
