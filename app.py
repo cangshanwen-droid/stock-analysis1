@@ -804,25 +804,25 @@ def get_holder_detail(symbol):
         rows = conn.execute("""
             SELECT
                 t.username,
-                SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) -
-                SUM(CASE WHEN t.trade_type IN('sell','force_close') THEN t.shares ELSE 0 END) AS net_shares,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) AS bought,
+                SUM(CASE WHEN t.trade_type IN('sell','force_close') THEN t.shares ELSE 0 END) AS sold,
                 SUM(CASE WHEN t.trade_type='buy' THEN t.price*t.shares ELSE 0 END) AS buy_cost
             FROM transactions t
             WHERE t.stock_symbol=?
             GROUP BY t.username
-            HAVING net_shares > 0
         """, (symbol,)).fetchall()
     stock_info = get_stocks()
     sp = {s["symbol"]: s["current_price"] for s in stock_info}
     cp = sp.get(symbol, 0)
     r = []
     for row in rows:
-        avg = round(row["buy_cost"] / row["net_shares"], 2) if row["net_shares"] else 0
-        mv_ = round(cp * row["net_shares"], 2)
-        pnl = round(mv_ - row["buy_cost"], 2)
-        r.append({"用户名": row["username"], "持仓量": int(row["net_shares"]),
+        net = row["bought"] - row["sold"]
+        if net <= 0: continue
+        avg = round(row["buy_cost"] / row["bought"], 2) if row["bought"] else 0
+        pnl = round((cp - avg) * net, 2)
+        r.append({"用户名": row["username"], "持仓量": int(net),
                   "成本价": avg, "当前价": cp, "盈亏": pnl,
-                  "收益率": round(pnl / row["buy_cost"] * 100, 2) if row["buy_cost"] else 0})
+                  "收益率": round((cp - avg) / avg * 100, 2) if avg else 0})
     return pd.DataFrame(r)
 
 def get_kline_data(symbol):
