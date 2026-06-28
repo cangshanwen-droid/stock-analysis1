@@ -891,6 +891,8 @@ html, body, [class*="css"] {
 .stApp {
     background: linear-gradient(160deg, #040a18 0%, #0a1628 50%, #060d1e 100%) !important;
 }
+.stApp > div { background: transparent !important; }
+section.main { background: transparent !important; }
 section.main > div.block-container {
     padding: 6px 14px !important; max-width: 100% !important;
 }
