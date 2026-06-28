@@ -977,7 +977,7 @@ def page_public_dashboard():
             <div class="nm">{esc(s['name'])}</div>
             <div class="pr {cls}">¥{p:,.2f}</div>
             <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
-            <div class="extra">昨收 ¥{prev:,.2f} ｜ 近5轮成交量 {total_vol:,}</div>
+            <div class="extra">上轮收盘 ¥{prev:,.2f} ｜ 近5轮成交量 {total_vol:,}</div>
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
 
@@ -1321,7 +1321,7 @@ def page_trade_hall():
     st.markdown(f"""
     <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
         <div style="display:flex;justify-content:space-around;text-align:center;">
-            <div><div style="font-size:12px;color:#666;">昨收价</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev)}</div></div>
+            <div><div style="font-size:12px;color:#666;">上轮收盘</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev)}</div></div>
             <div><div style="font-size:12px;color:#666;">理论价</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(round(prev*max(1,prem_f)*carb_f,2))}</div></div>
             <div><div style="font-size:12px;color:#666;">涨跌停</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev*0.9)}~{fmt_money(prev*1.1)}</div></div>
         </div>
@@ -1651,7 +1651,7 @@ def page_admin_stock_mgmt():
                 </div>
                 <span style="font-size:28px;font-weight:600;color:#{'16a34a' if pf>=1 else 'ef4444'};">{pf}</span>
             </div>
-            <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% | 昨收 {fmt_money(prev)} | 理论价 {fmt_money(round(prev*pf*cf,2))}</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% | 上轮收盘 {fmt_money(prev)} | 理论价 {fmt_money(round(prev*pf*cf,2))}</div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.markdown(f"""
