@@ -1088,55 +1088,52 @@ SIDEBAR_CSS = """
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
 
-    /* === 导航按钮 — all:unset 彻底清除默认样式 === */
-    section[data-testid="stSidebar"] button {
-        all: unset !important;
+    /* === 导航 radio === */
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        border: none !important;
+        background: transparent !important;
+        gap: 0 !important;
+        padding: 0 !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important;
         align-items: center !important;
+        padding: 11px 18px !important;
+        margin: 2px 12px !important;
         border-radius: 8px !important;
-        padding: 11px 16px !important;
-        margin: 1px 12px !important;
-        width: calc(100% - 24px) !important;
         font-size: 14px !important;
         font-weight: 500 !important;
         color: rgba(255,255,255,.35) !important;
+        background: transparent !important;
+        border: 1px solid transparent !important;
         cursor: pointer !important;
-        box-sizing: border-box !important;
-        transition: background .12s, color .12s !important;
+        transition: all .12s ease !important;
+        min-height: auto !important;
     }
-    section[data-testid="stSidebar"] button:hover {
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
         background: rgba(255,255,255,.04) !important;
-        color: rgba(255,255,255,.7) !important;
-        border-color: rgba(255,255,255,.04) !important;
+        color: rgba(255,255,255,.65) !important;
     }
-    section[data-testid="stSidebar"] button[kind="primary"],
-    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
+    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
         background: rgba(212,168,83,.08) !important;
-        border-color: rgba(212,168,83,.15) !important;
+        border-color: rgba(212,168,83,.12) !important;
         color: #ffffff !important;
         font-weight: 600 !important;
         position: relative !important;
     }
-    section[data-testid="stSidebar"] button[kind="primary"]::before,
-    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"]::before {
+    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
         content: '' !important;
         position: absolute !important;
-        left: 0 !important;
-        top: 5px !important;
-        bottom: 5px !important;
+        left: -1px !important;
+        top: 6px !important; bottom: 6px !important;
         width: 2px !important;
         background: linear-gradient(180deg, #d4a853, #b8942f) !important;
         border-radius: 0 2px 2px 0 !important;
         box-shadow: 0 0 6px rgba(212,168,83,.3) !important;
     }
-    /* 退出按钮 */
-    section[data-testid="stSidebar"] button:last-of-type {
-        margin-top: 8px !important;
-    }
-    section[data-testid="stSidebar"] button:last-of-type:hover {
-        background: rgba(239,68,68,.08) !important;
-        border-color: rgba(239,68,68,.12) !important;
-        color: #fca5a5 !important;
+    section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        margin: 0 !important; font-size: 14px !important; font-weight: inherit !important; color: inherit !important;
     }
 </style>
 """
@@ -2338,15 +2335,16 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导 航</div>', unsafe_allow_html=True)
         icon_map = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "交易记录": "📜", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
-        # 用按钮替代 radio，完全控制样式
-        for n in nav:
-            icon = icon_map.get(n, "•")
-            is_active = n == st.session_state.nav_current
-            btn_type = "primary" if is_active else "secondary"
-            if st.button(f"{icon}  {n}", key=f"nav_{n}", type=btn_type, use_container_width=True):
-                st.session_state.nav_current = n
-                st.rerun()
         sel = st.session_state.nav_current
+        # 用 st.radio 做导航（最稳定的 Streamlit 组件）
+        opts = [f"{icon_map.get(n,'•')}  {n}" for n in nav]
+        current = f"{icon_map.get(sel,'•')}  {sel}"
+        idx = opts.index(current) if current in opts else 0
+        picked = st.radio("", opts, index=idx, key="nav_radio", label_visibility="collapsed")
+        new_nav = picked.split("  ")[-1].strip() if "  " in picked else picked
+        if new_nav != sel:
+            st.session_state.nav_current = new_nav
+            st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
             st.session_state.logged_in = False
