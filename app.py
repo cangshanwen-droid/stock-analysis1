@@ -509,12 +509,11 @@ def undo_market():
     except: pass
 
 def reset_to_round1():
-    """回到第一轮：清空所有K线和轮次，价格不变，轮次重置为1"""
+    """回到第一轮：不清除K线历史，只重置轮次"""
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
         stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
         for s in stocks:
-            conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
             conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
         conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
