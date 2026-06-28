@@ -2,52 +2,24 @@
 股票交易系统 — 移动端优先响应式版本
 商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
-import os, hashlib, tempfile
+import os, sqlite3, hashlib, tempfile
 from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import psycopg2
-import psycopg2.extras
 
 # Supabase PostgreSQL
 DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
 
 def get_db():
-    """连接数据库，优先 Supabase，失败则回退 SQLite"""
-    try:
-        conn = psycopg2.connect(
-            "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres?sslmode=require&connect_timeout=10"
-        )
-    except Exception:
-        import sqlite3
-        DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
-    orig = conn.cursor
-    def pg_cursor():
-        return orig(cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.cursor = pg_cursor
-    def pg_execute(sql, params=None):
-        cur = pg_cursor()
-        s = sql
-        if isinstance(params, (list, tuple)) and len(params) > 0:
-            if "?" in s: s = s.replace("?", "%s")
-            cur.execute(s, list(params))
-        else:
-            if "?" in s: s = s.replace("?", "%s")
-            cur.execute(s)
-        return cur
-    def pg_executescript(sql):
-        cur = pg_cursor()
-        cur.execute(sql.replace("?", "%s"))
-        return cur
-    conn.execute = pg_execute
-    conn.executescript = pg_executescript
+    """SQLite 本地数据库"""
+    import sqlite3
+    DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def hash_pwd(p, salt=""): return hashlib.sha256((p + salt).encode()).hexdigest()
