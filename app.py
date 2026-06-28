@@ -1086,26 +1086,21 @@ SIDEBAR_CSS = """
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
 
-    /* === 导航按钮 — 全覆盖 === */
+    /* === 导航按钮 — all:unset 彻底清除默认样式 === */
     section[data-testid="stSidebar"] button {
-        border-radius: 8px !important;
-        padding: 11px 16px !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        margin: 1px 12px !important;
-        width: calc(100% - 24px) !important;
-        text-align: left !important;
-        border: 1px solid transparent !important;
-        background: transparent !important;
-        color: rgba(255,255,255,.35) !important;
-        box-shadow: none !important;
-        outline: none !important;
-        transition: all .12s ease !important;
-        height: auto !important;
-        min-height: 0 !important;
-        line-height: 1.4 !important;
+        all: unset !important;
         display: flex !important;
         align-items: center !important;
+        border-radius: 8px !important;
+        padding: 11px 16px !important;
+        margin: 1px 12px !important;
+        width: calc(100% - 24px) !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: rgba(255,255,255,.35) !important;
+        cursor: pointer !important;
+        box-sizing: border-box !important;
+        transition: background .12s, color .12s !important;
     }
     section[data-testid="stSidebar"] button:hover {
         background: rgba(255,255,255,.04) !important;
