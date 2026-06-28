@@ -364,6 +364,8 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
             conn.commit()
+        try: st.cache_data.clear()
+        except: pass
         return True, f"添加成功，初始价={price}"
     except sqlite3.IntegrityError:
         return False, "代码已存在"
@@ -378,11 +380,15 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
 
 def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
 
 def add_trade(username, symbol, tt, price, shares):
     with get_db_cm() as conn:
@@ -405,6 +411,8 @@ def add_trade(username, symbol, tt, price, shares):
         conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
         log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
     return True, "交易成功"
 
 def get_user_balance(username):
@@ -446,6 +454,8 @@ def close_market():
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
 
 def open_market():
     with get_db_cm() as conn:
@@ -458,6 +468,8 @@ def open_market():
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
 
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
@@ -477,6 +489,8 @@ def undo_market():
                 conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
         conn.commit()
+    try: st.cache_data.clear()
+    except: pass
 
 def reset_to_round1():
     """回到第一轮：清空所有K线和轮次，价格不变，轮次重置为1"""
@@ -1055,12 +1069,29 @@ def page_public_dashboard():
     # 底部
     st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
 
-    # 手动刷新按钮
+    # 自动刷新 + 手动刷新
     col1, col2, col3 = st.columns([4, 1, 4])
     with col2:
-        if st.button("🔄 刷新数据", use_container_width=True):
+        if st.button("🔄 刷新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
+    # 每10秒自动rerun（Streamlit websocket，页面不刷新）
+    st.markdown("""
+    <div style="text-align:center;color:rgba(255,255,255,.1);font-size:10px;font-family:monospace;">
+        自动刷新中 · 10秒间隔
+    </div>
+    <script>
+    setTimeout(function() {
+        var btns = window.parent.document.querySelectorAll('button');
+        for(var i=0; i<btns.length; i++) {
+            if(btns[i].textContent.trim() === '🔄 刷新') {
+                btns[i].click();
+                break;
+            }
+        }
+    }, 10000);
+    </script>
+    """, unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
