@@ -880,15 +880,26 @@ def page_admin_settle():
     with c1:
         confirm_close = st.checkbox("确认", key="cf_close")
         if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
-            settled_list = []
-            failed_list = []
+            conn = get_db()
+            count = 0
             for s in stocks:
-                result = settle_round(s["symbol"])
-                if result and result[0]: settled_list.append(s["name"])
-                else: failed_list.append(s["name"])
-            msg = f"已闭市 {len(settled_list)} 只"
-            if failed_list: msg += f" | 跳过: {', '.join(failed_list)}"
-            st.success(msg); st.rerun()
+                r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+                if r and r[0]:
+                    cr = r[0]
+                    txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
+                    bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                    st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                    tv = sum(t["shares"] for t in txns)
+                    np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+                    pc = s["previous_close"] or s["current_price"]
+                    hi = max(np_, pc); lo = min(np_, pc)
+                    cpct = round((np_-pc)/pc*100,2) if pc else 0
+                    conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+                    conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+                    conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+                    count += 1
+            conn.commit(); conn.close()
+            st.success(f"已闭市 {count} 只股票"); st.rerun()
     with c2:
         confirm_open = st.checkbox("确认", key="cf_open")
         if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
