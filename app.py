@@ -167,16 +167,16 @@ def delete_stock(sid):
 
 def add_trade(username, symbol, tt, price, shares):
     conn = get_db()
+    r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+    cr = r[0] if r and r[0] else 0
+    if cr == 0: conn.close(); return False, "市场已闭市，无法交易"
     cost = price * shares
-    # 买入时检查余额
     if tt == "buy":
         bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
         if not bal or bal["balance"] < cost: conn.close(); return False, "余额不足"
         conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
     else:
         conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
-    r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
-    cr = r[0] if r and r[0] else 1
     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
     conn.commit(); conn.close()
     return True, "交易成功"
@@ -988,7 +988,7 @@ NAV = {
     "股票管理": page_admin_stock_mgmt, "用户管理": page_admin_user_mgmt,
 }
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
-ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "市场控制", "股票汇总", "股票管理", "用户管理"]
+ADMIN_NAV = ["总览", "市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
 
 st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
