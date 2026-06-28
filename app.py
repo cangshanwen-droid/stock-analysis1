@@ -1070,8 +1070,8 @@ section.main > div.block-container {
 SIDEBAR_CSS = """
 <style>
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #060b1a 0%, #0c1630 100%) !important;
-        border-right: 1px solid rgba(59,130,246,.1) !important;
+        background: linear-gradient(180deg, #080e1e 0%, #0f1a35 100%) !important;
+        border-right: 1px solid rgba(255,255,255,.04) !important;
     }
     section[data-testid="stSidebar"] > div:first-child { background: transparent !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
@@ -1079,21 +1079,21 @@ SIDEBAR_CSS = """
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(6,182,212,.2); border-radius: 3px; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
 
-    section[data-testid="stSidebar"] * { color: #c8d0e0 !important; }
+    /* 所有文字默认白色高可见度 */
+    section[data-testid="stSidebar"] * { color: #f0f4ff !important; }
 
     .sb-brand {
         padding: 36px 28px 20px 28px;
-        border-bottom: 1px solid rgba(6,182,212,.1);
+        border-bottom: 1px solid rgba(255,255,255,.04);
         position: relative;
     }
     .sb-brand::after {
         content: ''; position: absolute; bottom: -1px; left: 28px;
         width: 32px; height: 2px;
-        background: linear-gradient(90deg, #06b6d4, transparent);
+        background: linear-gradient(90deg, #d4a853, transparent);
         border-radius: 2px;
-        box-shadow: 0 0 8px rgba(6,182,212,.4);
     }
     .sb-brand .name p {
         font-size: 30px !important; font-weight: 800 !important;
@@ -1103,18 +1103,18 @@ SIDEBAR_CSS = """
         background-clip: text;
     }
     .sb-brand .sub p {
-        color: rgba(255,255,255,.25) !important;
+        color: rgba(255,255,255,.2) !important;
         font-size: 11px !important; letter-spacing: 6px !important;
         margin-top: 4px !important; text-transform: uppercase;
     }
 
     .sb-user {
         padding: 18px 28px 16px 28px;
-        border-bottom: 1px solid rgba(6,182,212,.08);
+        border-bottom: 1px solid rgba(255,255,255,.04);
     }
     .sb-user .uname p {
         font-size: 16px !important; font-weight: 600 !important;
-        margin: 0 0 4px 0 !important; color: #e8edf5 !important;
+        margin: 0 0 4px 0 !important; color: #ffffff !important;
     }
     .sb-user .urole p {
         font-size: 13px !important; color: rgba(255,255,255,.35) !important;
@@ -1124,59 +1124,60 @@ SIDEBAR_CSS = """
         display: inline-block; width: 7px; height: 7px; border-radius: 50%;
         background: #10b981;
         box-shadow: 0 0 8px rgba(16,185,129,.6);
-        vertical-align: middle;
     }
 
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p {
         font-size: 10px !important; font-weight: 700 !important;
-        color: rgba(255,255,255,.2) !important;
+        color: rgba(255,255,255,.15) !important;
         text-transform: uppercase; letter-spacing: 3px !important;
     }
 
+    /* 导航项 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 11px 18px !important; margin: 1px 14px !important;
+        padding: 12px 20px !important; margin: 2px 14px !important;
         border-radius: 10px !important;
         font-size: 15px !important; font-weight: 500 !important;
-        min-height: auto !important; position: relative !important;
-        cursor: pointer !important;
+        color: rgba(255,255,255,.55) !important;
         transition: all .2s ease !important;
         border: 1px solid transparent !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(6,182,212,.08) !important;
-        border-color: rgba(6,182,212,.15) !important;
+        background: rgba(255,255,255,.06) !important;
+        color: rgba(255,255,255,.85) !important;
     }
+    /* 选中项 — 高亮白色+金色左边框 */
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(6,182,212,.12) !important;
-        border-color: rgba(6,182,212,.25) !important;
-        color: #67e8f9 !important;
+        background: rgba(212,168,83,.08) !important;
+        border-color: rgba(212,168,83,.15) !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
-        content: ''; position: absolute; left: -1px; top: 50%;
-        transform: translateY(-50%);
-        width: 3px; height: 20px;
-        background: linear-gradient(180deg, #06b6d4, #2563eb);
+        content: ''; position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
+        width: 3px; height: 24px;
+        background: linear-gradient(180deg, #d4a853, #b8942f);
         border-radius: 0 3px 3px 0;
-        box-shadow: 0 0 8px rgba(6,182,212,.5);
+        box-shadow: 0 0 12px rgba(212,168,83,.4);
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         margin: 0; font-size: 15px; font-weight: 500;
     }
 
+    /* 退出按钮 */
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
         background: rgba(255,255,255,.04) !important;
         border: 1px solid rgba(255,255,255,.06) !important;
-        color: rgba(255,255,255,.4) !important;
+        color: rgba(255,255,255,.35) !important;
         border-radius: 10px !important; padding: 10px !important;
-        font-size: 14px !important; font-weight: 500 !important;
-        transition: all .2s ease !important;
+        font-size: 14px !important;
         margin: 0 14px !important; width: calc(100% - 28px) !important;
+        transition: all .2s !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-        background: rgba(239,68,68,.12) !important;
-        border-color: rgba(239,68,68,.25) !important;
+        background: rgba(239,68,68,.1) !important;
+        border-color: rgba(239,68,68,.2) !important;
         color: #fca5a5 !important;
     }
 </style>
