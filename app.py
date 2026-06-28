@@ -109,13 +109,13 @@ def _seed(conn):
     cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
-    for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
+    for sym, name, price, funds in [("WULIU", "物流1公司", 10.0, 2000), ("JXIAO", "经销1公司", 15.0, 3000), ("JGONG", "加工1公司", 20.0, 4000), ("YLIAO", "原料1公司", 25.0, 5000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
-    trades = [("player1", "TSLA", "buy", 200.0, 100, 1), ("player1", "AAPL", "sell", 150.0, 80, 1), ("player1", "TSLA", "sell", 240.0, 80, 1), ("player2", "NVDA", "buy", 400.0, 30, 1), ("player2", "AAPL", "sell", 160.0, 40, 1), ("player3", "TSLA", "buy", 210.0, 50, 1), ("player3", "NVDA", "buy", 420.0, 20, 1)]
+    trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
     # 为种子交易生成首轮K线
-    for sym, price in [("TSLA", 250.0), ("AAPL", 175.0), ("NVDA", 450.0)]:
+    for sym, price in [("WULIU", 10.0), ("JXIAO", 15.0), ("JGONG", 20.0), ("YLIAO", 25.0)]:
         bt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "buy")
         st_amt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "sell")
         tv = sum(t[4] for t in trades if t[1] == sym)
