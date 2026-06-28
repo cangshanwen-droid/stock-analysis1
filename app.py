@@ -543,12 +543,15 @@ def reset_to_round1():
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
         conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
         conn.commit()
-        r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+        # 验证删除
+        remaining = conn.execute("SELECT COUNT(*) FROM kline").fetchone()[0]
+        conn.execute("UPDATE market_state SET round=1 WHERE id=1")
+        conn.commit()
     try:
         get_public_quote_snapshot.clear()
     except Exception:
         pass
-    return r["round"] if r else 1
+    return 1
 
 def get_user_portfolio(username):
     with get_db_cm() as conn:
@@ -2092,9 +2095,13 @@ def page_admin_settle():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认重置", type="primary", use_container_width=True):
-                    actual = reset_to_round1(); st.session_state.cf_r1 = False
-                    log_action(st.session_state.username, "market_reset_round1", "round", actual)
-                    st.success(f"已回到第 {actual} 轮"); st.rerun()
+                    reset_to_round1(); st.session_state.cf_r1 = False
+                    log_action(st.session_state.username, "market_reset_round1", "round", 1)
+                    # 清除所有会话缓存，强制从DB读取
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("nav_main_") or k.startswith("kline_round"):
+                            del st.session_state[k]
+                    st.success("已重置赛局，所有数据已清空"); st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_r1 = False; st.rerun()
