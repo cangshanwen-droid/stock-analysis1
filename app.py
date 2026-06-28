@@ -83,21 +83,21 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd("admin123")))
+    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd("admin123")))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
+        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
-        cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(%s,%s,%s,%s,%s)", (sym, name, price, price, funds))
+        cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
     trades = [("player1", "TSLA", "buy", 200.0, 100, 1), ("player1", "AAPL", "sell", 150.0, 80, 1), ("player1", "TSLA", "sell", 240.0, 80, 1), ("player2", "NVDA", "buy", 400.0, 30, 1), ("player2", "AAPL", "sell", 160.0, 40, 1), ("player3", "TSLA", "buy", 210.0, 50, 1), ("player3", "NVDA", "buy", 420.0, 20, 1)]
-    for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
+    for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
     # 为种子交易生成首轮K线
     for sym, price in [("TSLA", 250.0), ("AAPL", 175.0), ("NVDA", 450.0)]:
         bt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "buy")
         st_amt = sum(t[3] * t[4] for t in trades if t[1] == sym and t[2] == "sell")
         tv = sum(t[4] for t in trades if t[1] == sym)
         np_ = compute_price({"previous_close": price, "current_price": price, "premium_rate": 50, "carbon_price": 50, "industry_carbon_mean": 50, "buy_total": bt, "sell_total": st_amt})
-        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(%s,1,%s,%s,%s,%s,%s,%s,%s,%s)", (sym, price, max(np_, price), min(np_, price), np_, tv, bt, st_amt, round((np_ - price) / price * 100, 2)))
+        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (sym, price, max(np_, price), min(np_, price), np_, tv, bt, st_amt, round((np_ - price) / price * 100, 2)))
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -118,7 +118,7 @@ def log_action(actor, action, target="", detail="", conn=None):
     if own_conn:
         conn = get_db()
     conn.execute(
-        "INSERT INTO audit_logs(actor,action,target,detail) VALUES(%s,%s,%s,%s)",
+        "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
         (actor or "system", action, str(target or ""), str(detail or "")),
     )
     if own_conn:
@@ -133,7 +133,7 @@ def get_holding_shares(username, symbol, conn=None):
             COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
             COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
         FROM transactions
-        WHERE username=%s AND stock_symbol=%s
+        WHERE username=? AND stock_symbol=?
     """, (username, symbol)).fetchone()
     if own_conn:
         conn.close()
@@ -141,11 +141,11 @@ def get_holding_shares(username, symbol, conn=None):
 
 def settle_round(symbol):
     conn = get_db(); cur = conn.cursor()
-    stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=%s", (symbol,)).fetchone())
-    r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (symbol,)).fetchone()
+    stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
+    r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 0
     if cr == 0: conn.close(); return None, False, 0, 0, 0, 0, 0
-    txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=%s AND round=%s", (symbol, cr)).fetchall()
+    txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
     buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
     sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
     hb = max(o[0] for o in buys) if buys else 0
@@ -165,11 +165,11 @@ def settle_round(symbol):
     pc = stock["previous_close"] or stock["current_price"]
     cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
     hi = max(np_, pc); lo = min(np_, pc)
-    cur.execute("DELETE FROM kline WHERE stock_symbol=%s AND round=%s", (symbol, cr))
-    cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+    cur.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, cr))
+    cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
     nr = cr + 1
-    cur.execute("UPDATE stocks SET previous_close=%s,current_price=%s WHERE symbol=%s", (np_, np_, symbol))
-    cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=%s AND round=%s", (symbol, cr))
+    cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
+    cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
     conn.commit(); conn.close()
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
@@ -186,7 +186,7 @@ def auth_user(u, p):
             if (now - fails[u]["last"]).seconds < 30:
                 return False, ""
             fails[u] = {"count": 0, "last": now}
-    conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=%s", (u,)).fetchone(); conn.close()
+    conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
     if not r or not check_pwd(r["password"], p):
         fails[u] = {"count": fails.get(u, {}).get("count", 0) + 1, "last": now}
         return False, ""
@@ -198,15 +198,15 @@ def auth_user(u, p):
 
 def toggle_user(username):
     conn = get_db()
-    cur = conn.execute("SELECT status FROM users WHERE username=%s AND role='player'", (username,)).fetchone()
+    cur = conn.execute("SELECT status FROM users WHERE username=? AND role='player'", (username,)).fetchone()
     if cur: new_s = "disabled" if cur["status"] != "disabled" else "active"
     else: conn.close(); return
-    conn.execute("UPDATE users SET status=%s WHERE username=%s", (new_s, username)); conn.commit(); conn.close()
+    conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username)); conn.commit(); conn.close()
 
 def register_user(u, p, role="player"):
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(%s,%s,%s,1000000)", (u, make_pwd(p), role))
+        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, make_pwd(p), role))
         conn.commit(); return True, "注册成功"
     except sqlite3.IntegrityError: return False, "用户名已存在"
     finally: conn.close()
@@ -217,26 +217,26 @@ def get_all_users():
 
 def get_audit_logs(limit=80):
     conn = get_db()
-    r = conn.execute("SELECT actor,action,target,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
+    r = conn.execute("SELECT actor,action,target,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(x) for x in r]
 
 def reset_pwd(u, np_):
-    conn = get_db(); conn.execute("UPDATE users SET password=%s WHERE username=%s", (make_pwd(np_), u)); conn.commit(); conn.close()
+    conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u)); conn.commit(); conn.close()
 
 def get_stocks():
     conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall(); conn.close()
     return [dict(x) for x in r]
 
 def get_stock(sid):
-    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE id=%s", (sid,)).fetchone(); conn.close()
+    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone(); conn.close()
     return dict(r) if r else None
 
 def add_stock(sym, name, price):
     conn = get_db()
     try:
         funds = price * 10000 * 20 / 10000
-        conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(%s,%s,%s,%s,%s)", (sym.upper(), name, price, price, funds))
+        conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym.upper(), name, price, price, funds))
         conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
         conn.commit(); return True, "添加成功"
     except sqlite3.IntegrityError: return False, "代码已存在"
@@ -250,37 +250,37 @@ def update_stock_params(sid, **kw):
     conn = get_db()
     sets = ", ".join(f"{k}=?" for k in safe)
     vals = list(safe.values()) + [sid]
-    conn.execute(f"UPDATE stocks SET {sets} WHERE id=%s", vals)
+    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
     conn.commit(); conn.close()
 
 def delete_stock(sid):
-    conn = get_db(); conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=%s", (sid,)); conn.commit(); conn.close()
+    conn = get_db(); conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,)); conn.commit(); conn.close()
 
 def add_trade(username, symbol, tt, price, shares):
     conn = get_db()
-    r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (symbol,)).fetchone()
+    r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 0
     if cr == 0: conn.close(); return False, "市场已闭市，无法交易"
-    stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=%s AND is_deleted=0", (symbol,)).fetchone()
+    stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
     if not stock: conn.close(); return False, "股票不存在或已停用"
     cost = price * shares
     if tt == "buy":
-        bal = conn.execute("SELECT balance FROM users WHERE username=%s", (username,)).fetchone()
+        bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
         if not bal or bal["balance"] < cost: conn.close(); return False, "余额不足"
-        conn.execute("UPDATE users SET balance=balance-%s WHERE username=%s", (cost, username))
+        conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
     else:
         holding = get_holding_shares(username, symbol, conn)
         if holding < shares:
             conn.close()
             return False, f"持仓不足：当前仅持有 {holding} 股"
-        conn.execute("UPDATE users SET balance=balance+%s WHERE username=%s", (cost, username))
-    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", (username, symbol, tt, price, shares, cr))
+        conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
+    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
     log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
     conn.commit(); conn.close()
     return True, "交易成功"
 
 def get_user_balance(username):
-    conn = get_db(); r = conn.execute("SELECT balance FROM users WHERE username=%s", (username,)).fetchone(); conn.close()
+    conn = get_db(); r = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone(); conn.close()
     return r["balance"] if r else 0
 
 def is_market_open():
@@ -297,10 +297,10 @@ def close_market():
     if r and r["state"] == "closed": conn.close(); return
     stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
-        open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (s["symbol"],)).fetchone()
+        open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
         if open_r and open_r[0]:
             cr = open_r[0]
-            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=%s AND round=%s", (s["symbol"], cr)).fetchall()
+            txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
             bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
             st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
             tv = sum(t["shares"] for t in txns)
@@ -308,10 +308,10 @@ def close_market():
             pc = s["previous_close"] or s["current_price"]
             hi = max(np_, pc); lo = min(np_, pc)
             cpct = round((np_-pc)/pc*100,2) if pc else 0
-            conn.execute("DELETE FROM kline WHERE stock_symbol=%s AND round=%s", (s["symbol"], cr))
-            conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-            conn.execute("UPDATE stocks SET previous_close=%s,current_price=%s WHERE symbol=%s", (np_, np_, s["symbol"]))
-            conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=%s AND round=%s", (s["symbol"], cr))
+            conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+            conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+            conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+            conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
     conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
     conn.commit(); conn.close()
 
@@ -323,7 +323,7 @@ def open_market():
     stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
         conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
-    conn.execute("UPDATE market_state SET state='open', round=%s WHERE id=1", (new_round,))
+    conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
     conn.commit(); conn.close()
 
 def undo_market():
@@ -335,14 +335,14 @@ def undo_market():
     stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
         # 删除最新轮次的k线
-        conn.execute("DELETE FROM kline WHERE stock_symbol=%s AND round=%s", (s["symbol"], r["round"]))
+        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
         # 删除最新轮次
-        conn.execute("DELETE FROM rounds WHERE stock_symbol=%s AND round=%s", (s["symbol"], r["round"]))
+        conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
         # 恢复上一轮价格
-        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=%s AND round=%s", (s["symbol"], prev_round)).fetchone()
+        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_round)).fetchone()
         if prev_k:
-            conn.execute("UPDATE stocks SET previous_close=%s, current_price=%s WHERE symbol=%s", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
-    conn.execute("UPDATE market_state SET state='open', round=%s WHERE id=1", (prev_round,))
+            conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
+    conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
     conn.commit(); conn.close()
 
 def reset_to_round1():
@@ -350,9 +350,9 @@ def reset_to_round1():
     conn = get_db()
     stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
-        conn.execute("DELETE FROM kline WHERE stock_symbol=%s", (s["symbol"],))
-        conn.execute("DELETE FROM rounds WHERE stock_symbol=%s", (s["symbol"],))
-        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0)", (s["symbol"],))
+        conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+        conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
     conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
     conn.commit()
     # 验证写入
@@ -363,8 +363,8 @@ def reset_to_round1():
 
 def get_user_portfolio(username):
     conn = get_db()
-    buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=%s AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
-    sells = conn.execute("SELECT stock_symbol,SUM(shares) s FROM transactions WHERE username=%s AND trade_type IN('sell','force_close') GROUP BY stock_symbol", (username,)).fetchall()
+    buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
+    sells = conn.execute("SELECT stock_symbol,SUM(shares) s FROM transactions WHERE username=? AND trade_type IN('sell','force_close') GROUP BY stock_symbol", (username,)).fetchall()
     conn.close()
     sm = {r["stock_symbol"]: r["s"] for r in sells}
     stocks = {s["symbol"]: s for s in get_stocks()}
@@ -379,7 +379,7 @@ def get_user_portfolio(username):
 
 def get_user_market_making(username):
     conn = get_db()
-    rows = conn.execute("SELECT t.stock_symbol,t.price sp,t.shares,t.trade_date,COALESCE(s.current_price,t.price) cp,COALESCE(s.name,t.stock_symbol) nm FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol WHERE t.username=%s AND t.trade_type='sell' ORDER BY t.trade_date DESC", (username,)).fetchall()
+    rows = conn.execute("SELECT t.stock_symbol,t.price sp,t.shares,t.trade_date,COALESCE(s.current_price,t.price) cp,COALESCE(s.name,t.stock_symbol) nm FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol WHERE t.username=? AND t.trade_type='sell' ORDER BY t.trade_date DESC", (username,)).fetchall()
     conn.close()
     return pd.DataFrame([{"股票": r["nm"], "卖出价": round(r["sp"], 2), "当前价": round(r["cp"], 2), "数量": r["shares"], "对手方盈亏": round((r["cp"] - r["sp"]) * r["shares"], 2), "时间": r["trade_date"]} for r in rows])
 
@@ -427,7 +427,7 @@ def get_kline_data(symbol):
         JOIN (
             SELECT round, MAX(id) AS id
             FROM kline
-            WHERE stock_symbol=%s
+            WHERE stock_symbol=?
             GROUP BY round
         ) latest ON latest.id = k.id
         ORDER BY k.round
@@ -1241,7 +1241,7 @@ def page_admin_stock_mgmt():
                     cc1, cc2 = st.columns(2)
                     if cc1.button("确认改价", key=f"cf_up_{s['id']}", type="primary", use_container_width=True):
                         old_price = s["current_price"]
-                        conn = get_db(); conn.execute("UPDATE stocks SET current_price=%s,previous_close=%s WHERE id=%s", (np_, np_, s["id"])); conn.commit(); conn.close()
+                        conn = get_db(); conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"])); conn.commit(); conn.close()
                         log_action(st.session_state.username, "stock_price_update", s["symbol"], f"{old_price} -> {np_}")
                         st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
                     if cc2.button("取消", key=f"cx_up_{s['id']}", use_container_width=True):
