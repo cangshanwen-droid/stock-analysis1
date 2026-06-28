@@ -1061,6 +1061,11 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
 
     section[data-testid="stSidebar"] * { color: #eef2ff !important; }
+    section[data-testid="stSidebar"] div, section[data-testid="stSidebar"] section {
+        background: transparent !important; border: none !important;
+        box-shadow: none !important; outline: none !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] { padding: 0 !important; margin: 0 !important; }
 
     .sb-brand {
         padding: 36px 28px 20px 28px;
