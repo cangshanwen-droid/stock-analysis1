@@ -381,8 +381,6 @@ section.main > div.block-container {
 
 /* 侧边栏桌面样式 */
 @media (min-width: 768px) {
-    [data-testid="stSidebar"] { background: var(--text) !important; }
-    [data-testid="stSidebar"] > div:first-child { background: var(--text); padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
 }
 </style>
@@ -390,31 +388,33 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    section[data-testid="stSidebar"] { background-color: #121828 !important; }
-    section[data-testid="stSidebar"] > div:first-child { background-color: #121828 !important; padding: 0 !important; }
+    section[data-testid="stSidebar"] { background-color: #0d1117 !important; }
+    section[data-testid="stSidebar"] > div:first-child { background-color: #0d1117 !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer { display: none !important; }
 
-    .sb-brand { padding: 28px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .sb-brand .name { font-size: 24px; font-weight: 700; color: #ffffff; }
-    .sb-brand .sub { font-size: 13px; color: #b0b8d0; margin-top: 4px; }
-    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .sb-user .uname { font-size: 15px; font-weight: 600; color: #ffffff; margin-bottom: 2px; }
-    .sb-user .urole { font-size: 13px; color: #d0d8f0; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-right: 6px; vertical-align: middle; }
-    .menu-group-label { font-size: 10px; font-weight: 700; color: #b0b8d0; letter-spacing: 1.2px; padding: 18px 20px 6px 20px; }
+    .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid #21262d; }
+    .sb-brand .name { font-size: 24px; font-weight: 700; color: #f0f6fc; }
+    .sb-brand .sub { font-size: 12px; color: #8b949e; margin-top: 4px; letter-spacing: 1px; }
+    .sb-user { padding: 18px 20px 20px 20px; border-bottom: 1px solid #21262d; }
+    .sb-user .uname { font-size: 15px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
+    .sb-user .urole { font-size: 13px; color: #c9d1d9; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3fb950; margin-right: 8px; vertical-align: middle; }
+    .menu-group-label { font-size: 11px; font-weight: 600; color: #8b949e; letter-spacing: .5px; padding: 20px 20px 8px 20px; }
 
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 12px 12px !important; margin: 3px 10px !important; border-radius: 8px !important;
-        color: #e0e4ec !important; font-size: 15px !important; font-weight: 500 !important;
-        min-height: auto !important; position: relative !important;
+        padding: 10px 14px !important; margin: 2px 10px !important; border-radius: 6px !important;
+        color: #e6edf3 !important; font-size: 15px !important; font-weight: 500 !important;
+        min-height: auto !important; position: relative !important; cursor: pointer !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #222a42 !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] { background: #222a42 !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #21262d !important; color: #ffffff !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
+        background: #1f6feb22 !important; color: #58a6ff !important;
+    }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 20px; background: #ef4444; border-radius: 0 4px 4px 0;
+        width: 3px; height: 18px; background: #f85149; border-radius: 0 3px 3px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { margin: 0; font-size: 15px; font-weight: 500; }
