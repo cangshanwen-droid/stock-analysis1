@@ -1477,18 +1477,16 @@ def page_overview():
         st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin:16px 0 8px 0;">各股票盈亏</div>""", unsafe_allow_html=True)
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(
-            y=df["name"], x=df["pnl"], orientation="h",
-            marker_color=[pnl_color(v) for v in df["pnl"]],
-            text=[fmt_pnl(v) for v in df["pnl"]],
+            x=df["name"], y=df["pnl"],
+            marker_color=[pnl_color(v) for v in df["pnl"]], text=[fmt_pnl(v) for v in df["pnl"]],
             textposition="outside", marker_line_width=0,
         ))
         fig.update_layout(
-            margin=dict(t=8, b=0, l=0, r=80), height=max(120, len(df)*45+40),
+            margin=dict(t=8, b=0, l=20, r=20), height=260,
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
-            yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False, autorange="reversed"),
+            yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
         )
-        fig.update_traces(textposition="outside", cliponaxis=False)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_portfolio():
