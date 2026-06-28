@@ -1096,9 +1096,9 @@ SIDEBAR_CSS = """
         padding: 2px 8px !important; gap: 0 !important; border: none !important; background: transparent !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
-        opacity: 0 !important; position: absolute !important;
+        position: absolute !important; opacity: 0 !important;
         width: 1px !important; height: 1px !important; margin: -1px !important;
-        padding: 0 !important; overflow: hidden !important; pointer-events: none !important;
+        padding: 0 !important; border: 0 !important; background: transparent !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important; align-items: center !important;
@@ -1108,6 +1108,7 @@ SIDEBAR_CSS = """
         background: transparent !important; border: none !important;
         cursor: pointer !important; position: relative !important;
         gap: 0 !important; min-height: 0 !important; line-height: 1.3 !important;
+        z-index: 1 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
         background: rgba(255,255,255,.04) !important; color: #94a3b8 !important;
