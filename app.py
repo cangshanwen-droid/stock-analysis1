@@ -267,15 +267,13 @@ footer { display: none !important; }
 
 /* ===== 颜色系统 ===== */
 :root {
-    --bg:       #F5F7FA;
+    --bg:       #f5f7fb;
     --card:     #FFFFFF;
-    --text:     #1A1A2E;
-    --text-2nd: #4A4A6A;
-    --text-aux: #8A8AAA;
-    --border:   #E8E8F0;
+    --text:     #111827;
+    --text-2nd: #666;
     --primary:  #2D6AFF;
-    --green:    #00C853;
-    --red:      #FF1744;
+    --green:    #16a34a;
+    --red:      #ef4444;
 }
 
 /* ===== 移动端基础 ===== */
@@ -287,10 +285,9 @@ section.main > div.block-container {
 /* 顶栏 */
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 0 12px 0; font-size: 14px; color: var(--text-aux);
+    padding: 8px 0 12px 0; font-size: 14px; color: #666;
 }
-.topbar .brand { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: 1px; }
-.topbar .topbar-right { display: flex; gap: 12px; align-items: center; }
+.topbar .brand { font-size: 24px; font-weight: 700; color: var(--text); }
 
 /* KPI 网格 - 移动端 2x2 */
 .kpi-grid {
@@ -298,15 +295,15 @@ section.main > div.block-container {
     margin-bottom: 20px;
 }
 .kpi-card {
-    background: var(--card); border-radius: 12px; padding: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.04); border: 1px solid var(--border);
+    background: var(--card); border-radius: 10px; padding: 24px 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.04);
 }
-.kpi-card .label { font-size: 11px; color: var(--text-aux); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.kpi-card .label { font-size: 13px; color: #666; margin-bottom: 6px; }
 .kpi-card .value {
-    font-size: 20px; font-weight: 700; color: var(--text);
+    font-size: 28px; font-weight: 600; color: var(--text);
     font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
 }
-.kpi-card .delta { font-size: 12px; margin-top: 2px; }
+.kpi-card .delta { font-size: 14px; margin-top: 2px; }
 .kpi-card .delta.up { color: var(--green); }
 .kpi-card .delta.down { color: var(--red); }
 
@@ -394,28 +391,28 @@ section.main > div.block-container {
 SIDEBAR_CSS = """
 <style>
     .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
-    .sb-brand .name { font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 2px; }
-    .sb-brand .sub { font-size: 10px; color: #667788; letter-spacing: 2px; margin-top: 2px; }
+    .sb-brand .name { font-size: 24px; font-weight: 700; color: #ffffff; }
+    .sb-brand .sub { font-size: 13px; color: #a1a9c0; margin-top: 4px; }
     .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
-    .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; }
-    .sb-user .urole { font-size: 11px; color: #aab8c4; margin-top: 2px; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #2D6AFF; margin-right: 6px; }
+    .sb-user .uname { font-size: 14px; font-weight: 600; color: #ffffff; }
+    .sb-user .urole { font-size: 13px; color: #a1a9c0; margin-top: 4px; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-right: 6px; }
     .menu-group-label { font-size: 9px; font-weight: 700; color: #8899aa; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important; align-items: center !important; padding: 10px 16px !important;
-        margin: 1px 8px !important; border-radius: 8px !important; color: #d8dfe6 !important;
-        font-size: 13px !important; font-weight: 500 !important; transition: all .15s !important;
+        display: flex !important; align-items: center !important; padding: 10px 12px !important;
+        margin: 4px 8px !important; border-radius: 8px !important; color: #ffffff !important;
+        font-size: 14px !important; font-weight: 500 !important; transition: all .15s !important;
         min-height: auto !important; position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.08) !important; color: #ffffff !important;
+        background: #2c2f44 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(45,106,255,.18) !important; color: #ffffff !important;
+        background: #2c2f44 !important; color: #ffffff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 20px; background: #2D6AFF; border-radius: 0 4px 4px 0;
+        width: 3px; height: 20px; background: #ef4444; border-radius: 0 4px 4px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
@@ -423,11 +420,11 @@ SIDEBAR_CSS = """
     }
     .sb-exit-btn { padding: 20px 12px 16px 12px; }
     .sb-exit-btn button {
-        width: 100% !important; background: transparent !important; border: 1px solid rgba(255,23,68,.2) !important;
-        color: var(--red) !important; border-radius: 8px !important; font-size: 13px !important;
-        font-weight: 600 !important; height: 40px !important; transition: all .15s !important;
+        width: 100% !important; background: #ffffff !important;
+        border: none !important; color: #1a1c2c !important; border-radius: 6px !important;
+        font-size: 14px !important; font-weight: 600 !important; height: 40px !important;
     }
-    .sb-exit-btn button:hover { background: rgba(255,23,68,.08) !important; color: #FF1744 !important; border-color: rgba(255,23,68,.4) !important; }
+    .sb-exit-btn button:hover { background: #e0e0e0 !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer { display: none !important; }
 </style>
@@ -533,7 +530,7 @@ def fmt_pct(v, s=True):
 
 def fmt_num(v):     return f"{v:,}"
 
-GREEN = "#00C853"; RED = "#FF1744"
+GREEN = "#16a34a"; RED = "#ef4444"
 
 def pnl_class(v): return "up" if v >= 0 else "down"
 def pnl_color(v): return GREEN if v >= 0 else RED
@@ -543,37 +540,33 @@ def pnl_color(v): return GREEN if v >= 0 else RED
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def page_overview():
     data = get_user_overview(st.session_state.username)
-    st.markdown(f"""
-    <div class="topbar">
-        <span class="brand">双镜</span>
-        <span class="topbar-right"><span>{st.session_state.username}</span><span>更新 {datetime.now().strftime('%H:%M')}</span></span>
-    </div>""", unsafe_allow_html=True)
-
     bal = get_user_balance(st.session_state.username)
-    st.markdown(f"""
-    <div class="kpi-grid">
-        {kpi_card("总资产", fmt_money(data["total_assets"] + bal))}
-        {kpi_card("可用余额", fmt_money(bal))}
-        {kpi_card("今日盈亏", fmt_money(data["total_pnl"]),
-        fmt_pct(data["pnl_ratio"]), data["total_pnl"] >= 0)}
-        {kpi_card("收益率", fmt_pct(data["pnl_ratio"]))}
-    </div>""", unsafe_allow_html=True)
+
+    # 顶栏：品牌左 / 用户名+更新时间右
+    c1, c2 = st.columns([7, 2])
+    with c1: st.markdown('<span style="font-size:24px;font-weight:700;color:#111827;">双镜</span>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{st.session_state.username} | 更新 {datetime.now().strftime("%H:%M")}</p>', unsafe_allow_html=True)
+
+    # 4 KPI卡片
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.markdown(f'<div class="kpi-card"><div class="label">总资产</div><div class="value">{fmt_money(data["total_assets"] + bal)}</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="kpi-card"><div class="label">可用余额</div><div class="value">{fmt_money(bal)}</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="kpi-card"><div class="label">今日盈亏</div><div class="value">{fmt_money(data["total_pnl"])}</div><div class="delta {"up" if data["total_pnl"]>=0 else "down"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="kpi-card"><div class="label">收益率</div><div class="value" style="color:{"#16a34a" if data["pnl_ratio"]>=0 else "#ef4444"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
 
     if data["stock_pnl"]:
-        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">各股票盈亏</div>""", unsafe_allow_html=True)
+        st.markdown('<div style="font-size:20px;font-weight:500;color:#111827;margin:24px 0 16px 0;">各股票盈亏</div>', unsafe_allow_html=True)
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(
             x=df["name"], y=df["pnl"],
-            marker_color=[pnl_color(v) for v in df["pnl"]],
-            text=[fmt_pnl(v) for v in df["pnl"]],
-            textposition="outside",
-            marker_line_width=0, width=.35,
+            marker_color="#16c757", text=[fmt_pnl(v) for v in df["pnl"]],
+            textposition="outside", marker_line_width=0,
         ))
         fig.update_layout(
-            margin=dict(t=8, b=0, l=0, r=0), height=240,
+            margin=dict(t=16, b=0, l=20, r=20), height=380,
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            xaxis=dict(showgrid=False, tickfont=dict(size=11, color="#8A8AAA")),
-            yaxis=dict(showgrid=False, tickfont=dict(size=11, color="#8A8AAA"), zeroline=False),
+            xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
+            yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
@@ -879,7 +872,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
 ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "交易管理", "股票汇总", "股票管理", "用户管理"]
 
-st.set_page_config(page_title="双镜 - 智能投资分析系统", page_icon="", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
