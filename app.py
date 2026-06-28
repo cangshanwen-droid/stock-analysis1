@@ -367,24 +367,24 @@ SIDEBAR_CSS = """
     .sb-brand .sub { font-size: 10px; color: #64748B; letter-spacing: 2px; margin-top: 2px; }
     .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
     .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; }
-    .sb-user .urole { font-size: 11px; color: #8A8AAA; margin-top: 2px; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); margin-right: 6px; }
-    .menu-group-label { font-size: 9px; font-weight: 700; color: #4A4A6A; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
+    .sb-user .urole { font-size: 11px; color: #8899aa; margin-top: 2px; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #2D6AFF; margin-right: 6px; }
+    .menu-group-label { font-size: 9px; font-weight: 700; color: #778899; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important; align-items: center !important; padding: 10px 16px !important;
-        margin: 1px 8px !important; border-radius: 8px !important; color: #8A8AAA !important;
+        margin: 1px 8px !important; border-radius: 8px !important; color: #c0c8d4 !important;
         font-size: 13px !important; font-weight: 500 !important; transition: all .15s !important;
         min-height: auto !important; position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.06) !important; color: #E8E8F0 !important;
+        background: rgba(255,255,255,.08) !important; color: #fff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(45,106,255,.15) !important; color: #2D6AFF !important;
+        background: rgba(45,106,255,.18) !important; color: #6db3ff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 20px; background: var(--primary); border-radius: 0 4px 4px 0;
+        width: 3px; height: 20px; background: #2D6AFF; border-radius: 0 4px 4px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
@@ -406,42 +406,29 @@ SIDEBAR_CSS = """
 # 登录页
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def page_login():
-    # 隐藏 header 和 toolbar
     st.markdown("""
     <style>
-        .stApp { background: #f7f8fa; }
+        .stApp { background: #f0f2f5; }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
-        div[data-testid="stTextInput"] input {
-            border-radius: 8px !important; border: 1px solid #e2e8f0 !important;
-            padding: 12px 14px !important; font-size: 15px !important;
-        }
-        div[data-testid="stTextInput"] input:focus {
-            border-color: #3182ce !important;
-            box-shadow: 0 0 0 2px rgba(49,130,206,0.2) !important;
-        }
-        div[data-testid="stButton"] button[kind="primary"] {
-            background-color: #e53e3e !important; border-radius: 8px !important;
-            padding: 12px !important; font-size: 16px !important; font-weight: 500 !important;
-            transition: all .25s ease;
-        }
-        div[data-testid="stButton"] button[kind="primary"]:hover {
-            background-color: #c53030 !important; transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(229,62,62,0.3);
-        }
-        div[data-testid="stButton"] button {
-            border-radius: 8px !important; padding: 12px !important; font-size: 16px !important;
-        }
+        div[data-testid="stButton"] button[kind="primary"] { border-radius: 8px !important; padding: 12px !important; font-size: 16px !important; }
+        div[data-testid="stButton"] button { border-radius: 8px !important; padding: 12px !important; }
     </style>""", unsafe_allow_html=True)
 
-    left, center, right = st.columns([1, 6, 1])
+    # 初始化 tab
+    if "login_tab" not in st.session_state:
+        st.session_state.login_tab = "login"
+
+    left, center, right = st.columns([1, 5, 1])
     with center:
+        st.markdown("<div style='height:4vh'></div>", unsafe_allow_html=True)
+
         # 品牌头部
         st.markdown("""
-        <div style="background:linear-gradient(135deg,#0f1420,#1a2236);padding:36px 20px;border-radius:14px 14px 0 0;text-align:center;">
+        <div style="background:linear-gradient(135deg,#0f1420,#1a2236);padding:40px 20px;border-radius:14px 14px 0 0;text-align:center;">
             <h1 style="font-size:42px;font-weight:700;color:#fff;letter-spacing:6px;margin:0;">双镜</h1>
             <div style="width:60px;height:3px;background:#3182ce;margin:12px auto;border-radius:3px;"></div>
-            <p style="font-size:16px;color:#a0aec0;margin-top:8px;">智能投资分析系统</p>
+            <p style="font-size:16px;color:#a0aec0;margin:8px 0 0 0;">智能投资分析系统</p>
         </div>""", unsafe_allow_html=True)
 
         # 消息显示
@@ -450,54 +437,55 @@ def page_login():
             st.session_state.login_error = ""
         if st.session_state.get("login_ok"):
             st.success(st.session_state.login_ok)
+            st.balloons()
             st.session_state.login_ok = ""
 
-        # 登录卡片
-        st.markdown('<div style="background:#fff;padding:32px;border-radius:0 0 14px 14px;box-shadow:0 4px 20px rgba(0,0,0,.06);margin-bottom:24px;">', unsafe_allow_html=True)
-        st.markdown('<p style="font-size:24px;font-weight:600;color:#1a202c;margin:0 0 4px 0;">欢迎回来</p>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size:14px;color:#718096;margin:0 0 24px 0;">登录您的账户</p>', unsafe_allow_html=True)
+        # 卡片体
+        st.markdown('<div style="background:#fff;padding:32px 36px;border-radius:0 0 14px 14px;box-shadow:0 4px 24px rgba(0,0,0,.08);">', unsafe_allow_html=True)
 
-        with st.form("login_form"):
-            st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
-            st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
-            if st.form_submit_button("登录", type="primary", use_container_width=True):
-                u = st.session_state.get("login_u", "")
-                p = st.session_state.get("login_p", "")
-                if not u or not p: st.session_state.login_error = "请输入用户名和密码"
-                else:
-                    ok, role = auth_user(u, p)
-                    if ok:
-                        st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
-                    else: st.session_state.login_error = "用户名或密码错误"
-                st.rerun()
+        # Tab 行
+        c_t, c_r = st.columns(2)
+        with c_t:
+            t = "primary" if st.session_state.login_tab == "login" else "secondary"
+            if st.button("登录", key="tab_l", type=t, use_container_width=True):
+                st.session_state.login_tab = "login"; st.rerun()
+        with c_r:
+            t = "primary" if st.session_state.login_tab == "register" else "secondary"
+            if st.button("注册", key="tab_r", type=t, use_container_width=True):
+                st.session_state.login_tab = "register"; st.rerun()
+
+        # 表单
+        if st.session_state.login_tab == "login":
+            with st.form("login_form"):
+                st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
+                st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
+                if st.form_submit_button("登录", type="primary", use_container_width=True):
+                    u = st.session_state.get("login_u", ""); p = st.session_state.get("login_p", "")
+                    if not u or not p: st.session_state.login_error = "请输入用户名和密码"
+                    else:
+                        ok, role = auth_user(u, p)
+                        if ok: st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                        else: st.session_state.login_error = "用户名或密码错误"
+                    st.rerun()
+        else:
+            with st.form("register_form"):
+                st.text_input("用户名", placeholder="至少3位", label_visibility="collapsed", key="reg_u")
+                st.text_input("密码", type="password", placeholder="至少4位", label_visibility="collapsed", key="reg_p")
+                st.text_input("确认密码", type="password", placeholder="再次输入", label_visibility="collapsed", key="reg_p2")
+                if st.form_submit_button("立即注册", type="primary", use_container_width=True):
+                    u2 = st.session_state.get("reg_u", ""); p2 = st.session_state.get("reg_p", ""); p3 = st.session_state.get("reg_p2", "")
+                    if not u2 or not p2: st.session_state.login_error = "请完整填写"
+                    elif len(u2) < 3: st.session_state.login_error = "用户名至少3位"
+                    elif len(p2) < 4: st.session_state.login_error = "密码至少4位"
+                    elif p2 != p3: st.session_state.login_error = "两次密码不一致"
+                    else:
+                        ok, msg = register_user(u2, p2)
+                        if ok: st.session_state.login_ok = "注册成功，请登录"; st.session_state.login_tab = "login"
+                        else: st.session_state.login_error = msg
+                    st.rerun()
+
         st.markdown('</div>', unsafe_allow_html=True)
-
-        # 分割线
-        st.markdown("""<div style="display:flex;align-items:center;color:#a0aec0;margin:28px 0;"><div style="flex:1;height:1px;background:#e2e8f0;"></div><span style="padding:0 16px;">或</span><div style="flex:1;height:1px;background:#e2e8f0;"></div></div>""", unsafe_allow_html=True)
-
-        # 注册卡片
-        st.markdown('<div style="background:#fff;padding:32px;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);">', unsafe_allow_html=True)
-        st.markdown('<p style="font-size:24px;font-weight:600;color:#1a202c;margin:0 0 4px 0;">创建账户</p>', unsafe_allow_html=True)
-        st.markdown('<p style="font-size:14px;color:#718096;margin:0 0 24px 0;">注册成为新用户</p>', unsafe_allow_html=True)
-
-        with st.form("register_form"):
-            st.text_input("用户名", placeholder="至少3位", label_visibility="collapsed", key="reg_u")
-            st.text_input("密码", type="password", placeholder="至少4位", label_visibility="collapsed", key="reg_p")
-            st.text_input("确认密码", type="password", placeholder="再次输入", label_visibility="collapsed", key="reg_p2")
-            if st.form_submit_button("立即注册", use_container_width=True):
-                u2 = st.session_state.get("reg_u", "")
-                p2 = st.session_state.get("reg_p", "")
-                p3 = st.session_state.get("reg_p2", "")
-                if not u2 or not p2: st.session_state.login_error = "请完整填写"
-                elif len(u2) < 3: st.session_state.login_error = "用户名至少3位"
-                elif len(p2) < 4: st.session_state.login_error = "密码至少4位"
-                elif p2 != p3: st.session_state.login_error = "两次密码不一致"
-                else:
-                    ok, msg = register_user(u2, p2)
-                    if ok: st.session_state.login_ok = "注册成功，请登录"
-                    else: st.session_state.login_error = msg
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<p style="text-align:center;color:#a0aec0;font-size:12px;margin-top:16px;">(c) 2026</p>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 通用组件
@@ -636,6 +624,24 @@ def page_trade_hall():
             add_trade(st.session_state.username, s["symbol"], tt, price, shares)
             st.success("交易成功")
             st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 因子面板（桌面端）
+    st.markdown('<div class="desktop-only" style="margin-top:20px;">', unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">定价因子</div>""", unsafe_allow_html=True)
+    factor_sym = st.selectbox("查看股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="factor_sel")
+    fsym = factor_sym.split("(")[1].rstrip(")")
+    fs = next(x for x in stocks if x["symbol"] == fsym)
+    prev = fs["previous_close"] or fs["current_price"]
+    prem_f = round(1 + 0.2 * (fs["premium_rate"] - 50) / 50, 4)
+    cm = max(fs["industry_carbon_mean"], 1)
+    carb_f = round(1 - 0.5 * (fs["carbon_price"] - cm) / cm, 4)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("昨收价", fmt_money(prev))
+    c2.metric("溢价率", f"{fs['premium_rate']:.0f}%", delta=f"因子 {prem_f}")
+    c3.metric("碳价", f"{fs['carbon_price']:.0f}", delta=f"均值 {cm:.0f}")
+    c4.metric("碳因子", f"{carb_f}")
+    st.caption(f"公式: 理论价 = {fmt_money(prev)} x 买/卖 x {prem_f} x {carb_f} (涨跌停 {fmt_money(prev*0.9)} ~ {fmt_money(prev*1.1)})")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 移动端底部交易栏 + 持仓列表
