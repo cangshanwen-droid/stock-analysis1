@@ -1094,18 +1094,13 @@ SIDEBAR_CSS = """
         box-shadow: 0 0 8px rgba(212,168,83,.3) !important;
     }
 
-    /* 退出按钮 */
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        background: rgba(255,255,255,.04) !important;
-        border: 1px solid rgba(255,255,255,.06) !important;
-        color: rgba(255,255,255,.35) !important;
-        border-radius: 10px !important; padding: 10px !important;
-        font-size: 14px !important;
-        margin: 0 14px !important; width: calc(100% - 28px) !important;
+    /* 退出按钮 — 仅作用于最后那个按钮 */
+    section[data-testid="stSidebar"] button:last-of-type {
+        margin-top: 6px !important;
     }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-        background: rgba(239,68,68,.1) !important;
-        border-color: rgba(239,68,68,.2) !important;
+    section[data-testid="stSidebar"] button:last-of-type:hover {
+        background: rgba(239,68,68,.08) !important;
+        border-color: rgba(239,68,68,.15) !important;
         color: #fca5a5 !important;
     }
 </style>
