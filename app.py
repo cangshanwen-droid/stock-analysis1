@@ -1385,6 +1385,19 @@ def page_admin_user_mgmt():
             if ok: created += 1
         st.success(f"成功创建 {created} 人"); st.rerun()
 
+    st.divider()
+    st.markdown("**批量删除选手**")
+    player_list = [u["username"] for u in users if u["role"] == "player"]
+    to_delete = st.multiselect("选择要删除的选手", player_list)
+    c1, c2 = st.columns([1, 3])
+    with c1:
+        confirm_batch = st.checkbox("确认删除")
+    with c2:
+        if st.button(f"删除 {len(to_delete)} 个选手", type="primary", use_container_width=True, disabled=not confirm_batch or not to_delete):
+            for u in to_delete:
+                delete_user(u)
+            st.success(f"已删除 {len(to_delete)} 人"); st.rerun()
+
     logs = get_audit_logs()
     if logs:
         st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
