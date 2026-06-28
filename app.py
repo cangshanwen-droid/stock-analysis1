@@ -390,25 +390,28 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
+    [data-testid="stSidebar"] { background-color: #121828 !important; }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label { color: #ffffff !important; }
+
     .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
     .sb-brand .name { font-size: 24px; font-weight: 700; color: #ffffff; }
-    .sb-brand .sub { font-size: 13px; color: #a1a9c0; margin-top: 4px; }
+    .sb-brand .sub { font-size: 13px; color: #b0b8d0; margin-top: 4px; }
     .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
     .sb-user .uname { font-size: 14px; font-weight: 600; color: #ffffff; }
-    .sb-user .urole { font-size: 13px; color: #a1a9c0; margin-top: 4px; }
+    .sb-user .urole { font-size: 15px; color: #d0d8f0; margin-top: 4px; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-right: 6px; }
-    .menu-group-label { font-size: 9px; font-weight: 700; color: #8899aa; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
+    .menu-group-label { font-size: 9px; font-weight: 700; color: #c5cde0; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important; align-items: center !important; padding: 10px 12px !important;
-        margin: 4px 8px !important; border-radius: 8px !important; color: #ffffff !important;
-        font-size: 14px !important; font-weight: 500 !important; transition: all .15s !important;
+        display: flex !important; align-items: center !important; padding: 12px 10px !important;
+        margin: 6px 8px !important; border-radius: 8px !important; color: #ffffff !important;
+        font-size: 17px !important; font-weight: 500 !important; transition: all .15s !important;
         min-height: auto !important; position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: #2c2f44 !important;
+        background: #222a42 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: #2c2f44 !important; color: #ffffff !important;
+        background: #222a42 !important; color: #ffffff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
@@ -416,13 +419,14 @@ SIDEBAR_CSS = """
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0; font-size: 13px; font-weight: 500;
+        margin: 0; font-size: 17px; font-weight: 500;
     }
+    section[data-testid="stSidebar"] hr { border-color: #2a3248 !important; }
     .sb-exit-btn { padding: 20px 12px 16px 12px; }
     .sb-exit-btn button {
         width: 100% !important; background: #ffffff !important;
-        border: none !important; color: #1a1c2c !important; border-radius: 6px !important;
-        font-size: 14px !important; font-weight: 600 !important; height: 40px !important;
+        border: none !important; color: #121828 !important; border-radius: 10px !important;
+        font-size: 17px !important; font-weight: 500 !important; height: 40px !important;
     }
     .sb-exit-btn button:hover { background: #e0e0e0 !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
