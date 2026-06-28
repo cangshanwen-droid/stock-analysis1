@@ -888,64 +888,109 @@ def page_admin_settle():
     with c1:
         confirm_close = st.checkbox("确认", key="cf_close")
         if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
-            conn = get_db()
-            count = 0
-            for s in stocks:
-                r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-                if r and r[0]:
-                    cr = r[0]
-                    txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
-                    bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-                    st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-                    tv = sum(t["shares"] for t in txns)
-                    np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-                    pc = s["previous_close"] or s["current_price"]
-                    hi = max(np_, pc); lo = min(np_, pc)
-                    cpct = round((np_-pc)/pc*100,2) if pc else 0
-                    conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-                    conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
-                    conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-                    count += 1
-            conn.commit(); conn.close()
-            st.success(f"已闭市 {count} 只股票"); st.rerun()
+            st.session_state.do_close_all = True
+            st.rerun()
+
+    # 处理一键闭市（在 st.rerun 后执行，避免回调里操作冲突）
+    if st.session_state.get("do_close_all"):
+        st.session_state.do_close_all = False
+        conn = get_db()
+        count = 0
+        for s in stocks:
+            r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+            if r and r[0]:
+                cr = r[0]
+                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
+                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                tv = sum(t["shares"] for t in txns)
+                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+                pc = s["previous_close"] or s["current_price"]
+                hi = max(np_, pc); lo = min(np_, pc)
+                cpct = round((np_-pc)/pc*100,2) if pc else 0
+                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+                conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+                conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+                count += 1
+        conn.commit(); conn.close()
+        st.success(f"已闭市 {count} 只股票"); st.rerun()
     with c2:
         confirm_open = st.checkbox("确认", key="cf_open")
         if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
-            conn = get_db()
-            for s in stocks:
-                r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-                if not r:
-                    max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
-                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
-            conn.commit(); conn.close()
-            st.success("全部已开市"); st.rerun()
+            st.session_state.do_open_all = True
+            st.rerun()
     with c3:
         confirm_undo = st.checkbox("确认", key="cf_undo")
         if st.button("撤销上一轮", use_container_width=True, key="undo_all", disabled=not confirm_undo):
-            conn = get_db()
-            for s in stocks:
-                max_r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=1", (s["symbol"],)).fetchone()[0]
-                if max_r and max_r > 1:
-                    conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
-                    conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
-                    prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r-1)).fetchone()
-                    prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
-                    conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
-            conn.commit(); conn.close()
-            st.success("已撤销上一轮"); st.rerun()
+            st.session_state.do_undo_all = True
+            st.rerun()
     with c4:
         confirm_r1 = st.checkbox("确认", key="cf_r1")
         if st.button("回到第一轮", type="secondary", use_container_width=True, key="reset_all", disabled=not confirm_r1):
+            st.session_state.do_reset_all = True
+            st.rerun()
+
+    # 处理批量操作
+    for action in ["do_close_all", "do_open_all", "do_undo_all", "do_reset_all"]:
+        if st.session_state.get(action):
+            st.session_state[action] = False
             conn = get_db()
-            for s in stocks:
-                first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
-                init_p = first_k["open_price"] if first_k else s["current_price"]
-                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
-                conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
-                conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_p, init_p, s["symbol"]))
-                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
-            conn.commit(); conn.close()
-            st.success("全部已回到第一轮"); st.rerun()
+            if action == "do_close_all":
+                cnt = 0
+                for s in stocks:
+                    r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+                    if r and r[0]:
+                        cr = r[0]
+                        txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
+                        bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                        st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                        tv = sum(t["shares"] for t in txns)
+                        np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+                        pc = s["previous_close"] or s["current_price"]
+                        hi = max(np_, pc); lo = min(np_, pc)
+                        cpct = round((np_-pc)/pc*100,2) if pc else 0
+                        conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+                        conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+                        conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+                        cnt += 1
+                conn.commit()
+                st.success(f"已闭市 {cnt} 只"); st.rerun()
+            elif action == "do_open_all":
+                cnt = 0
+                for s in stocks:
+                    r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+                    if not r:
+                        max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
+                        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
+                        cnt += 1
+                conn.commit()
+                st.success(f"已开市 {cnt} 只"); st.rerun()
+            elif action == "do_undo_all":
+                cnt = 0
+                for s in stocks:
+                    max_r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=1", (s["symbol"],)).fetchone()[0]
+                    if max_r and max_r > 1:
+                        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                        conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r-1)).fetchone()
+                        prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
+                        conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
+                        cnt += 1
+                conn.commit()
+                st.success(f"已撤销 {cnt} 只"); st.rerun()
+            elif action == "do_reset_all":
+                cnt = 0
+                for s in stocks:
+                    first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
+                    init_p = first_k["open_price"] if first_k else s["current_price"]
+                    conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+                    conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+                    conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_p, init_p, s["symbol"]))
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
+                    cnt += 1
+                conn.commit()
+                st.success(f"已重置 {cnt} 只到第1轮"); st.rerun()
+            conn.close()
     st.divider()
 
     for s in stocks:
