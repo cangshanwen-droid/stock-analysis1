@@ -870,9 +870,31 @@ def page_admin_user_mgmt():
 def page_admin_settle():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
-    st.caption("结算当前轮次 → 撮合买卖订单 → 生成K线 → 开启新一轮交易")
+    st.caption("结算当前轮次 -> 撮合买卖订单 -> 生成K线 -> 开启新一轮交易")
+
     stocks = get_stocks()
     if not stocks: st.info("无股票"); return
+
+    # 一键操作
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("一键闭市", type="primary", use_container_width=True, key="close_all"):
+            for s in stocks:
+                conn = get_db(); r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
+                if r: settle_round(s["symbol"])
+            st.success("全部已闭市"); st.rerun()
+    with c2:
+        if st.button("一键开市", use_container_width=True, key="open_all"):
+            conn = get_db()
+            for s in stocks:
+                r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+                if not r:
+                    max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
+            conn.commit(); conn.close()
+            st.success("全部已开市"); st.rerun()
+    st.divider()
+
     for s in stocks:
         conn = get_db(); r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
         cr = r[0] if r and r[0] else 0; settled = (cr == 0)
