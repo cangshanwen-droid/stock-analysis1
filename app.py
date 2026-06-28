@@ -535,7 +535,7 @@ CUSTOM_CSS = """
     .card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.08); border-color: rgba(99,102,241,.1); }
     .card-title { font-size:.82rem; color:#8892a4; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
     .card-value { font-size:1.9rem; font-weight:800; color:#0f1729; margin:4px 0; }
-    .up { color:#00c853!important; } .down { color:#ff1744!important; }
+    .up { color:#10B981!important; } .down { color:#EF4444!important; }
 
     /* 侧边栏 */
     section[data-testid="stSidebar"] > div:first-child {
@@ -586,7 +586,8 @@ CUSTOM_CSS = """
 
     /* 指标卡片 */
     .kpi-box {
-        background:#fff; border-radius:18px; padding:1.3rem; text-align:center;
+        background:#fff; border-radius:16px; padding:16px 20px; text-align:center;
+        height:120px; display:flex; flex-direction:column; justify-content:flex-end;
         box-shadow:0 2px 12px rgba(0,0,0,.04); border:1px solid rgba(0,0,0,.03);
         transition: all .3s; position:relative; overflow:hidden;
     }
@@ -597,9 +598,12 @@ CUSTOM_CSS = """
         transform: scaleX(0); transition: transform .4s;
     }
     .kpi-box:hover::before { transform: scaleX(1); }
-    .kpi-box .label { font-size:.75rem; color:#8892a4; text-transform:uppercase; letter-spacing:.8px; font-weight:700; }
-    .kpi-box .value { font-size:1.9rem; font-weight:800; color:#0f1729; margin:5px 0; }
-    .kpi-box .delta { font-size:.85rem; font-weight:600; }
+    .kpi-box .label { font-size:10px; color:#8892a4; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    .kpi-box .value {
+        font-size:1.8rem; font-weight:800; color:#0f1729; margin:4px 0;
+        font-feature-settings:"tnum"; font-variant-numeric:tabular-nums;
+    }
+    .kpi-box .delta { font-size:12px; font-weight:600; }
 
     /* 表格 */
     div[data-testid="stDataFrame"] table { border-radius: 12px; overflow:hidden; }
@@ -609,9 +613,17 @@ CUSTOM_CSS = """
     div[data-testid="stDataFrame"] tbody tr:hover td { background: transparent; }
 
     /* Expander */
-    .stExpander { border-radius:14px !important; border:1px solid rgba(0,0,0,.05) !important; }
+    .stExpander { border-radius:14px !important; border:1px solid rgba(0,0,0,.05) !important; margin-bottom:8px !important; }
     .stExpander:hover { border-color: rgba(99,102,241,.1) !important; }
     .stExpander summary { font-weight:700; font-size:.9rem; }
+
+    /* 页面间距 */
+    section.main > div.block-container { padding: 32px !important; max-width:100% !important; }
+    .stApp { background: #f0f4f8; }
+
+    /* 隐藏 Streamlit 品牌 */
+    [data-testid="stStatusWidget"] { display: none !important; }
+    .stDeployButton, footer, [data-testid="stDecoration"] { display: none !important; }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width:6px; }
@@ -635,6 +647,13 @@ def metric_card(title, value, delta=None, delta_color="normal"):
     dc = {"normal":"up","inverse":"down","off":"gray"}.get(delta_color,"gray")
     d = f'<div class="delta {dc}">{delta}</div>' if delta else ""
     return f'<div class="kpi-box"><div class="label">{title}</div><div class="value">{value}</div>{d}</div>'
+
+def fmt_money(v):  return f"¥{v:,.0f}"
+def fmt_pnl(v):    return f"¥{v:,.2f}"
+def fmt_pct(v):    return f"{v:,.2f}%"
+
+CHART_GREEN = "#10B981"
+CHART_RED   = "#EF4444"
 
 # ──────────────────────────────────────────────
 # 页面
@@ -789,7 +808,7 @@ def page_overview():
         stats = get_platform_stats()
         cols = st.columns(3)
         for i,(t,v) in enumerate([("🏦 总市值",f"¥{stats['total_mv']:,.0f}"),
-                                   ("📈 平台总盈亏",f"¥{stats['total_pnl']:+,.0f}"),
+                                   ("📈 平台总盈亏",f"¥{stats['total_pnl']:,.0f}"),
                                    ("👥 活跃用户",str(stats['active_users']))]):
             cols[i].markdown(metric_card(t,v), unsafe_allow_html=True)
         st.divider()
@@ -797,8 +816,8 @@ def page_overview():
         if not summary.empty:
             sdf = summary.sort_values("总盈亏")
             fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"],
-                text=sdf["总盈亏"].apply(lambda x: f"¥{x:+,.0f}"),
-                marker_color=["#ff1744" if v<0 else "#00c853" for v in sdf["总盈亏"]]))
+                text=sdf["总盈亏"].apply(lambda x: f"¥{x:,.0f}"),
+                marker_color=["#EF4444" if v<0 else "#10B981" for v in sdf["总盈亏"]]))
             fig.update_traces(textposition="outside")
             fig.update_layout(title={"text":"🏆 各股票盈亏排行","x":0.5},
                 xaxis_title="",yaxis_title="总盈亏(¥)",height=380,
@@ -811,7 +830,7 @@ def page_overview():
     for i,(t,v,d,c) in enumerate([
         ("💰 总资产",f"¥{data['total_assets']:,.0f}",None,"off"),
         ("📉 总成本",f"¥{data['total_cost']:,.0f}",None,"off"),
-        ("📈 总盈亏",f"¥{data['total_pnl']:+,.0f}",f"{data['pnl_ratio']:+.2f}%",
+        ("📈 总盈亏",f"¥{data['total_pnl']:,.0f}",f"{data['pnl_ratio']:.2f}%",
          "normal" if data['total_pnl']>=0 else "inverse"),
         ("🧾 持仓数",str(data['stock_count']),None,"off"),
     ]):
@@ -821,8 +840,8 @@ def page_overview():
         st.divider()
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(x=df["name"], y=df["pnl"],
-            text=df["pnl"].apply(lambda x: f"¥{x:+,.0f}"),
-            marker_color=["#00c853" if v>=0 else "#ff1744" for v in df["pnl"]]))
+            text=df["pnl"].apply(lambda x: f"¥{x:,.0f}"),
+            marker_color=["#10B981" if v>=0 else "#EF4444" for v in df["pnl"]]))
         fig.update_traces(textposition="outside")
         fig.update_layout(title={"text":"📊 各股票盈亏","x":0.5},
             xaxis_title="",yaxis_title="盈亏(¥)",height=350,
@@ -896,7 +915,7 @@ def page_trade_hall():
             st.metric("当前溢价率", f"{s['premium_rate']:.0f}%")
         with c2:
             bar = "█" * int(s["premium_rate"] / 5) + "░" * (20 - int(s["premium_rate"] / 5))
-            color = "#00c853" if prem_f >= 1 else "#ff1744"
+            color = "#10B981" if prem_f >= 1 else "#EF4444"
             st.markdown(f"""
             <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
                 <span style="color:#a78bfa;font-size:.75rem;font-weight:700">溢价因子</span>
@@ -922,7 +941,7 @@ def page_trade_hall():
                       delta_color="off")
         with c2:
             eco_pct = max(0, min(100, (s["carbon_price"] / max(c_mean*2, 1)) * 100))
-            color2 = "#00c853" if carb_f >= 1 else "#ff1744"
+            color2 = "#10B981" if carb_f >= 1 else "#EF4444"
             st.markdown(f"""
             <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
                 <span style="color:#06b6d4;font-size:.75rem;font-weight:700">碳因子</span>
@@ -989,8 +1008,8 @@ def page_portfolio():
     d["成本价"]=d["成本价"].apply(lambda x:f"¥{x:,.2f}")
     d["现价"]=d["现价"].apply(lambda x:f"¥{x:,.2f}")
     d["市值"]=d["市值"].apply(lambda x:f"¥{x:,.2f}")
-    d["盈亏"]=d["盈亏"].apply(lambda x:f"¥{x:+,.2f}")
-    d["收益率"]=d["收益率"].apply(lambda x:f"{x:+.2f}%")
+    d["盈亏"]=d["盈亏"].apply(lambda x:f"¥{x:,.2f}")
+    d["收益率"]=d["收益率"].apply(lambda x:f"{x:.2f}%")
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.dataframe(d, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1002,7 +1021,7 @@ def page_portfolio():
     cols[0].markdown(metric_card("总市值",f"¥{tv:,.0f}"), unsafe_allow_html=True)
     cols[1].markdown(metric_card("总成本",f"¥{tc:,.0f}"), unsafe_allow_html=True)
     dc = "normal" if tp>=0 else "inverse"
-    cols[2].markdown(metric_card("总盈亏",f"¥{tp:+,.0f}",f"{tp/tc*100:+.2f}%" if tc else "0%",dc), unsafe_allow_html=True)
+    cols[2].markdown(metric_card("总盈亏",f"¥{tp:,.0f}",f"{tp/tc*100:.2f}%" if tc else "0%",dc), unsafe_allow_html=True)
 
 def page_market_making():
     render_header()
@@ -1014,9 +1033,9 @@ def page_market_making():
             d = mm.copy()
             d["卖出价"]=d["卖出价"].apply(lambda x:f"¥{x:,.2f}")
             d["当前价"]=d["当前价"].apply(lambda x:f"¥{x:,.2f}")
-            d["对手方盈亏"]=d["对手方盈亏"].apply(lambda x:f"¥{x:+,.2f}")
+            d["对手方盈亏"]=d["对手方盈亏"].apply(lambda x:f"¥{x:,.2f}")
             st.dataframe(d, use_container_width=True, hide_index=True)
-            st.metric("客户总盈亏", f"¥{mm['对手方盈亏'].sum():+,.2f}")
+            st.metric("客户总盈亏", f"¥{mm['对手方盈亏'].sum():,.2f}")
     with tab2:
         st.info("暂无平仓记录")
 
@@ -1058,7 +1077,7 @@ def page_kline():
     if df_k.empty: return
 
     # 专业蜡烛图
-    colors = ["#00c853" if r["close_price"]>=r["open_price"] else "#ff1744" for _,r in df_k.iterrows()]
+    colors = ["#10B981" if r["close_price"]>=r["open_price"] else "#EF4444" for _,r in df_k.iterrows()]
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
         vertical_spacing=0.05, row_heights=[0.75,0.25],
         subplot_titles=(f"{sel} — 日K线图", "成交量"))
@@ -1066,7 +1085,7 @@ def page_kline():
     fig.add_trace(go.Candlestick(
         x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
         low=df_k["low_price"], close=df_k["close_price"],
-        increasing_line_color="#00c853", decreasing_line_color="#ff1744",
+        increasing_line_color="#10B981", decreasing_line_color="#EF4444",
         name="K线"), row=1, col=1)
 
     fig.add_trace(go.Bar(x=df_k.index, y=df_k["volume"],
@@ -1104,7 +1123,7 @@ def page_kline():
     disp["最高"]=disp["high_price"].apply(lambda x:f"¥{x:,.2f}")
     disp["最低"]=disp["low_price"].apply(lambda x:f"¥{x:,.2f}")
     disp["收盘"]=disp["close_price"].apply(lambda x:f"¥{x:,.2f}")
-    disp["涨跌幅"]=disp["change_pct"].apply(lambda x:f"{x:+.2f}%")
+    disp["涨跌幅"]=disp["change_pct"].apply(lambda x:f"{x:.2f}%")
     disp["成交量"]=disp["volume"].apply(lambda x:f"{x:,.0f}")
     st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(
         columns={"round":"轮次"}), use_container_width=True, hide_index=True)
@@ -1180,7 +1199,7 @@ def page_admin_stock_summary():
     cols = st.columns(3)
     cols[0].markdown(metric_card("🏦 总市值",f"¥{stats['total_mv']:,.0f}"), unsafe_allow_html=True)
     dc = "normal" if stats['total_pnl']>=0 else "inverse"
-    cols[1].markdown(metric_card("📈 总盈亏",f"¥{stats['total_pnl']:+,.0f}",delta_color=dc), unsafe_allow_html=True)
+    cols[1].markdown(metric_card("📈 总盈亏",f"¥{stats['total_pnl']:,.0f}",delta_color=dc), unsafe_allow_html=True)
     cols[2].markdown(metric_card("👥 活跃用户",str(stats['active_users'])), unsafe_allow_html=True)
 
     summary = get_admin_summary()
@@ -1189,8 +1208,8 @@ def page_admin_stock_summary():
     st.divider()
     sdf = summary.sort_values("总盈亏")
     fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"],
-        text=sdf["总盈亏"].apply(lambda x:f"¥{x:+,.0f}"),
-        marker_color=["#00c853" if v>=0 else "#ff1744" for v in sdf["总盈亏"]]))
+        text=sdf["总盈亏"].apply(lambda x:f"¥{x:,.0f}"),
+        marker_color=["#10B981" if v>=0 else "#EF4444" for v in sdf["总盈亏"]]))
     fig.update_traces(textposition="outside")
     fig.update_layout(title={"text":"🏆 盈亏排行","x":0.5}, height=380,
         xaxis_title="",yaxis_title="总盈亏(¥)",plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)")
@@ -1205,15 +1224,15 @@ def page_admin_stock_summary():
                 dd = d.copy()
                 dd["成本价"]=dd["成本价"].apply(lambda x:f"¥{x:,.2f}")
                 dd["当前价"]=dd["当前价"].apply(lambda x:f"¥{x:,.2f}")
-                dd["盈亏"]=dd["盈亏"].apply(lambda x:f"¥{x:+,.2f}")
-                dd["收益率"]=dd["收益率"].apply(lambda x:f"{x:+.2f}%")
+                dd["盈亏"]=dd["盈亏"].apply(lambda x:f"¥{x:,.2f}")
+                dd["收益率"]=dd["收益率"].apply(lambda x:f"{x:.2f}%")
                 st.dataframe(dd, use_container_width=True, hide_index=True)
 
     disp = summary.copy()
     disp["当前价"]=disp["当前价"].apply(lambda x:f"¥{x:,.2f}")
     disp["总成本"]=disp["总成本"].apply(lambda x:f"¥{x:,.2f}")
-    disp["总盈亏"]=disp["总盈亏"].apply(lambda x:f"¥{x:+,.2f}")
-    disp["收益率"]=disp["收益率"].apply(lambda x:f"{x:+.2f}%")
+    disp["总盈亏"]=disp["总盈亏"].apply(lambda x:f"¥{x:,.2f}")
+    disp["收益率"]=disp["收益率"].apply(lambda x:f"{x:.2f}%")
     st.dataframe(disp, use_container_width=True, hide_index=True)
 
 def page_admin_stock_mgmt():
@@ -1325,9 +1344,10 @@ SIDEBAR_CSS = """
     .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
     .sb-brand .name { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 2px; }
     .sb-brand .sub { font-size: 10px; color: #475569; letter-spacing: 2px; margin-top: 2px; }
-    .sb-user { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .sb-user .uname { font-size: 13px; font-weight: 600; color: #e2e8f0; }
-    .sb-user .urole { font-size: 11px; color: #64748b; margin-top: 1px; }
+    .sb-user { padding: 16px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .sb-user .urole { font-size: 11px; color: #64748b; }
+    .sb-user .urole .dot { display:inline-block;width:6px;height:6px;border-radius:50%;background:#3B82F6;margin-right:6px; }
     .menu-group-label {
         font-size: 9px; font-weight: 700; color: #475569; text-transform: uppercase;
         letter-spacing: 1.5px; padding: 18px 20px 6px 20px;
@@ -1402,10 +1422,11 @@ def main():
 
         # 用户信息
         role_text = "管理员" if st.session_state.role == "admin" else "选手"
+        role_dot = '<span class="dot"></span>'
         st.markdown(f"""
         <div class="sb-user">
             <div class="uname">{st.session_state.username}</div>
-            <div class="urole">{role_text}</div>
+            <div class="urole">{role_dot}{role_text}</div>
         </div>
         """, unsafe_allow_html=True)
 
