@@ -858,207 +858,116 @@ def get_platform_stats():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESPONSIVE_CSS = """
 <style>
-*, *::before, *::after { box-sizing: border-box; }
-html, body, [class*="css"] {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+* { box-sizing: border-box; }
+html, body, .stApp {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
     -webkit-font-smoothing: antialiased;
 }
-
-/* ===== 隐藏 Streamlit 默认 UI ===== */
 #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
 [data-testid="stDecoration"], [data-testid="stToolbar"],
-[data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
+[data-testid="manage-app-button"] { display: none !important; }
 
-/* ===== 科技感深色主题 ===== */
-:root {
-    --bg:       #060b1a;
-    --bg-card:  rgba(10,20,42,.75);
-    --text:     #e2e8f0;
-    --text-2nd: #8896ac;
-    --text-3rd: #5a6f8a;
-    --primary:  #d4a853;
-    --accent:   #d4a853;
-    --profit:   #ef4455;
-    --loss:     #718096;
-    --green:    #10b981;
-    --red:      #ef4455;
-    --border:   rgba(255,255,255,.04);
-    --radius:   12px;
-    --shadow:   0 1px 3px rgba(0,0,0,.3);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
-}
-
-.stApp {
-    background: linear-gradient(160deg, #040a18 0%, #0a1628 50%, #060d1e 100%) !important;
-}
-.stApp > div { background: transparent !important; }
-section.main { background: transparent !important; }
-section.main > div.block-container {
-    padding: 6px 14px !important; max-width: 100% !important;
-}
+.stApp { background: #f8f9fc !important; }
+section.main > div.block-container { padding: 8px 16px !important; max-width: 100% !important; }
 
 /* 顶栏 */
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 4px 0 12px 0; font-size: 13px; color: var(--text-2nd);
-    border-bottom: 1px solid var(--border); margin-bottom: 16px;
+    padding: 2px 0 10px 0; font-size: 12px; color: #64748b;
+    border-bottom: 1px solid #e2e8f0; margin-bottom: 14px;
 }
-.topbar .brand {
-    font-size: 22px; font-weight: 800;
-    background: linear-gradient(135deg, #f0e6d3, #d4a853);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
+.topbar .brand { font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: 1px; }
 
-/* 磨砂玻璃卡片通用 */
-.kpi-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px;
-}
+/* KPI 卡片 */
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
 .kpi-card {
-    background: var(--bg-card); border-radius: var(--radius); padding: 18px 20px;
-    border: 1px solid var(--border);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    transition: all .2s ease;
+    background: #fff; border-radius: 10px; padding: 16px 18px;
+    border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,.04);
 }
-.kpi-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.3); }
-.kpi-card .label { font-size: 10px; color: var(--text-3rd); margin-bottom: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
-.kpi-card .value {
-    font-size: 26px; font-weight: 700; color: #eef2ff;
-    font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
-}
+.kpi-card .label { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+.kpi-card .value { font-size: 24px; font-weight: 700; color: #0f172a; font-feature-settings: "tnum"; }
 .kpi-card .delta { font-size: 12px; margin-top: 2px; }
-.kpi-card .delta.up { color: var(--profit); }
-.kpi-card .delta.down { color: var(--loss); }
+.kpi-card .delta.up { color: #ef4455; }
+.kpi-card .delta.down { color: #718096; }
 
-/* 磨砂股票卡片 */
+/* 股票卡片 */
 .stock-card {
-    background: var(--bg-card); border-radius: var(--radius); padding: 14px;
-    margin-bottom: 8px; border: 1px solid var(--border);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    transition: all .15s ease;
+    background: #fff; border-radius: 10px; padding: 14px;
+    margin-bottom: 8px; border: 1px solid #e2e8f0;
 }
-.stock-card:active { transform: scale(.98); }
 .stock-card .sc-header { display: flex; justify-content: space-between; align-items: center; }
-.stock-card .sc-name { font-size: 15px; font-weight: 600; color: #eef2ff; }
-.stock-card .sc-pct { font-size: 14px; font-weight: 600; }
-.stock-card .sc-pct.up { color: var(--profit); }
-.stock-card .sc-pct.down { color: var(--loss); }
+.stock-card .sc-name { font-size: 14px; font-weight: 600; color: #0f172a; }
+.stock-card .sc-pct { font-size: 13px; font-weight: 600; }
+.stock-card .sc-pct.up { color: #ef4455; }
+.stock-card .sc-pct.down { color: #718096; }
 .stock-card .sc-detail {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px;
-    margin: 6px 0; font-size: 12px; color: var(--text-2nd);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px;
+    margin: 4px 0; font-size: 12px; color: #64748b;
 }
-.stock-card .sc-detail .val { color: #eef2ff; font-weight: 500; }
+.stock-card .sc-detail .val { color: #0f172a; font-weight: 500; }
 
-.section-title { font-size: 15px; font-weight: 700; color: #eef2ff; margin-bottom: 10px; }
-.chart-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
-.chart-metric {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; backdrop-filter: blur(8px);
-}
-.chart-metric .label { font-size: 10px; color: var(--text-3rd); margin-bottom: 2px; }
-.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: #eef2ff; }
-.chart-metric .value.up { color: var(--profit); }
-.chart-metric .value.down { color: var(--loss); }
-.chart-panel {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 6px 6px 0 6px; backdrop-filter: blur(8px);
-}
-/* 核选项：所有不确定的容器透明 */
-div[class*="css"] { background: transparent !important; }
-div[class*="st-"] { background: transparent !important; }
-section[class*="main"] > div { background: transparent !important; }
-/* Plotly 图表容器透明 */
-.js-plotly-plot, .plot-container, .plotly, .main-svg {
-    background: transparent !important;
-}
-.svg-container { background: transparent !important; }
+.section-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+.chart-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 8px 0; }
+.chart-metric { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
+.chart-metric .label { font-size: 10px; color: #64748b; }
+.chart-metric .value { font-size: 15px; font-weight: 700; color: #0f172a; }
+.chart-metric .value.up { color: #ef4455; }
+.chart-metric .value.down { color: #718096; }
+.chart-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px; }
+
 .mobile-nav { margin: 0 0 10px 0; }
-.mobile-nav div[role="radiogroup"] {
-    display: flex !important; flex-wrap: wrap !important; gap: 4px !important;
-}
+.mobile-nav div[role="radiogroup"] { display: flex !important; flex-wrap: wrap !important; gap: 4px !important; }
 .mobile-nav div[role="radiogroup"] label {
-    padding: 6px 10px !important;
-    border-radius: 6px !important;
-    font-size: 12px !important;
-    color: rgba(255,255,255,.4) !important;
-    background: rgba(255,255,255,.03) !important;
-    border: 1px solid transparent !important;
-    cursor: pointer !important;
-}
-.mobile-nav div[role="radiogroup"] label:hover {
-    background: rgba(255,255,255,.06) !important;
+    padding: 6px 10px !important; border-radius: 6px !important;
+    font-size: 12px !important; color: #64748b !important;
+    background: #f1f5f9 !important; cursor: pointer !important;
 }
 .mobile-nav div[role="radiogroup"] label[data-checked="true"] {
-    background: rgba(212,168,83,.1) !important;
-    border-color: rgba(212,168,83,.15) !important;
-    color: #fff !important;
+    background: #1e293b !important; color: #fff !important;
 }
 .mobile-nav div[role="radiogroup"] label input { display: none !important; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
-/* ===== 桌面端 @media ===== */
 @media (min-width: 768px) {
-    section.main > div.block-container { padding: 18px 28px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    section.main > div.block-container { padding: 16px 24px !important; max-width: 1200px !important; margin: 0 auto !important; }
     .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    .kpi-card { padding: 16px 20px; }
-    .kpi-card .label { font-size: 10px; }
-    .kpi-card .value { font-size: 22px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
     .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .desktop-table {
-        background: var(--bg-card); border-radius: var(--radius); padding: 2px 14px 12px 14px;
-        border: 1px solid var(--border); backdrop-filter: blur(12px);
-    }
+    .desktop-table { background: #fff; border-radius: 10px; padding: 2px 12px 10px 12px; border: 1px solid #e2e8f0; }
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] th {
-        background: transparent !important; font-size: 10px !important;
-        color: var(--text-3rd) !important; font-weight: 600 !important;
-        text-transform: uppercase; letter-spacing: .8px;
-        border-bottom: 1px solid rgba(255,255,255,.03) !important;
-        padding: 10px 8px !important;
+        background: transparent !important; font-size: 11px !important;
+        color: #64748b !important; font-weight: 600 !important;
+        border-bottom: 1px solid #e2e8f0 !important; padding: 8px !important;
     }
     [data-testid="stDataFrame"] td {
-        font-size: 13px !important; color: #e2e8f0 !important;
-        border-bottom: 1px solid rgba(255,255,255,.02) !important;
-        padding: 8px !important;
+        font-size: 13px !important; color: #0f172a !important;
+        border-bottom: 1px solid #f1f5f9 !important; padding: 8px !important;
     }
     div[data-testid="stButton"] button {
-        border-radius: 8px !important; font-weight: 500 !important;
-        transition: all .15s !important; background: rgba(255,255,255,.03) !important;
-        border: 1px solid var(--border) !important; color: #c8d0e0 !important;
-        font-size: 13px !important;
+        border-radius: 6px !important; font-weight: 500 !important;
+        background: #fff !important; border: 1px solid #e2e8f0 !important;
+        color: #475569 !important; font-size: 13px !important;
     }
-    div[data-testid="stButton"] button:hover {
-        border-color: rgba(255,255,255,.1) !important; color: #fff !important;
-    }
+    div[data-testid="stButton"] button:hover { border-color: #94a3b8 !important; }
     div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, #d4a853, #c49a3f) !important;
-        border: none !important; color: #0a0e1a !important; font-weight: 600 !important;
-    }
-    div[data-testid="stButton"] button[kind="primary"]:hover {
-        box-shadow: 0 4px 16px rgba(212,168,83,.25) !important;
+        background: #0f172a !important; border: none !important; color: #fff !important;
     }
     .st-emotion-cache-1aej4i3, details {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 10px !important; margin-bottom: 6px !important;
+        background: #fff !important; border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important; margin-bottom: 6px !important;
     }
     .st-emotion-cache-1aej4i3 summary, details summary {
-        font-weight: 500 !important; padding: 10px 14px !important; color: #c8d0e0 !important;
+        font-weight: 500 !important; padding: 8px 12px !important; color: #0f172a !important;
     }
     input, div[data-baseweb="input"] input {
-        background: rgba(10,18,35,.85) !important;
-        border: 1px solid rgba(255,255,255,.05) !important;
-        color: #e2e8f0 !important; border-radius: 8px !important;
-        padding: 10px 14px !important; font-size: 14px !important;
+        background: #fff !important; border: 1px solid #e2e8f0 !important;
+        color: #0f172a !important; border-radius: 6px !important;
+        padding: 8px 12px !important; font-size: 14px !important;
     }
-    input:focus { border-color: rgba(212,168,83,.25) !important; }
-    div[data-testid="stMarkdown"] { color: #c8d0e0 !important; }
-    /* 移除所有默认组件白色/黑色块 */
-    div[data-testid="stVerticalBlock"] > div { background: transparent !important; }
-    section.main > div:not([class]) { background: transparent !important; }
-    [data-testid="column"] { background: transparent !important; gap: 0 !important; }
+    input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 2px rgba(59,130,246,.1) !important; }
 }
 
 @media (min-width: 768px) {
@@ -1069,90 +978,43 @@ section[class*="main"] > div { background: transparent !important; }
 
 SIDEBAR_CSS = """
 <style>
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #040814 0%, #0a1228 100%) !important;
-        border-right: 1px solid rgba(255,255,255,.03) !important;
-    }
-    section[data-testid="stSidebar"] > div:first-child { background: transparent !important; padding: 0 !important; }
+    section[data-testid="stSidebar"] { background: #0f172a !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
+    .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
+    [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
 
-    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
-
-    section[data-testid="stSidebar"] * { color: #eef2ff !important; }
-    section[data-testid="stSidebar"] div, section[data-testid="stSidebar"] section {
-        background: transparent !important; border: none !important;
-        box-shadow: none !important; outline: none !important;
-    }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] { padding: 0 !important; margin: 0 !important; }
-
-    .sb-brand {
-        padding: 36px 28px 20px 28px;
-        border-bottom: 1px solid rgba(255,255,255,.04);
-    }
+    .sb-brand { padding: 24px 22px 14px 22px; border-bottom: 1px solid #1e293b; }
     .sb-brand .name p {
-        font-size: 30px !important; font-weight: 800 !important;
-        letter-spacing: 4px !important;
-        background: linear-gradient(135deg, #f0e6d3, #d4a853) !important;
-        -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important;
-        background-clip: text !important;
+        font-size: 24px !important; font-weight: 800 !important; letter-spacing: 3px !important;
+        color: #f1f5f9 !important; margin: 0 !important;
     }
-    .sb-brand .sub p { color: rgba(255,255,255,.2) !important; font-size: 11px !important; letter-spacing: 6px !important; }
-    .sb-user { padding: 18px 28px 16px 28px; border-bottom: 1px solid rgba(255,255,255,.04); }
-    .sb-user .uname p { font-size: 16px !important; font-weight: 600 !important; color: #ffffff !important; }
-    .sb-user .urole p { font-size: 13px !important; color: rgba(255,255,255,.35) !important; }
-    .sb-user .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,.6); }
-    .menu-group-label { padding: 20px 28px 8px 28px; }
-    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
+    .sb-brand .sub p { color: #64748b !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
+    .sb-user { padding: 12px 22px 10px 22px; border-bottom: 1px solid #1e293b; }
+    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 0 2px 0 !important; }
+    .sb-user .urole p { font-size: 12px !important; color: #64748b !important; margin: 0 !important; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; margin-right: 4px; }
+    .menu-group-label { padding: 14px 22px 4px 22px; }
+    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    /* === 导航 radio === */
-    section[data-testid="stSidebar"] div[role="radiogroup"] {
-        border: none !important;
-        background: transparent !important;
-        gap: 0 !important;
-        padding: 0 !important;
-    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 0 6px !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important;
-        align-items: center !important;
-        padding: 11px 18px !important;
-        margin: 2px 12px !important;
-        border-radius: 8px !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        color: rgba(255,255,255,.35) !important;
-        background: transparent !important;
-        border: 1px solid transparent !important;
-        cursor: pointer !important;
-        transition: all .12s ease !important;
-        min-height: auto !important;
+        padding: 8px 12px !important; margin: 1px 0 !important;
+        border-radius: 6px !important; font-size: 13px !important; font-weight: 500 !important;
+        color: #94a3b8 !important; background: transparent !important;
+        border: none !important; cursor: pointer !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.04) !important;
-        color: rgba(255,255,255,.65) !important;
+        background: rgba(255,255,255,.04) !important; color: #e2e8f0 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
-        background: rgba(212,168,83,.08) !important;
-        border-color: rgba(212,168,83,.12) !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
-        position: relative !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
-        content: '' !important;
-        position: absolute !important;
-        left: -1px !important;
-        top: 6px !important; bottom: 6px !important;
-        width: 2px !important;
-        background: linear-gradient(180deg, #d4a853, #b8942f) !important;
-        border-radius: 0 2px 2px 0 !important;
-        box-shadow: 0 0 6px rgba(212,168,83,.3) !important;
+        background: rgba(255,255,255,.06) !important; color: #fff !important; font-weight: 600 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0 !important; font-size: 14px !important; font-weight: inherit !important; color: inherit !important;
+        margin: 0 !important; font-size: 13px !important; color: inherit !important;
     }
 </style>
 """
