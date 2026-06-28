@@ -103,7 +103,6 @@ def settle_round(symbol):
     nr = cr + 1
     cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
     cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
-    cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (symbol, nr))
     conn.commit(); conn.close()
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
