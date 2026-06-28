@@ -557,9 +557,41 @@ def close_market():
                 conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
                 conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-        conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
-        # 闭市时取消所有剩余挂单
+        # 闭市时批量撮合剩余挂单
+        mkt_round = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+        mr = mkt_round["round"] if mkt_round else 1
+        for stock in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+            sym = stock["symbol"]
+            buys = conn.execute("SELECT id,username,price,shares FROM order_book WHERE stock_symbol=? AND trade_type='buy' ORDER BY price DESC, id ASC", (sym,)).fetchall()
+            sells = conn.execute("SELECT id,username,price,shares FROM order_book WHERE stock_symbol=? AND trade_type='sell' ORDER BY price ASC, id ASC", (sym,)).fetchall()
+            if not buys or not sells:
+                continue
+            hb = buys[0]["price"]
+            ls_ = sells[0]["price"]
+            if hb < ls_:
+                continue
+            mp = round((hb + ls_) / 2, 2)
+            tb = sum(b["shares"] for b in buys)
+            ts = sum(s["shares"] for s in sells)
+            mv_ = min(tb, ts)
+            br = mv_ / tb if tb else 0
+            sr = mv_ / ts if ts else 0
+            for b in buys:
+                fill = int(b["shares"] * br)
+                if fill > 0:
+                    c = round(fill * mp, 2)
+                    conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (c, b["username"]))
+                    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
+                        (b["username"], sym, mp, fill, mr))
+            for s in sells:
+                fill = int(s["shares"] * sr)
+                if fill > 0:
+                    c = round(fill * mp, 2)
+                    conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (c, s["username"]))
+                    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
+                        (s["username"], sym, mp, fill, mr))
         conn.execute("DELETE FROM order_book")
+        conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
 
     try:
