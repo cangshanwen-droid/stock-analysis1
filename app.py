@@ -36,6 +36,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY AUTOINCREMENT,stock_symbol TEXT NOT NULL,round INTEGER DEFAULT 0,open_price REAL DEFAULT 0,high_price REAL DEFAULT 0,low_price REAL DEFAULT 0,close_price REAL DEFAULT 0,volume REAL DEFAULT 0,buy_total REAL DEFAULT 0,sell_total REAL DEFAULT 0,change_pct REAL DEFAULT 0,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL,round INTEGER DEFAULT 0,is_settled INTEGER DEFAULT 0,PRIMARY KEY(stock_symbol,round));
         CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1),state TEXT DEFAULT 'open',round INTEGER DEFAULT 1);
+        CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT DEFAULT '',detail TEXT DEFAULT '',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
     """)
     conn.commit()
     cur.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(1,'open',1)")
@@ -101,6 +102,32 @@ def compute_price(stock):
     t = prev * (bt / st_) * pf * cf
     return max(round(prev * 0.9, 2), min(round(prev * 1.1, 2), round(t, 2)))
 
+def log_action(actor, action, target="", detail="", conn=None):
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
+    conn.execute(
+        "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+        (actor or "system", action, str(target or ""), str(detail or "")),
+    )
+    if own_conn:
+        conn.commit(); conn.close()
+
+def get_holding_shares(username, symbol, conn=None):
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
+    r = conn.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
+            COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
+        FROM transactions
+        WHERE username=? AND stock_symbol=?
+    """, (username, symbol)).fetchone()
+    if own_conn:
+        conn.close()
+    return int((r["bought"] or 0) - (r["sold"] or 0)) if r else 0
+
 def settle_round(symbol):
     conn = get_db(); cur = conn.cursor()
     stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
@@ -165,6 +192,12 @@ def get_all_users():
     conn = get_db(); r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall(); conn.close()
     return [dict(x) for x in r]
 
+def get_audit_logs(limit=80):
+    conn = get_db()
+    r = conn.execute("SELECT actor,action,target,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(x) for x in r]
+
 def reset_pwd(u, np_):
     conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (hash_pwd(np_), u)); conn.commit(); conn.close()
 
@@ -198,14 +231,21 @@ def add_trade(username, symbol, tt, price, shares):
     r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 0
     if cr == 0: conn.close(); return False, "市场已闭市，无法交易"
+    stock = conn.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
+    if not stock: conn.close(); return False, "股票不存在或已停用"
     cost = price * shares
     if tt == "buy":
         bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
         if not bal or bal["balance"] < cost: conn.close(); return False, "余额不足"
         conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
     else:
+        holding = get_holding_shares(username, symbol, conn)
+        if holding < shares:
+            conn.close()
+            return False, f"持仓不足：当前仅持有 {holding} 股"
         conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
+    log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
     conn.commit(); conn.close()
     return True, "交易成功"
 
@@ -622,9 +662,9 @@ def page_login():
             if st.button("登录", key="tab_l", type=t, use_container_width=True):
                 st.session_state.login_tab = "login"; st.rerun()
         with c_r:
-            t = "primary" if st.session_state.login_tab == "register" else "secondary"
-            if st.button("注册", key="tab_r", type=t, use_container_width=True):
-                st.session_state.login_tab = "register"; st.rerun()
+            if st.button("注册已关闭", key="tab_r", type="secondary", use_container_width=True):
+                st.session_state.login_error = "比赛账号由管理员统一创建，请联系赛事管理员"
+                st.rerun()
 
         # 表单
         if st.session_state.login_tab == "login":
@@ -636,25 +676,13 @@ def page_login():
                     if not u or not p: st.session_state.login_error = "请输入用户名和密码"
                     else:
                         ok, role = auth_user(u, p)
-                        if ok: st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                        if ok:
+                            st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                            log_action(u, "login", "auth", "success")
                         else: st.session_state.login_error = "用户名或密码错误"
                     st.rerun()
         else:
-            with st.form("register_form"):
-                st.text_input("用户名", placeholder="至少3位", label_visibility="collapsed", key="reg_u")
-                st.text_input("密码", type="password", placeholder="至少4位", label_visibility="collapsed", key="reg_p")
-                st.text_input("确认密码", type="password", placeholder="再次输入", label_visibility="collapsed", key="reg_p2")
-                if st.form_submit_button("立即注册", type="primary", use_container_width=True):
-                    u2 = st.session_state.get("reg_u", ""); p2 = st.session_state.get("reg_p", ""); p3 = st.session_state.get("reg_p2", "")
-                    if not u2 or not p2: st.session_state.login_error = "请完整填写"
-                    elif len(u2) < 3: st.session_state.login_error = "用户名至少3位"
-                    elif len(p2) < 4: st.session_state.login_error = "密码至少4位"
-                    elif p2 != p3: st.session_state.login_error = "两次密码不一致"
-                    else:
-                        ok, msg = register_user(u2, p2)
-                        if ok: st.session_state.login_ok = "注册成功，请登录"; st.session_state.login_tab = "login"
-                        else: st.session_state.login_error = msg
-                    st.rerun()
+            st.info("公开注册已关闭。比赛账号由管理员统一创建。")
 
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('<p style="text-align:center;color:#a0aec0;font-size:12px;margin-top:16px;">(c) 2026</p>', unsafe_allow_html=True)
@@ -1095,7 +1123,9 @@ def page_admin_stock_mgmt():
                 s, n, p = sym.strip().upper(), name.strip(), price
                 if s and n and p > 0:
                     ok, msg = add_stock(s, n, p)
-                    if ok: st.session_state.stock_add_ok = msg
+                    if ok:
+                        log_action(st.session_state.username, "stock_add", s, f"name={n}, price={p}")
+                        st.session_state.stock_add_ok = msg
                     else: st.session_state.stock_add_err = msg
                 else: st.session_state.stock_add_err = "请完整填写"
                 st.rerun()
@@ -1116,14 +1146,36 @@ def page_admin_stock_mgmt():
             with c1:
                 np_ = st.number_input("新价格", min_value=0.01, step=0.5, format="%.2f", value=float(s["current_price"]), key=f"np_{s['id']}")
                 if st.button("修改价格", key=f"up_{s['id']}"):
-                    conn = get_db(); conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"])); conn.commit(); conn.close()
-                    st.rerun()
+                    st.session_state[f"confirm_price_{s['id']}"] = True; st.rerun()
+                if st.session_state.get(f"confirm_price_{s['id']}"):
+                    st.warning(f"确认将 {s['symbol']} 价格改为 {np_:.2f}？")
+                    cc1, cc2 = st.columns(2)
+                    if cc1.button("确认改价", key=f"cf_up_{s['id']}", type="primary", use_container_width=True):
+                        old_price = s["current_price"]
+                        conn = get_db(); conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"])); conn.commit(); conn.close()
+                        log_action(st.session_state.username, "stock_price_update", s["symbol"], f"{old_price} -> {np_}")
+                        st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
+                    if cc2.button("取消", key=f"cx_up_{s['id']}", use_container_width=True):
+                        st.session_state[f"confirm_price_{s['id']}"] = False; st.rerun()
             with c2:
                 cp = st.number_input("碳价", value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
                 pr = st.number_input("溢价率", value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
-                if st.button("保存参数", key=f"sv_{s['id']}"): update_stock_params(s["id"], carbon_price=cp, premium_rate=pr); st.rerun()
+                if st.button("保存参数", key=f"sv_{s['id']}"):
+                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr)
+                    log_action(st.session_state.username, "stock_params_update", s["symbol"], f"carbon_price={cp}, premium_rate={pr}")
+                    st.rerun()
             with c3:
-                if st.button("删除", key=f"del_{s['id']}"): delete_stock(s["id"]); st.rerun()
+                if st.button("删除", key=f"del_{s['id']}"):
+                    st.session_state[f"confirm_delete_{s['id']}"] = True; st.rerun()
+                if st.session_state.get(f"confirm_delete_{s['id']}"):
+                    st.error(f"确认删除 {s['name']} ({s['symbol']})？该股票将从列表隐藏。")
+                    dc1, dc2 = st.columns(2)
+                    if dc1.button("确认删除", key=f"cf_del_{s['id']}", type="primary", use_container_width=True):
+                        delete_stock(s["id"])
+                        log_action(st.session_state.username, "stock_delete", s["symbol"], s["name"])
+                        st.session_state[f"confirm_delete_{s['id']}"] = False; st.rerun()
+                    if dc2.button("取消", key=f"cx_del_{s['id']}", use_container_width=True):
+                        st.session_state[f"confirm_delete_{s['id']}"] = False; st.rerun()
 
 def page_admin_user_mgmt():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
@@ -1139,6 +1191,40 @@ def page_admin_user_mgmt():
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">操作</div>""", unsafe_allow_html=True)
+    with st.expander("创建比赛账号", expanded=False):
+        with st.form("admin_create_user"):
+            cu1, cu2 = st.columns(2)
+            with cu1:
+                new_user = st.text_input("用户名", key="new_player_user", placeholder="例如 company_a")
+            with cu2:
+                new_pwd = st.text_input("初始密码", type="password", key="new_player_pwd", placeholder="至少6位")
+            if st.form_submit_button("创建选手账号", type="primary", use_container_width=True):
+                u_new = new_user.strip()
+                if len(u_new) < 3 or len(new_pwd) < 6:
+                    st.warning("用户名至少3位，密码至少6位")
+                else:
+                    ok, msg = register_user(u_new, new_pwd, "player")
+                    if ok:
+                        log_action(st.session_state.username, "user_create", u_new, "role=player")
+                        st.success("已创建选手账号")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+    with st.expander("修改管理员密码", expanded=False):
+        with st.form("admin_change_pwd"):
+            admin_pwd = st.text_input("新管理员密码", type="password", placeholder="至少8位", key="admin_new_pwd")
+            admin_pwd2 = st.text_input("确认新密码", type="password", placeholder="再次输入", key="admin_new_pwd2")
+            if st.form_submit_button("更新管理员密码", type="primary", use_container_width=True):
+                if len(admin_pwd) < 8:
+                    st.warning("管理员密码至少8位")
+                elif admin_pwd != admin_pwd2:
+                    st.warning("两次密码不一致")
+                else:
+                    reset_pwd(st.session_state.username, admin_pwd)
+                    log_action(st.session_state.username, "admin_password_change", st.session_state.username, "self service")
+                    st.success("管理员密码已更新，请妥善保存")
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**重置密码**")
@@ -1146,7 +1232,10 @@ def page_admin_user_mgmt():
             target = st.selectbox("用户", [u["username"] for u in users if u["role"] == "player"], key="rp_user")
             np_ = st.text_input("新密码", type="password", placeholder="至少4位")
             if st.form_submit_button("重置密码", type="primary", use_container_width=True):
-                if target and np_ and len(np_) >= 4: reset_pwd(target, np_); st.success("已重置"); st.rerun()
+                if target and np_ and len(np_) >= 6:
+                    reset_pwd(target, np_)
+                    log_action(st.session_state.username, "password_reset", target, "admin reset")
+                    st.success("已重置"); st.rerun()
                 else: st.warning("请完整填写")
     with c2:
         st.markdown("**启用/禁用账户**")
@@ -1155,7 +1244,16 @@ def page_admin_user_mgmt():
             cur_status = next((row_get(u, "status", "active") for u in users if u["username"] == target2), "active")
             btn_label = "禁用" if cur_status != "disabled" else "启用"
             if st.form_submit_button(btn_label, type="primary", use_container_width=True):
-                toggle_user(target2); st.success(f"{target2} 已{btn_label}"); st.rerun()
+                toggle_user(target2)
+                log_action(st.session_state.username, "user_toggle", target2, btn_label)
+                st.success(f"{target2} 已{btn_label}"); st.rerun()
+
+    logs = get_audit_logs()
+    if logs:
+        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
+        log_df = pd.DataFrame(logs)
+        log_df.columns = ["操作者", "动作", "对象", "详情", "时间"]
+        st.dataframe(log_df, use_container_width=True, hide_index=True)
 def page_admin_settle():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
@@ -1187,7 +1285,9 @@ def page_admin_settle():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认闭市", type="primary", use_container_width=True):
-                    close_market(); st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
+                    close_market()
+                    log_action(st.session_state.username, "market_close", "round", current_round)
+                    st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_close = False; st.rerun()
@@ -1201,7 +1301,9 @@ def page_admin_settle():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认开市", type="primary", use_container_width=True):
-                    open_market(); st.session_state.cf_open = False; st.rerun()
+                    open_market()
+                    log_action(st.session_state.username, "market_open", "round", current_round + 1)
+                    st.session_state.cf_open = False; st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_open = False; st.rerun()
@@ -1215,7 +1317,9 @@ def page_admin_settle():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认撤销", type="primary", use_container_width=True):
-                    undo_market(); st.session_state.cf_undo = False; st.rerun()
+                    undo_market()
+                    log_action(st.session_state.username, "market_undo", "round", f"{current_round} -> {current_round - 1}")
+                    st.session_state.cf_undo = False; st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_undo = False; st.rerun()
@@ -1230,6 +1334,7 @@ def page_admin_settle():
             with cc1:
                 if st.button("确认重置", type="primary", use_container_width=True):
                     actual = reset_to_round1(); st.session_state.cf_r1 = False
+                    log_action(st.session_state.username, "market_reset_round1", "round", actual)
                     st.success(f"已回到第 {actual} 轮"); st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
