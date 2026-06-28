@@ -587,10 +587,6 @@ def page_portfolio():
                 <div>现价 <span class="val">{fmt_money(r["current_price"])}</span></div>
                 <div>盈亏 <span class="val" style="color:{pnl_color(r["pnl"])}">{fmt_money(r["pnl"])}</span></div>
             </div>
-            <div class="sc-actions">
-                <button class="sc-btn buy" onclick="quickTrade('{r["symbol"]}','buy')">买入</button>
-                <button class="sc-btn sell" onclick="quickTrade('{r["symbol"]}','sell')">卖出</button>
-            </div>
         </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
