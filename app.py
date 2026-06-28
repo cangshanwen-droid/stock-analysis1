@@ -838,6 +838,22 @@ def page_kline():
     sel = st.selectbox("选择股票", list(opts.keys()))
     sym = opts[sel]["symbol"]; s = opts[sel]
     data = get_kline_data(sym)
+
+    # 轮次筛选
+    if data:
+        max_round = max(d["round"] for d in data)
+        round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
+        round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
+        if round_sel != "全部":
+            target_r = int(round_sel.replace("第","").replace("轮",""))
+            data = [d for d in data if d["round"] == target_r]
+            if len(data) == 1:
+                data = [
+                    {"round": 1, "open_price": data[0]["open_price"], "high_price": data[0]["high_price"],
+                     "low_price": data[0]["low_price"], "close_price": data[0]["close_price"],
+                     "volume": data[0]["volume"], "change_pct": data[0]["change_pct"]}
+                ]
+
     if not data:
         import numpy as np; np.random.seed(42)
         base = s["current_price"]; closes = [base]
