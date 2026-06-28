@@ -93,23 +93,25 @@ def init_db():
                 price = calc_initial_price(rev, ts_, ipe)
                 exists = conn.execute("SELECT id FROM stocks WHERE symbol=?", (sym,)).fetchone()
                 if exists:
-                    conn.execute("""UPDATE stocks SET name=?,current_price=?,previous_close=?,is_deleted=0,
+                    # 不覆盖 current_price/previous_close（保留交易产生的价格变化）
+                    conn.execute("""UPDATE stocks SET name=?,is_deleted=0,
                         total_shares=?,revenue=?,industry_pe=?,carbon_price=?,industry_carbon_mean=?,premium_rate=? WHERE symbol=?""",
-                        (name, price, price, ts_, rev, ipe, cp, icm, pr, sym))
+                        (name, ts_, rev, ipe, cp, icm, pr, sym))
                 else:
                     conn.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
                         total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (sym, name, price, price, price * 10000 * 20 / 10000, ts_, rev, ipe, cp, icm, pr))
-                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
             # 隐藏多余的旧股票
             existing = [r[0] for r in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
             for sym in existing:
                 if sym not in [s[0] for s in stock_defs]:
                     conn.execute("UPDATE stocks SET is_deleted=1 WHERE symbol=?", (sym,))
-            # 清空旧K线数据，准备重新生成标准K线
-            for s_def in stock_defs:
-                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s_def[0],))
+            # 仅当K线表为空时才重新生成（不覆盖交易产生的K线）
+            has_kline = conn.execute("SELECT 1 FROM kline LIMIT 1").fetchone()
+            if not has_kline:
+                for s_def in stock_defs:
+                    conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s_def[0],))
             conn.commit()
 
         # 生成标准K线数据 — 每只股票20轮，模拟真实走势
@@ -143,20 +145,22 @@ def init_db():
             "JGONG": _gen_kline(20.0, trend=1.15, vol_base=10000),  # 强势上涨
             "YLIAO": _gen_kline(25.0, trend=0.92, vol_base=15000),  # 震荡下行
         }
-        for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
-            sym = s["symbol"]
-            klines = kline_seed.get(sym)
-            if not klines:
-                continue
-            conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
-            for r, (o, h, l, c, v) in enumerate(klines, 1):
-                cpct = round((c - o) / o * 100, 2) if o else 0
-                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,1)", (sym, r))
-                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (sym, r, o, h, l, c, v, v*0.6, v*0.4, cpct))
-            # 同步最新价格到 stocks 表
-            last_c = klines[-1][3]
-            conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
+        has_any_kline = conn.execute("SELECT 1 FROM kline LIMIT 1").fetchone()
+        if not has_any_kline:
+            for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
+                sym = s["symbol"]
+                klines = kline_seed.get(sym)
+                if not klines:
+                    continue
+                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
+                for r, (o, h, l, c, v) in enumerate(klines, 1):
+                    cpct = round((c - o) / o * 100, 2) if o else 0
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,1)", (sym, r))
+                    conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (sym, r, o, h, l, c, v, v*0.6, v*0.4, cpct))
+                # 同步最新价格到 stocks 表
+                last_c = klines[-1][3]
+                conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
         conn.commit()
         # 首次启动时设置市场轮次 = 最大K线轮次 + 1，后续不覆盖
         if first_boot:
