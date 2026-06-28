@@ -1112,18 +1112,12 @@ def page_public_dashboard():
     # 底部
     st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
 
-    # 手动刷新
-    col1, col2, col3 = st.columns([4, 1, 4])
+    # 手动刷新（不自动刷新，避免整页重载断开会话）
+    col1, col2, col3 = st.columns([3, 2, 3])
     with col2:
-        if st.button("🔄 刷新", use_container_width=True):
+        if st.button("🔄 刷新数据", use_container_width=True):
             st.rerun()
-    # 自动刷新（JS定时器 + 页面重载，保证可靠性）
-    st.markdown("""
-    <div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">⏱ 每20秒自动刷新</div>
-    <script>
-    setTimeout(function(){ window.location.href = window.location.pathname + '?_=' + Date.now(); }, 20000);
-    </script>
-    """, unsafe_allow_html=True)
+    st.markdown('<div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">点击「刷新数据」获取最新行情</div>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
