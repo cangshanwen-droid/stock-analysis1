@@ -33,8 +33,6 @@ def init_db():
     """)
     conn.commit()
     cur.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(1,'open',1)")
-    # 同步 market_state.round 到实际最大轮次
-    cur.execute("UPDATE market_state SET round=(SELECT COALESCE(MAX(round),1) FROM rounds) WHERE id=1")
     # 迁移：添加用户状态列
     try: cur.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'")
     except: pass
@@ -251,15 +249,20 @@ def undo_market():
     conn.commit(); conn.close()
 
 def reset_to_round1():
-    """回到第一轮：清空所有K线和轮次，价格保持不变，轮次重置为1"""
+    """回到第一轮：清空所有K线和轮次，价格不变，轮次重置为1"""
     conn = get_db()
     stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
         conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
         conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
-        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
+        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
     conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
-    conn.commit(); conn.close()
+    conn.commit()
+    # 验证写入
+    r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
+    actual = r["round"] if r else 1
+    conn.close()
+    return actual
 
 def get_user_portfolio(username):
     conn = get_db()
@@ -1035,8 +1038,8 @@ def page_admin_settle():
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认重置", type="primary", use_container_width=True):
-                    reset_to_round1(); st.session_state.cf_r1 = False
-                    st.success("已回到第 1 轮"); st.rerun()
+                    actual = reset_to_round1(); st.session_state.cf_r1 = False
+                    st.success(f"已回到第 {actual} 轮"); st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_r1 = False; st.rerun()
