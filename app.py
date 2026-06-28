@@ -27,6 +27,11 @@ def row_get(row, key, default=None):
 
 def hash_pwd(p, salt=""): return hashlib.sha256((p + salt).encode()).hexdigest()
 
+def esc(s):
+    """防 XSS：转义 HTML 特殊字符"""
+    if not isinstance(s, str): return str(s)
+    return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#x27;")
+
 def check_pwd(stored, plain):
     """验证密码，兼容旧版无盐哈希"""
     if ":" in stored:
@@ -179,8 +184,20 @@ def settle_round(symbol):
 # 用户 / 股票 / 持仓 / 汇总（保持原逻辑）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
+    # 限速检查
+    if "login_fails" not in st.session_state: st.session_state.login_fails = {}
+    fails = st.session_state.login_fails
+    now = datetime.now()
+    if u in fails:
+        if fails[u]["count"] >= 5:
+            if (now - fails[u]["last"]).seconds < 30:
+                return False, ""
+            fails[u] = {"count": 0, "last": now}
     conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
-    if not r or not check_pwd(r["password"], p): return False, ""
+    if not r or not check_pwd(r["password"], p):
+        fails[u] = {"count": fails.get(u, {}).get("count", 0) + 1, "last": now}
+        return False, ""
+    if u in fails: del fails[u]
     try:
         if r["status"] == "disabled": return False, ""
     except: pass
@@ -699,7 +716,11 @@ def page_login():
                         if ok:
                             st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
                             log_action(u, "login", "auth", "success")
-                        else: st.session_state.login_error = "用户名或密码错误"
+                        else:
+                            fails = st.session_state.get("login_fails", {}).get(u, {})
+                            cnt = fails.get("count", 0)
+                            if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
+                            else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
                     st.rerun()
         else:
             st.info("公开注册已关闭。比赛账号由管理员统一创建。")
@@ -737,7 +758,7 @@ def page_overview():
     # 顶栏：品牌左 / 用户名+更新时间右
     c1, c2 = st.columns([7, 2])
     with c1: st.markdown('<span style="font-size:24px;font-weight:700;color:#111827;">双镜</span>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{st.session_state.username} | <span id="live-clock">{datetime.now().strftime("%H:%M:%S")}</span></p>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{esc(st.session_state.username)} | <span id="live-clock">{datetime.now().strftime("%H:%M:%S")}</span></p>', unsafe_allow_html=True)
     st.markdown("""
     <script>
         setInterval(function(){var d=new Date();var e=document.getElementById('live-clock');if(e)e.textContent=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');},1000);
@@ -1450,7 +1471,7 @@ def main():
         bal_text = f" | {fmt_money(bal)}" if st.session_state.role == "player" else ""
         st.markdown(f"""
         <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
-        <div class="sb-user"><div class="uname">{st.session_state.username}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
+        <div class="sb-user"><div class="uname">{esc(st.session_state.username)}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.radio("", nav, index=nav.index(st.session_state.nav_current), key=f"nav_main_{st.session_state.nav_current}", label_visibility="collapsed")
