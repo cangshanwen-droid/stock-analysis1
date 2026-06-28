@@ -1679,30 +1679,9 @@ def page_trade_hall():
     </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 移动端底部交易栏 + 持仓列表
-    st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
-    pf = get_user_portfolio(st.session_state.username)
-    if not pf.empty:
-        for _, r in pf.iterrows():
-            pct = r["pnl_ratio"]; cls = pnl_class(pct)
-            st.markdown(f"""
-            <div class="stock-card">
-                <div class="sc-header">
-                    <span class="sc-name">{esc(r["name"])} <span style="font-size:12px;color:#8A8AAA">{esc(r["symbol"])}</span></span>
-                    <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
-                </div>
-                <div class="sc-detail">
-                    <div>持仓 <span class="val">{fmt_num(r["shares"])}股</span></div>
-                    <div>现价 <span class="val">{fmt_money(r["current_price"])}</span></div>
-                    <div>成本 <span class="val">{fmt_money(r["avg_cost"])}</span></div>
-                    <div>盈亏 <span class="val" style="color:{pnl_color(r["pnl"])}">{fmt_money(r["pnl"])}</span></div>
-                </div>
-            </div>""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 移动端固定底部交易栏 — 使用 Streamlit 原生组件
-    st.markdown('<div class="mobile-only trade-bar-spacer"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="mobile-only" style="position:fixed;bottom:0;left:0;right:0;z-index:100;background:#fff;padding:12px 16px;border-top:1px solid var(--border);">', unsafe_allow_html=True)
+    # 移动端交易面板
+    st.markdown('<div class="mobile-only" style="margin-bottom:12px;">', unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:15px;font-weight:600;color:#111827;margin-bottom:8px;">交易</div>""", unsafe_allow_html=True)
     with st.form("trade_form_mobile"):
         cols = st.columns([2, 1, 1, 1])
         with cols[0]:
