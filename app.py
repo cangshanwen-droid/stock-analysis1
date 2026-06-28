@@ -944,21 +944,33 @@ def page_public_dashboard():
     mkt_cls = "open" if mkt_open else "closed"
     mkt_text = "交易中" if mkt_open else "已闭市"
 
-    # 顶栏
-    from datetime import datetime as _dt
-    now_str = _dt.now().strftime("%Y/%m/%d %H:%M:%S")
+    # 顶栏（实时时钟用 JS 走浏览器时间）
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
         st.markdown(f'<div class="dash-brand">双镜</div><div class="dash-sub">智能投资分析系统</div>', unsafe_allow_html=True)
     with c2:
-        st.markdown(f'<div class="dash-clock" style="text-align:center;">{now_str}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="dash-clock" style="text-align:center;" id="liveClock"></div>', unsafe_allow_html=True)
     with c3:
         if st.button("登录交易", key="dash_login_btn"):
             st.session_state.show_login = True
             st.rerun()
 
     # 市场状态条
-    st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round">⏱ {now_str}</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round" id="liveClockMkt"></span></div>', unsafe_allow_html=True)
+
+    # JS 实时时钟（每秒更新，不依赖服务端）
+    st.markdown("""
+    <script>
+        function updateClocks(){
+            var d=new Date();
+            var s=d.getFullYear()+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getDate()).padStart(2,'0')+' '+d.toLocaleTimeString('zh-CN',{hour12:false});
+            var e1=document.getElementById('liveClock');if(e1)e1.textContent=s;
+            var e2=document.getElementById('liveClockMkt');if(e2)e2.textContent='⏱ '+s;
+        }
+        updateClocks();
+        setInterval(updateClocks,1000);
+    </script>
+    """, unsafe_allow_html=True)
 
     # 四只股票行情卡片
     cards = ""
