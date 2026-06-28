@@ -1391,126 +1391,94 @@ def page_public_dashboard():
 # 登录页
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def page_login():
+    """登录页 — 金色奢华风格"""
     st.markdown("""
     <style>
         .stApp {
             background: linear-gradient(135deg, #060b1a 0%, #0d1a3a 50%, #060b1a 100%) !important;
-            position: relative;
-        }
-        .stApp::before {
-            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background-image:
-                radial-gradient(ellipse at 20% 50%, rgba(212,168,83,.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(37,99,235,.04) 0%, transparent 50%);
-            pointer-events: none; z-index: 0;
         }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
-        section.main > div.block-container { padding: 0 !important; max-width: 100% !important; }
-
-        input[type="text"], input[type="password"],
-        div[data-testid="stTextInput"] input,
-        div[data-baseweb="input"] input {
-            background: rgba(10,18,40,.8) !important;
-            border: 1px solid rgba(255,255,255,.08) !important;
+        section.main > div.block-container { padding: 0 !important; }
+        div[data-testid="stTextInput"] input {
+            background: rgba(10,18,40,.85) !important;
+            border: 1px solid rgba(255,255,255,.1) !important;
             color: #e8edf5 !important;
             border-radius: 10px !important;
             padding: 16px 18px !important;
             font-size: 15px !important;
             transition: all .25s ease !important;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,.2) !important;
         }
         input::placeholder { color: rgba(255,255,255,.2) !important; }
-        input:focus {
-            border-color: rgba(212,168,83,.3) !important;
-            background: rgba(15,28,55,.95) !important;
-            box-shadow: 0 0 30px rgba(212,168,83,.06), inset 0 2px 4px rgba(0,0,0,.3) !important;
-        }
-        div[data-testid="stTextInput"] > div { background: transparent !important; }
-
-        div[data-testid="stButton"] button {
-            border-radius: 10px !important; padding: 14px !important;
-            font-size: 15px !important; font-weight: 600 !important;
-            transition: all .25s !important; letter-spacing: 1px !important;
+        div[data-testid="stTextInput"] input:focus {
+            border-color: rgba(212,168,83,.4) !important;
+            box-shadow: 0 0 24px rgba(212,168,83,.08) !important;
         }
         div[data-testid="stButton"] button[kind="primary"] {
             background: linear-gradient(135deg, #d4a853, #f0e6d3) !important;
             color: #0a0e1a !important; border: none !important;
             box-shadow: 0 4px 20px rgba(212,168,83,.25) !important;
+            border-radius: 10px !important;
+            padding: 14px !important;
+            font-weight: 600 !important;
         }
         div[data-testid="stButton"] button[kind="primary"]:hover {
-            transform: translateY(-1px);
             box-shadow: 0 6px 28px rgba(212,168,83,.35) !important;
         }
         div[data-testid="stButton"] button[kind="secondary"] {
             background: transparent !important;
-            border: 1px solid rgba(255,255,255,.08) !important;
-            color: rgba(255,255,255,.35) !important;
-        }
-        div[data-testid="stButton"] button[kind="secondary"]:hover {
-            border-color: rgba(255,255,255,.2) !important;
-            color: rgba(255,255,255,.6) !important;
+            border: 1px solid rgba(255,255,255,.1) !important;
+            color: rgba(255,255,255,.4) !important;
+            border-radius: 8px !important;
         }
         .stAlert {
             background: rgba(255,255,255,.03) !important;
             border: 1px solid rgba(255,255,255,.06) !important;
             color: rgba(255,255,255,.6) !important;
-            border-radius: 8px !important; font-size: 13px !important;
+            border-radius: 8px !important;
         }
     </style>""", unsafe_allow_html=True)
 
-    left, center, right = st.columns([1, 3, 1])
-    with center:
-        st.markdown("<div style='height:10vh'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:12vh'></div>", unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div style="text-align:center;margin-bottom:32px;">
+        <h1 style="font-size:52px;font-weight:800;letter-spacing:8px;margin:0;
+            background:linear-gradient(135deg,#f0e6d3,#d4a853);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</h1>
+        <p style="color:rgba(255,255,255,.2);font-size:11px;letter-spacing:6px;text-transform:uppercase;margin:16px 0 0 0;">智能投资分析系统</p>
+    </div>""", unsafe_allow_html=True)
 
-        st.markdown("""
-        <div style="text-align:center;padding:0 0 32px 0;">
-            <div style="font-size:54px;font-weight:800;letter-spacing:10px;margin:0;
-                background:linear-gradient(135deg,#f0e6d3,#d4a853,#f0e6d3);
-                -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</div>
-            <div style="width:32px;height:1.5px;background:linear-gradient(90deg,transparent,rgba(212,168,83,.4),transparent);margin:16px auto;"></div>
-            <p style="font-size:11px;color:rgba(255,255,255,.25);letter-spacing:6px;text-transform:uppercase;margin:0;">智能投资分析系统</p>
-        </div>""", unsafe_allow_html=True)
+    if st.session_state.get("login_error"):
+        st.error(st.session_state.login_error)
+        st.session_state.login_error = ""
+    if st.session_state.get("login_ok"):
+        st.success(st.session_state.login_ok)
+        st.balloons()
+        st.session_state.login_ok = ""
 
-        if st.session_state.get("login_error"):
-            st.error(st.session_state.login_error)
-            st.session_state.login_error = ""
-        if st.session_state.get("login_ok"):
-            st.success(st.session_state.login_ok)
-            st.balloons()
-            st.session_state.login_ok = ""
-
-        st.markdown('<div style="background:rgba(10,18,40,.7);backdrop-filter:blur(24px);padding:40px 36px;border-radius:16px;border:1px solid rgba(255,255,255,.06);box-shadow:0 16px 48px rgba(0,0,0,.3);">', unsafe_allow_html=True)
-
-        st.markdown('<p style="font-size:14px;font-weight:500;color:rgba(255,255,255,.6);text-align:center;margin:0 0 28px 0;letter-spacing:2px;">账 户 登 录</p>', unsafe_allow_html=True)
-
-        with st.form("login_form"):
-            st.text_input("", placeholder="用户名", label_visibility="collapsed", key="login_u")
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-            st.text_input("", type="password", placeholder="密码", label_visibility="collapsed", key="login_p")
-            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-            if st.form_submit_button("登 录", type="primary", use_container_width=True):
-                u = st.session_state.get("login_u", ""); p = st.session_state.get("login_p", "")
-                if not u or not p: st.session_state.login_error = "请输入用户名和密码"
+    with st.form("login_form"):
+        st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
+        st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
+        if st.form_submit_button("登 录", type="primary", use_container_width=True):
+            u = st.session_state.get("login_u", ""); p = st.session_state.get("login_p", "")
+            if not u or not p: st.session_state.login_error = "请输入用户名和密码"
+            else:
+                ok, role = auth_user(u, p)
+                if ok:
+                    st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                    log_action(u, "login", "auth", "success")
                 else:
-                    ok, role = auth_user(u, p)
-                    if ok:
-                        st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
-                        log_action(u, "login", "auth", "success")
-                    else:
-                        with get_db_cm() as conn:
-                            cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
-                        if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
-                        else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
-                st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
-        if st.button("← 返回行情看板", key="back_to_dash"):
-            st.session_state.show_login = False
+                    with get_db_cm() as conn:
+                        cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
+                    if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
+                    else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
             st.rerun()
-        st.markdown('<p style="text-align:center;color:rgba(255,255,255,.12);font-size:10px;letter-spacing:3px;margin-top:24px;">双镜 · 智能投资分析系统</p>', unsafe_allow_html=True)
+
+    if st.button("← 返回行情看板", key="back_to_dash"):
+        st.session_state.show_login = False
+        st.rerun()
+    st.markdown('<p style="text-align:center;color:rgba(255,255,255,.1);font-size:10px;margin-top:20px;">双镜 · 智能投资分析系统</p>', unsafe_allow_html=True)
 
 def fmt_money(v):   return f"¥{v:,.0f}"
 def fmt_pnl(v):     return f"¥{v:,.2f}"
