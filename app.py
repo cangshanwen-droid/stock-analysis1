@@ -14,41 +14,13 @@ from plotly.subplots import make_subplots
 DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
 
 def get_db():
-    """数据库连接：Supabase PostgreSQL"""
-    try:
-        import psycopg2, psycopg2.extras
-        conn = psycopg2.connect(
-            host="aws-0-ap-southeast-1.pooler.supabase.com",
-            port=6543,
-            user="postgres.lurvltdqdwhiijopjfyd",
-            password="tIjekchigXqFbhFq",
-            dbname="postgres",
-            sslmode="require",
-            connect_timeout=10,
-        )
-        orig = conn.cursor
-        def pg_cursor():
-            return orig(cursor_factory=psycopg2.extras.RealDictCursor)
-        conn.cursor = pg_cursor
-        orig_exec = conn.execute
-        def pg_execute(sql, params=None):
-            cur = pg_cursor()
-            s = sql.replace("?", "%s")
-            if params is not None:
-                cur.execute(s, list(params) if isinstance(params, tuple) else params)
-            else:
-                cur.execute(s)
-            return cur
-        conn.execute = pg_execute
-        conn.executescript = lambda sql: pg_cursor().execute(sql.replace("?", "%s"))
-        return conn
-    except Exception:
-        import sqlite3, tempfile
-        DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+    """SQLite 本地数据库"""
+    import sqlite3, tempfile
+    DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 def row_get(row, key, default=None):
     try: return row[key]
