@@ -100,7 +100,7 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    admin_pw = os.environ.get("ADMIN_PASSWORD") or secrets.token_urlsafe(12)
+    admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
     cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
