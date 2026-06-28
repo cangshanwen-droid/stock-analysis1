@@ -1969,6 +1969,36 @@ def page_admin_stock_mgmt():
                     else: st.session_state.stock_add_err = msg
                 else: st.session_state.stock_add_err = "请完整填写所有字段"
                 st.rerun()
+    with st.expander("批量添加股票（上传 Excel）"):
+        st.caption("Excel 五列：股票代码 / 公司名称 / 总股本(万股) / 初始净利润(万) / 行业PE")
+        uploaded_stocks = st.file_uploader("选择 Excel 文件", type=["xlsx"], key="batch_stocks")
+        if uploaded_stocks:
+            df = pd.read_excel(uploaded_stocks)
+            if df.shape[1] >= 5:
+                valid = []
+                for i in range(len(df)):
+                    if pd.notna(df.iloc[i, 0]) and pd.notna(df.iloc[i, 1]):
+                        try:
+                            sym = str(df.iloc[i, 0]).strip().upper()
+                            name = str(df.iloc[i, 1]).strip()
+                            ts = float(df.iloc[i, 2])
+                            rev = float(df.iloc[i, 3])
+                            pe = float(df.iloc[i, 4])
+                            if sym and name and ts > 0 and rev > 0 and pe > 0:
+                                valid.append((sym, name, ts, rev, pe))
+                        except: pass
+                st.info(f"检测到 {len(valid)} 只股票")
+                if st.button("一键批量添加", type="primary"):
+                    created, skipped = 0, []
+                    for sym, name, ts, rev, pe in valid:
+                        ok, msg = add_stock(sym, name, ts, rev, pe)
+                        if ok: created += 1
+                        else: skipped.append(f"{sym}({msg})")
+                    result = f"成功添加 {created} 只股票"
+                    if skipped: result += f"，跳过 {len(skipped)} 只: {', '.join(skipped[:5])}"
+                    st.success(result); st.rerun()
+            else:
+                st.error("Excel 格式错误，至少需要五列（代码/名称/总股本/净利润/行业PE）")
     stocks = get_stocks()
     if not stocks: st.info("无"); return
     sdf = pd.DataFrame(stocks)
