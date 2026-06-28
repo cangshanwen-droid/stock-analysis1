@@ -406,21 +406,43 @@ SIDEBAR_CSS = """
 # 登录页
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def page_login():
-    cl, cc, cr = st.columns([1, 3, 1])
-    with cc:
-        st.markdown("<div style='height:6vh'></div>", unsafe_allow_html=True)
-        st.markdown("""
-        <div style="background:#1A1A2E;border-radius:12px 12px 0 0;padding:32px 32px 24px 32px;text-align:center;">
-            <div style="font-size:11px;color:#4A4A6A;letter-spacing:1px;">V2.0</div>
-            <div style="font-size:28px;font-weight:600;color:#fff;letter-spacing:2px;margin-top:8px;">双镜</div>
-            <div style="width:32px;height:2px;background:#2D6AFF;margin:16px auto;"></div>
-            <div style="font-size:14px;color:#8A8AAA;">智能投资分析系统</div>
-        </div>
-        <div style="background:#fff;border-radius:0 0 12px 12px;padding:32px;box-shadow:0 12px 48px rgba(0,0,0,.06);">
-        """, unsafe_allow_html=True)
+    # 隐藏 header 和 toolbar
+    st.markdown("""
+    <style>
+        .stApp { background: #f7f8fa; }
+        .stApp > header { height: 0 !important; overflow: hidden; }
+        div[data-testid="stToolbar"] { visibility: hidden; }
+        div[data-testid="stTextInput"] input {
+            border-radius: 8px !important; border: 1px solid #e2e8f0 !important;
+            padding: 12px 14px !important; font-size: 15px !important;
+        }
+        div[data-testid="stTextInput"] input:focus {
+            border-color: #3182ce !important;
+            box-shadow: 0 0 0 2px rgba(49,130,206,0.2) !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"] {
+            background-color: #e53e3e !important; border-radius: 8px !important;
+            padding: 12px !important; font-size: 16px !important; font-weight: 500 !important;
+            transition: all .25s ease;
+        }
+        div[data-testid="stButton"] button[kind="primary"]:hover {
+            background-color: #c53030 !important; transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(229,62,62,0.3);
+        }
+        div[data-testid="stButton"] button {
+            border-radius: 8px !important; padding: 12px !important; font-size: 16px !important;
+        }
+    </style>""", unsafe_allow_html=True)
 
-        st.markdown('<div style="font-size:20px;font-weight:600;color:#1A1A2E;margin-bottom:2px;">欢迎回来</div>', unsafe_allow_html=True)
-        st.markdown('<div style="font-size:14px;color:#8A8AAA;margin-bottom:24px;">登录您的账户</div>', unsafe_allow_html=True)
+    left, center, right = st.columns([1, 6, 1])
+    with center:
+        # 品牌头部
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#0f1420,#1a2236);padding:36px 20px;border-radius:14px 14px 0 0;text-align:center;">
+            <h1 style="font-size:42px;font-weight:700;color:#fff;letter-spacing:6px;margin:0;">双镜</h1>
+            <div style="width:60px;height:3px;background:#3182ce;margin:12px auto;border-radius:3px;"></div>
+            <p style="font-size:16px;color:#a0aec0;margin-top:8px;">智能投资分析系统</p>
+        </div>""", unsafe_allow_html=True)
 
         # 消息显示
         if st.session_state.get("login_error"):
@@ -430,33 +452,39 @@ def page_login():
             st.success(st.session_state.login_ok)
             st.session_state.login_ok = ""
 
+        # 登录卡片
+        st.markdown('<div style="background:#fff;padding:32px;border-radius:0 0 14px 14px;box-shadow:0 4px 20px rgba(0,0,0,.06);margin-bottom:24px;">', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:24px;font-weight:600;color:#1a202c;margin:0 0 4px 0;">欢迎回来</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:14px;color:#718096;margin:0 0 24px 0;">登录您的账户</p>', unsafe_allow_html=True)
+
         with st.form("login_form"):
             st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
             st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
             if st.form_submit_button("登录", type="primary", use_container_width=True):
                 u = st.session_state.get("login_u", "")
                 p = st.session_state.get("login_p", "")
-                if not u or not p:
-                    st.session_state.login_error = "请输入用户名和密码"
+                if not u or not p: st.session_state.login_error = "请输入用户名和密码"
                 else:
                     ok, role = auth_user(u, p)
                     if ok:
-                        st.session_state.logged_in = True
-                        st.session_state.username = u
-                        st.session_state.role = role
-                    else:
-                        st.session_state.login_error = "用户名或密码错误"
+                        st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                    else: st.session_state.login_error = "用户名或密码错误"
                 st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div style="display:flex;align-items:center;gap:12px;margin:24px 0 16px;font-size:11px;color:#8A8AAA;"><div style="flex:1;height:1px;background:#E8E8F0;"></div>或<div style="flex:1;height:1px;background:#E8E8F0;"></div></div>', unsafe_allow_html=True)
+        # 分割线
+        st.markdown("""<div style="display:flex;align-items:center;color:#a0aec0;margin:28px 0;"><div style="flex:1;height:1px;background:#e2e8f0;"></div><span style="padding:0 16px;">或</span><div style="flex:1;height:1px;background:#e2e8f0;"></div></div>""", unsafe_allow_html=True)
+
+        # 注册卡片
+        st.markdown('<div style="background:#fff;padding:32px;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.06);">', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:24px;font-weight:600;color:#1a202c;margin:0 0 4px 0;">创建账户</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:14px;color:#718096;margin:0 0 24px 0;">注册成为新用户</p>', unsafe_allow_html=True)
 
         with st.form("register_form"):
-            st.markdown('<div style="font-size:20px;font-weight:600;color:#1A1A2E;margin-bottom:2px;">创建账户</div>', unsafe_allow_html=True)
-            st.markdown('<div style="font-size:14px;color:#8A8AAA;margin-bottom:20px;">注册成为新用户</div>', unsafe_allow_html=True)
             st.text_input("用户名", placeholder="至少3位", label_visibility="collapsed", key="reg_u")
             st.text_input("密码", type="password", placeholder="至少4位", label_visibility="collapsed", key="reg_p")
             st.text_input("确认密码", type="password", placeholder="再次输入", label_visibility="collapsed", key="reg_p2")
-            if st.form_submit_button("注册", type="primary", use_container_width=True):
+            if st.form_submit_button("立即注册", use_container_width=True):
                 u2 = st.session_state.get("reg_u", "")
                 p2 = st.session_state.get("reg_p", "")
                 p3 = st.session_state.get("reg_p2", "")
@@ -469,9 +497,7 @@ def page_login():
                     if ok: st.session_state.login_ok = "注册成功，请登录"
                     else: st.session_state.login_error = msg
                 st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown('<div style="text-align:center;font-size:11px;color:#8A8AAA;margin-top:16px;">(c) 2026</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 通用组件
@@ -801,7 +827,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
 ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "交易管理", "股票汇总", "股票管理", "用户管理"]
 
-st.set_page_config(page_title="双镜 智能投资", layout="wide")
+st.set_page_config(page_title="双镜 - 智能投资分析系统", page_icon="", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
