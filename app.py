@@ -883,52 +883,20 @@ def page_admin_settle():
     stocks = get_stocks()
     if not stocks: st.info("无股票"); return
 
-    # 一键操作（带确认）
+    # 一键操作
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        confirm_close = st.checkbox("确认", key="cf_close")
-        if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
-            st.session_state.do_close_all = True
-            st.rerun()
-
-    # 处理一键闭市（在 st.rerun 后执行，避免回调里操作冲突）
-    if st.session_state.get("do_close_all"):
-        st.session_state.do_close_all = False
-        conn = get_db()
-        count = 0
-        for s in stocks:
-            r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-            if r and r[0]:
-                cr = r[0]
-                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
-                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-                tv = sum(t["shares"] for t in txns)
-                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-                pc = s["previous_close"] or s["current_price"]
-                hi = max(np_, pc); lo = min(np_, pc)
-                cpct = round((np_-pc)/pc*100,2) if pc else 0
-                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-                conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
-                conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-                count += 1
-        conn.commit(); conn.close()
-        st.success(f"已闭市 {count} 只股票"); st.rerun()
+        if st.button("一键闭市", type="primary", use_container_width=True, key="close_all"):
+            st.session_state.do_close_all = True; st.rerun()
     with c2:
-        confirm_open = st.checkbox("确认", key="cf_open")
-        if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
-            st.session_state.do_open_all = True
-            st.rerun()
+        if st.button("一键开市", use_container_width=True, key="open_all"):
+            st.session_state.do_open_all = True; st.rerun()
     with c3:
-        confirm_undo = st.checkbox("确认", key="cf_undo")
-        if st.button("撤销上一轮", use_container_width=True, key="undo_all", disabled=not confirm_undo):
-            st.session_state.do_undo_all = True
-            st.rerun()
+        if st.button("撤销上一轮", use_container_width=True, key="undo_all"):
+            st.session_state.do_undo_all = True; st.rerun()
     with c4:
-        confirm_r1 = st.checkbox("确认", key="cf_r1")
-        if st.button("回到第一轮", type="secondary", use_container_width=True, key="reset_all", disabled=not confirm_r1):
-            st.session_state.do_reset_all = True
-            st.rerun()
+        if st.button("回到第一轮", type="secondary", use_container_width=True, key="reset_all"):
+            st.session_state.do_reset_all = True; st.rerun()
 
     # 处理批量操作
     for action in ["do_close_all", "do_open_all", "do_undo_all", "do_reset_all"]:
@@ -1004,11 +972,7 @@ def page_admin_settle():
             with c4:
                 st.markdown(f"<span style='color:{status_color};font-weight:600;'>{status}</span>", unsafe_allow_html=True)
                 if not settled:
-                    c4_1, c4_2 = st.columns(2)
-                    with c4_1:
-                        confirm_single = st.checkbox("确认", key=f"cf_{s['id']}", label_visibility="collapsed")
-                    with c4_2:
-                        if st.button("闭市", key=f"settle_{s['id']}", type="primary", disabled=not confirm_single):
+                    if st.button("闭市", key=f"settle_{s['id']}", type="primary"):
                             result = settle_round(s["symbol"])
                             if result and result[0]:
                                 np_ = result[0]
@@ -1031,8 +995,7 @@ def page_admin_settle():
                             conn.commit(); conn.close()
                             st.success("已撤销"); st.rerun()
                     with c4_2:
-                        confirm_reset = st.checkbox("确认", key=f"reset_{s['id']}", label_visibility="collapsed")
-                        if st.button("重置", key=f"rst_{s['id']}", type="secondary", disabled=not confirm_reset):
+                        if st.button("重置", key=f"rst_{s['id']}", type="secondary"):
                             conn = get_db()
                             first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
                             init_price = first_k["open_price"] if first_k else s["current_price"]
