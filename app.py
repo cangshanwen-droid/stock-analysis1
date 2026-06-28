@@ -14,13 +14,41 @@ from plotly.subplots import make_subplots
 DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
 
 def get_db():
-    """SQLite 本地数据库"""
-    import sqlite3
-    DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    """数据库连接：Supabase PostgreSQL"""
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(
+            host="aws-0-ap-southeast-1.pooler.supabase.com",
+            port=6543,
+            user="postgres.lurvltdqdwhiijopjfyd",
+            password="tIjekchigXqFbhFq",
+            dbname="postgres",
+            sslmode="require",
+            connect_timeout=10,
+        )
+        orig = conn.cursor
+        def pg_cursor():
+            return orig(cursor_factory=psycopg2.extras.RealDictCursor)
+        conn.cursor = pg_cursor
+        orig_exec = conn.execute
+        def pg_execute(sql, params=None):
+            cur = pg_cursor()
+            s = sql.replace("?", "%s")
+            if params is not None:
+                cur.execute(s, list(params) if isinstance(params, tuple) else params)
+            else:
+                cur.execute(s)
+            return cur
+        conn.execute = pg_execute
+        conn.executescript = lambda sql: pg_cursor().execute(sql.replace("?", "%s"))
+        return conn
+    except Exception:
+        import sqlite3, tempfile
+        DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
 def row_get(row, key, default=None):
     try: return row[key]
@@ -485,8 +513,8 @@ html, body, [class*="css"] {
     --text:     #111827;
     --text-2nd: #666;
     --primary:  #2D6AFF;
-    --green:    #16a34a;
-    --red:      #ef4444;
+    --green:    #ef4444;
+    --red:      #16a34a;
     --border:   #e5e7eb;
 }
 
@@ -758,9 +786,11 @@ def fmt_pct(v, s=True):
 def fmt_num(v):     return f"{v:,}"
 
 GREEN = "#16a34a"; RED = "#ef4444"
+PNL_UP = RED; PNL_DN = GREEN  # 利润红涨绿跌
+K_UP   = "#ef5350"; K_DN = "#26a69a"  # K线红涨绿跌
 
 def pnl_class(v): return "up" if v >= 0 else "down"
-def pnl_color(v): return GREEN if v >= 0 else RED
+def pnl_color(v): return PNL_UP if v >= 0 else PNL_DN
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 页面：总览
