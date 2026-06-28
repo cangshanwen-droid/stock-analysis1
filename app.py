@@ -1423,7 +1423,7 @@ def page_portfolio():
         st.markdown(f"""
         <div class="stock-card">
             <div class="sc-header">
-                <span class="sc-name">{esc(r["name"])} &nbsp;<span style="font-size:12px;color:#8A8AAA">{esc(r["symbol"])}</span></span>
+                <span class="sc-name">{esc(r["name"])} &nbsp;<span style="font-size:12px;color:#64748b">{esc(r["symbol"])}</span></span>
                 <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
             </div>
             <div class="sc-detail">
@@ -1517,19 +1517,19 @@ def page_trade_hall():
         st.markdown(f"""
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
-                <div style="font-size:11px;color:#666;">幸福因子</div>
+                <div style="font-size:11px;color:#94a3b8;">幸福因子</div>
                 <div style="font-size:22px;font-weight:700;color:#{'16a34a' if pf_>=1 else 'ef4444'};">{pf_}</div>
-                <div style="font-size:11px;color:#999;">溢价率 {fs['premium_rate']:.0f}%</div>
+                <div style="font-size:11px;color:#64748b;">溢价率 {fs['premium_rate']:.0f}%</div>
             </div>
             <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
-                <div style="font-size:11px;color:#666;">碳因子</div>
+                <div style="font-size:11px;color:#94a3b8;">碳因子</div>
                 <div style="font-size:22px;font-weight:700;color:#{'16a34a' if cf_>=1 else 'ef4444'};">{cf_}</div>
-                <div style="font-size:11px;color:#999;">碳价 {fs['carbon_price']:.0f}（均值{cm_:.0f}）</div>
+                <div style="font-size:11px;color:#64748b;">碳价 {fs['carbon_price']:.0f}（均值{cm_:.0f}）</div>
             </div>
             <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
-                <div style="font-size:11px;color:#666;">上轮收盘</div>
+                <div style="font-size:11px;color:#94a3b8;">上轮收盘</div>
                 <div style="font-size:22px;font-weight:700;">{fmt_money(prev)}</div>
-                <div style="font-size:11px;color:#999;">理论价 {fmt_money(round(prev*max(1,pf_)*cf_,2))}</div>
+                <div style="font-size:11px;color:#64748b;">理论价 {fmt_money(round(prev*max(1,pf_)*cf_,2))}</div>
             </div>
         </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1870,26 +1870,26 @@ def page_admin_stock_mgmt():
     with c1:
         st.markdown(f"""
         <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;">
-            <div style="font-size:13px;color:#666;margin-bottom:8px;">幸福度（溢价率）</div>
+            <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">幸福度（溢价率）</div>
             <div style="display:flex;align-items:center;gap:12px;">
                 <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
                     <div style="width:{fs['premium_rate']}%;height:100%;background:#{'16a34a' if pf>=1 else 'ef4444'};border-radius:6px;"></div>
                 </div>
                 <span style="font-size:28px;font-weight:600;color:#{'16a34a' if pf>=1 else 'ef4444'};">{pf}</span>
             </div>
-            <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% | 上轮收盘 {fmt_money(prev)} | 理论价 {fmt_money(round(prev*pf*cf,2))}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% | 上轮收盘 {fmt_money(prev)} | 理论价 {fmt_money(round(prev*pf*cf,2))}</div>
         </div>""", unsafe_allow_html=True)
     with c2:
         st.markdown(f"""
         <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;">
-            <div style="font-size:13px;color:#666;margin-bottom:8px;">碳排放（碳价）</div>
+            <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">碳排放（碳价）</div>
             <div style="display:flex;align-items:center;gap:12px;">
                 <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
                     <div style="width:{max(0,min(100,(1-cf)*200+50)):.0f}%;height:100%;background:#{'16a34a' if cf>=1 else 'ef4444'};border-radius:6px;"></div>
                 </div>
                 <span style="font-size:28px;font-weight:600;color:#{'16a34a' if cf>=1 else 'ef4444'};">{cf}</span>
             </div>
-            <div style="font-size:12px;color:#999;margin-top:4px;">当前碳价 {fs['carbon_price']:.0f} | 行业均值 {cm:.0f} | 碳价越低价格越涨</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">当前碳价 {fs['carbon_price']:.0f} | 行业均值 {cm:.0f} | 碳价越低价格越涨</div>
         </div>""", unsafe_allow_html=True)
 
     st.divider()
@@ -2087,7 +2087,7 @@ def page_admin_settle():
 
     st.markdown(f"""
     <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:12px;padding:24px;text-align:center;margin-bottom:20px;">
-        <div style="font-size:13px;color:#666;">当前市场状态</div>
+        <div style="font-size:13px;color:#94a3b8;">当前市场状态</div>
         <div style="font-size:36px;font-weight:700;color:{color};margin:8px 0;">{status}</div>
         <div style="font-size:14px;color:#8b949e;">第 {current_round} 轮</div>
     </div>""", unsafe_allow_html=True)
