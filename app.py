@@ -623,40 +623,37 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    section[data-testid="stSidebar"] { background-color: #0d1117 !important; }
-    section[data-testid="stSidebar"] > div:first-child { background-color: #0d1117 !important; padding: 0 !important; }
+    section[data-testid="stSidebar"] { background-color: #0b0f1a !important; }
+    section[data-testid="stSidebar"] > div:first-child { background-color: #0b0f1a !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    .stDeployButton, footer, #MainMenu { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
-    [data-testid="stDecoration"] { display: none !important; }
-    [data-testid="manage-app-button"] { display: none !important; }
-    .st-emotion-cache-1r6slb0 { display: none !important; }
+    .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
-    /* 全部白字，仅副标题微调 */
     section[data-testid="stSidebar"] * { color: #ffffff !important; }
-    section[data-testid="stSidebar"] .sb-brand .sub p { color: #8b949e !important; }
-    section[data-testid="stSidebar"] .sb-user .urole p { color: #c9d1d9 !important; }
+    section[data-testid="stSidebar"] .sb-brand .sub p { color: #5c6a7d !important; letter-spacing: 2px; }
+    section[data-testid="stSidebar"] .sb-user .urole p { color: #94a3b8 !important; }
 
-    .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid #21262d; }
-    .sb-brand .name { font-size: 24px; font-weight: 700; }
-    .sb-user { padding: 18px 20px 20px 20px; border-bottom: 1px solid #21262d; }
+    .sb-brand { padding: 32px 24px 24px 24px; border-bottom: 1px solid #1a2332; }
+    .sb-brand .name p { font-size: 28px; font-weight: 800; letter-spacing: 2px; margin: 0; }
+    .sb-user { padding: 22px 24px 22px 24px; border-bottom: 1px solid #1a2332; }
+    .sb-user .uname p { font-size: 15px; font-weight: 700; margin: 0 0 4px 0; }
+    .sb-user .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; margin-right: 8px; vertical-align: middle; }
+    .menu-group-label { padding: 22px 24px 6px 24px; }
+    .menu-group-label p { font-size: 10px; font-weight: 700; color: #5c6a7d !important; text-transform: uppercase; letter-spacing: 2px; }
 
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 10px 14px !important; margin: 2px 10px !important; border-radius: 6px !important;
-        color: #e6edf3 !important; font-size: 15px !important; font-weight: 500 !important;
+        padding: 13px 18px !important; margin: 2px 12px !important; border-radius: 8px !important;
+        font-size: 16px !important; font-weight: 500 !important;
         min-height: auto !important; position: relative !important; cursor: pointer !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #21262d !important; color: #ffffff !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: #1f6feb22 !important; color: #58a6ff !important;
-    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #1a2332 !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] { background: #152040 !important; color: #60a5fa !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 18px; background: #f85149; border-radius: 0 3px 3px 0;
+        width: 3px; height: 24px; background: #3b82f6; border-radius: 0 3px 3px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { margin: 0; font-size: 15px; font-weight: 500; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { margin: 0; font-size: 16px; font-weight: 500; }
 </style>
 """
 
