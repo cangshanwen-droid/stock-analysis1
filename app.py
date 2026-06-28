@@ -951,8 +951,12 @@ def page_admin_settle():
                         confirm_single = st.checkbox("确认", key=f"cf_{s['id']}", label_visibility="collapsed")
                     with c4_2:
                         if st.button("闭市", key=f"settle_{s['id']}", type="primary", disabled=not confirm_single):
-                            np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
-                            st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)}")
+                            result = settle_round(s["symbol"])
+                            if result and result[0]:
+                                np_ = result[0]
+                                st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)}")
+                            else:
+                                st.error("结算失败，请检查是否有开市轮次")
                             st.rerun()
                 else:
                     c4_1, c4_2 = st.columns(2)
