@@ -1,10 +1,9 @@
 """
-股票交易系统 — 完整版
-基于Excel公式的股票交易定价模型 + 专业K线图表 + 精美UI
+股票交易系统 — 移动端优先响应式版本
+商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
 import os, sqlite3, hashlib, json, tempfile
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import datetime
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -12,699 +11,434 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# ──────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 数据库
-# ──────────────────────────────────────────────
-import tempfile
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON"); return conn
 
 def hash_pwd(p): return hashlib.sha256(p.encode()).hexdigest()
 
 def init_db():
     conn = get_db(); cur = conn.cursor()
     cur.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'player',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS stocks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            current_price REAL DEFAULT 0,
-            previous_close REAL DEFAULT 0,
-            is_deleted INTEGER DEFAULT 0,
-            total_shares REAL DEFAULT 10000,
-            industry_pe REAL DEFAULT 20,
-            carbon_price REAL DEFAULT 50,
-            industry_carbon_mean REAL DEFAULT 50,
-            premium_rate REAL DEFAULT 50,
-            init_funds REAL DEFAULT 5000,
-            last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            stock_symbol TEXT NOT NULL,
-            trade_type TEXT NOT NULL,
-            price REAL NOT NULL,
-            shares INTEGER NOT NULL,
-            round INTEGER DEFAULT 0,
-            trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS kline (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            stock_symbol TEXT NOT NULL,
-            round INTEGER NOT NULL DEFAULT 0,
-            open_price REAL DEFAULT 0,
-            high_price REAL DEFAULT 0,
-            low_price REAL DEFAULT 0,
-            close_price REAL DEFAULT 0,
-            volume REAL DEFAULT 0,
-            buy_total REAL DEFAULT 0,
-            sell_total REAL DEFAULT 0,
-            change_pct REAL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS rounds (
-            stock_symbol TEXT NOT NULL,
-            round INTEGER NOT NULL DEFAULT 0,
-            is_settled INTEGER DEFAULT 0,
-            PRIMARY KEY (stock_symbol, round)
-        );
+        CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE NOT NULL,password TEXT NOT NULL,role TEXT DEFAULT 'player',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY AUTOINCREMENT,symbol TEXT UNIQUE NOT NULL,name TEXT NOT NULL,current_price REAL DEFAULT 0,previous_close REAL DEFAULT 0,is_deleted INTEGER DEFAULT 0,total_shares REAL DEFAULT 10000,industry_pe REAL DEFAULT 20,carbon_price REAL DEFAULT 50,industry_carbon_mean REAL DEFAULT 50,premium_rate REAL DEFAULT 50,init_funds REAL DEFAULT 5000,last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT NOT NULL,stock_symbol TEXT NOT NULL,trade_type TEXT NOT NULL,price REAL NOT NULL,shares INTEGER NOT NULL,round INTEGER DEFAULT 0,trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY AUTOINCREMENT,stock_symbol TEXT NOT NULL,round INTEGER DEFAULT 0,open_price REAL DEFAULT 0,high_price REAL DEFAULT 0,low_price REAL DEFAULT 0,close_price REAL DEFAULT 0,volume REAL DEFAULT 0,buy_total REAL DEFAULT 0,sell_total REAL DEFAULT 0,change_pct REAL DEFAULT 0,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL,round INTEGER DEFAULT 0,is_settled INTEGER DEFAULT 0,PRIMARY KEY(stock_symbol,round));
     """)
     conn.commit()
-    if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-        _seed(conn)
-    # Ensure each stock has a round 0
+    if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0: _seed(conn)
     for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-        cur.execute("INSERT OR IGNORE INTO rounds (stock_symbol,round,is_settled) VALUES (?,1,1)", (s["symbol"],))
-    conn.commit()
-    conn.close()
+        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (s["symbol"],))
+    conn.commit(); conn.close()
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users VALUES (1,'admin',?,'admin',datetime())", (hash_pwd("admin123"),))
-    for i,u in enumerate(["player1","player2","player3"],2):
-        cur.execute(f"INSERT INTO users VALUES ({i},?,?,'player',datetime())", (u,hash_pwd(u)))
-    stocks = [
-        ("TSLA","特斯拉",250.0,5000), ("AAPL","苹果",175.0,3500), ("NVDA","英伟达",450.0,9000)
-    ]
-    for sym,name,price,funds in stocks:
-        cur.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds)
-                       VALUES (?,?,?,?,?)""", (sym,name,price,price,funds))
-        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES (?,1,1)", (sym,))
-    trades = [
-        ("player1","TSLA","buy",200.0,100,1), ("player1","AAPL","buy",150.0,50,1),
-        ("player1","TSLA","sell",240.0,80,1), ("player2","NVDA","buy",400.0,30,1),
-        ("player2","AAPL","sell",160.0,40,1), ("player3","TSLA","buy",210.0,50,1),
-        ("player3","NVDA","buy",420.0,20,1),
-    ]
-    for args in trades:
-        cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
+    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime())", (hash_pwd("admin123"),))
+    for i, u in enumerate(["player1", "player2", "player3"], 2):
+        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime())", (i, u, hash_pwd(u)))
+    for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
+        cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
+        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym,))
+    trades = [("player1", "TSLA", "buy", 200.0, 100, 1), ("player1", "AAPL", "buy", 150.0, 50, 1), ("player1", "TSLA", "sell", 240.0, 80, 1), ("player2", "NVDA", "buy", 400.0, 30, 1), ("player2", "AAPL", "sell", 160.0, 40, 1), ("player3", "TSLA", "buy", 210.0, 50, 1), ("player3", "NVDA", "buy", 420.0, 20, 1)]
+    for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
     conn.commit()
 
-# ──────────────────────────────────────────────
-# 价格计算引擎（Excel公式）
-# ──────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 价格引擎（Excel公式）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def compute_price(stock):
-    """
-    理论价 = 昨收价 × 买入总额/卖出总额 × 溢价因子 × 碳因子
-    当日价 = clamp(理论价, 昨收价×0.9, 昨收价×1.1)
-    溢价因子 = 1 + 0.2 × (溢价率-50)/50
-    碳因子 = 1 - 0.5 × (碳价-碳均值)/碳均值
-    """
-    prev_close = stock.get("previous_close", stock.get("current_price", 50)) or 50
-    buy_total = max(stock.get("buy_total", 0), 1)
-    sell_total = max(stock.get("sell_total", 0), 1)
+    prev = stock.get("previous_close") or stock.get("current_price") or 50
+    bt, st_ = max(stock.get("buy_total", 0), 1), max(stock.get("sell_total", 0), 1)
+    pf = 1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50
+    cm = max(stock.get("industry_carbon_mean", 50), 1)
+    cf = 1 - 0.5 * (stock.get("carbon_price", 50) - cm) / cm
+    t = prev * (bt / st_) * pf * cf
+    return max(round(prev * 0.9, 2), min(round(prev * 1.1, 2), round(t, 2)))
 
-    premium_factor = 1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50
-    carbon_mean = max(stock.get("industry_carbon_mean", 50), 1)
-    carbon_factor = 1 - 0.5 * (stock.get("carbon_price", 50) - carbon_mean) / carbon_mean
-
-    theoretical = prev_close * (buy_total / sell_total) * premium_factor * carbon_factor
-    daily_max = round(prev_close * 1.1, 2)
-    daily_min = round(prev_close * 0.9, 2)
-    return max(daily_min, min(daily_max, round(theoretical, 2)))
-
-# ──────────────────────────────────────────────
-# 结算引擎
-# ──────────────────────────────────────────────
 def settle_round(symbol):
-    """结算当前轮次：撮合订单 → 公式定价 → 生成K线 → 开启新一轮"""
     conn = get_db(); cur = conn.cursor()
     stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
-    row = cur.execute("SELECT MAX(round) as r FROM rounds WHERE stock_symbol=?", (symbol,)).fetchone()
-    current_round = row["r"] if row and row["r"] else 0
-
-    txns = cur.execute(
-        "SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?",
-        (symbol, current_round)
-    ).fetchall()
-
-    # ── Excel公式1：订单撮合 ──
-    buy_orders = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
-    sell_orders = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
-    highest_buy = max(o[0] for o in buy_orders) if buy_orders else 0
-    lowest_sell = min(o[0] for o in sell_orders) if sell_orders else 0
-    is_matched = highest_buy >= lowest_sell if buy_orders and sell_orders else False
-    match_price = round((highest_buy + lowest_sell) / 2, 2) if is_matched else 0
-    buy_qty = sum(o[1] for o in buy_orders)
-    sell_qty = sum(o[1] for o in sell_orders)
-    match_volume = min(buy_qty, sell_qty) if is_matched else 0
-
-    # ── Excel公式2：买卖总额 ──
-    buy_total = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
-    sell_total = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
-    total_volume = sum(t["shares"] for t in txns)
-
-    # ── Excel公式3：溢价因子 & 碳因子 ──
-    prem_f = round(1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50, 4)
-    c_mean = max(stock.get("industry_carbon_mean", 50), 1)
-    carb_f = round(1 - 0.5 * (stock.get("carbon_price", 50) - c_mean) / c_mean, 4)
-
-    # ── Excel公式4：理论价 = 昨收×买/卖×溢价×碳 ──
-    price_params = dict(stock, buy_total=buy_total, sell_total=sell_total)
-    new_price = compute_price(price_params)
-    raw_theoretical = round(stock["previous_close"] or stock["current_price"], 2) * \
-                      (buy_total / max(sell_total, 1)) * prem_f * carb_f
-
-    # ── Excel公式6：K线 ──
-    prev_close = stock["previous_close"] or stock["current_price"]
-    change_pct = round((new_price - prev_close) / prev_close * 100, 2) if prev_close else 0
-    high = max(new_price, prev_close)
-    low = min(new_price, prev_close)
-
-    cur.execute("""INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,
-                 volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (symbol, current_round, prev_close, high, low, new_price,
-                 total_volume, buy_total, sell_total, change_pct))
-
-    new_round = current_round + 1
-    cur.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?",
-                (new_price, new_price, symbol))
-    cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?",
-                (symbol, current_round))
-    cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES (?,?,0)",
-                (symbol, new_round))
+    r = cur.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=?", (symbol,)).fetchone()
+    cr = r[0] if r and r[0] else 0
+    txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
+    buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
+    sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
+    hb = max(o[0] for o in buys) if buys else 0
+    ls_ = min(o[0] for o in sells) if sells else 0
+    matched = hb >= ls_ if buys and sells else False
+    mp = round((hb + ls_) / 2, 2) if matched else 0
+    bq = sum(o[1] for o in buys); sq = sum(o[1] for o in sells)
+    mv_ = min(bq, sq) if matched else 0
+    bt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
+    st_amt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
+    tv = sum(t["shares"] for t in txns)
+    pf = round(1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50, 4)
+    icm = max(stock.get("industry_carbon_mean", 50), 1)
+    cf = round(1 - 0.5 * (stock.get("carbon_price", 50) - icm) / icm, 4)
+    np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
+    raw = round((stock["previous_close"] or stock["current_price"]), 2) * (bt / max(st_amt, 1)) * pf * cf
+    pc = stock["previous_close"] or stock["current_price"]
+    cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
+    hi = max(np_, pc); lo = min(np_, pc)
+    cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+    nr = cr + 1
+    cur.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
+    cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
+    cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (symbol, nr))
     conn.commit(); conn.close()
-    return new_price, is_matched, match_price, match_volume, prem_f, carb_f, round(raw_theoretical, 2)
+    return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
-# ──────────────────────────────────────────────
-# 用户操作
-# ──────────────────────────────────────────────
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 用户 / 股票 / 持仓 / 汇总（保持原逻辑）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
-    conn = get_db()
-    r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
-    conn.close()
-    if r and r["password"] == hash_pwd(p): return True, r["role"]
-    return False, ""
+    conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
+    return (True, r["role"]) if r and r["password"] == hash_pwd(p) else (False, "")
 
 def register_user(u, p, role="player"):
     conn = get_db()
     try:
         conn.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", (u, hash_pwd(p), role))
-        conn.commit()
-        return True, "注册成功"
+        conn.commit(); return True, "注册成功"
     except sqlite3.IntegrityError: return False, "用户名已存在"
     finally: conn.close()
 
 def get_all_users():
-    conn = get_db()
-    r = conn.execute("SELECT id,username,role,created_at FROM users ORDER BY id").fetchall()
-    conn.close(); return [dict(x) for x in r]
+    conn = get_db(); r = conn.execute("SELECT id,username,role,created_at FROM users ORDER BY id").fetchall(); conn.close()
+    return [dict(x) for x in r]
 
-def reset_pwd(u, np):
-    conn = get_db()
-    conn.execute("UPDATE users SET password=? WHERE username=?", (hash_pwd(np), u))
-    conn.commit(); conn.close()
+def reset_pwd(u, np_):
+    conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (hash_pwd(np_), u)); conn.commit(); conn.close()
 
-# ──────────────────────────────────────────────
-# 股票操作
-# ──────────────────────────────────────────────
 def get_stocks():
-    conn = get_db()
-    r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
-    conn.close(); return [dict(x) for x in r]
+    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall(); conn.close()
+    return [dict(x) for x in r]
 
 def get_stock(sid):
-    conn = get_db()
-    r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone()
-    conn.close(); return dict(r) if r else None
+    conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE id=?", (sid,)).fetchone(); conn.close()
+    return dict(r) if r else None
 
 def add_stock(sym, name, price):
     conn = get_db()
     try:
-        funds = price * 10000 * 20 / 10000  # 反算初始资金
-        conn.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds)
-                        VALUES(?,?,?,?,?)""", (sym.upper(), name, price, price, funds))
-        sym_u = sym.upper()
-        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES (?,1,1)", (sym_u,))
+        funds = price * 10000 * 20 / 10000
+        conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym.upper(), name, price, price, funds))
+        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
         conn.commit(); return True, "添加成功"
-    except sqlite3.IntegrityError: return False, "股票代码已存在"
+    except sqlite3.IntegrityError: return False, "代码已存在"
     finally: conn.close()
 
 def update_stock_params(sid, **kw):
-    conn = get_db()
-    sets = ", ".join(f"{k}=?" for k in kw)
-    vals = list(kw.values()) + [sid]
-    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
-    conn.commit(); conn.close()
+    conn = get_db(); sets = ", ".join(f"{k}=?" for k in kw); vals = list(kw.values()) + [sid]
+    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals); conn.commit(); conn.close()
 
 def delete_stock(sid):
-    conn = get_db()
-    conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
-    conn.commit(); conn.close()
+    conn = get_db(); conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,)); conn.commit(); conn.close()
 
-# ──────────────────────────────────────────────
-# 交易 & 持仓
-# ──────────────────────────────────────────────
-def add_trade(username, symbol, trade_type, price, shares):
+def add_trade(username, symbol, tt, price, shares):
     conn = get_db()
-    row = conn.execute("SELECT MAX(round) as r FROM rounds WHERE stock_symbol=? AND is_settled=0",
-                       (symbol,)).fetchone()
-    current_round = row["r"] if row and row["r"] else 1
-    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
-                 (username, symbol, trade_type, price, shares, current_round))
+    r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+    cr = r[0] if r and r[0] else 1
+    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
     conn.commit(); conn.close()
 
 def get_user_portfolio(username):
-    """净持仓计算"""
     conn = get_db()
-    buys = conn.execute(
-        "SELECT stock_symbol, SUM(shares) AS s, SUM(price*shares) AS c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol",
-        (username,)).fetchall()
-    sells = conn.execute(
-        "SELECT stock_symbol, SUM(shares) AS s FROM transactions WHERE username=? AND trade_type IN ('sell','force_close') GROUP BY stock_symbol",
-        (username,)).fetchall()
+    buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
+    sells = conn.execute("SELECT stock_symbol,SUM(shares) s FROM transactions WHERE username=? AND trade_type IN('sell','force_close') GROUP BY stock_symbol", (username,)).fetchall()
     conn.close()
-    sell_map = {r["stock_symbol"]: r["s"] for r in sells}
+    sm = {r["stock_symbol"]: r["s"] for r in sells}
     stocks = {s["symbol"]: s for s in get_stocks()}
     rows = []
     for b in buys:
-        sym = b["stock_symbol"]
-        net = b["s"] - sell_map.get(sym, 0)
+        sym = b["stock_symbol"]; net = b["s"] - sm.get(sym, 0)
         if net <= 0: continue
-        avg = round(b["c"] / b["s"], 2)
-        info = stocks.get(sym, {"name":sym, "current_price":avg})
-        cp = info.get("current_price", avg)
-        mv = round(cp * net, 2)
-        pnl = round((cp - avg) * net, 2)
-        pr = round((cp-avg)/avg*100, 2) if avg else 0
-        rows.append({"symbol":sym,"name":info["name"],"shares":int(net),"avg_cost":avg,
-                     "current_price":cp,"market_value":mv,"pnl":pnl,"pnl_ratio":pr})
+        avg = round(b["c"] / b["s"], 2); info = stocks.get(sym, {"name": sym, "current_price": avg})
+        cp = info.get("current_price", avg); mv_ = round(cp * net, 2); pnl = round((cp - avg) * net, 2)
+        rows.append({"symbol": sym, "name": info["name"], "shares": int(net), "avg_cost": avg, "current_price": cp, "market_value": mv_, "pnl": pnl, "pnl_ratio": round((cp - avg) / avg * 100, 2) if avg else 0})
     return pd.DataFrame(rows)
 
 def get_user_market_making(username):
     conn = get_db()
-    rows = conn.execute("""SELECT t.stock_symbol,t.price AS sp,t.shares,t.trade_date,
-        COALESCE(s.current_price,t.price) AS cp,COALESCE(s.name,t.stock_symbol) AS nm
-        FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol
-        WHERE t.username=? AND t.trade_type='sell' ORDER BY t.trade_date DESC""", (username,)).fetchall()
+    rows = conn.execute("SELECT t.stock_symbol,t.price sp,t.shares,t.trade_date,COALESCE(s.current_price,t.price) cp,COALESCE(s.name,t.stock_symbol) nm FROM transactions t LEFT JOIN stocks s ON t.stock_symbol=s.symbol WHERE t.username=? AND t.trade_type='sell' ORDER BY t.trade_date DESC", (username,)).fetchall()
     conn.close()
-    return pd.DataFrame([{"股票":r["nm"],"卖出价":r["sp"],"当前价":r["cp"],
-        "数量":r["shares"],"对手方盈亏":round((r["cp"]-r["sp"])*r["shares"],2),
-        "时间":r["trade_date"]} for r in rows])
+    return pd.DataFrame([{"股票": r["nm"], "卖出价": round(r["sp"], 2), "当前价": round(r["cp"], 2), "数量": r["shares"], "对手方盈亏": round((r["cp"] - r["sp"]) * r["shares"], 2), "时间": r["trade_date"]} for r in rows])
 
 def get_user_overview(username):
     pf = get_user_portfolio(username)
-    if pf.empty: return {"total_assets":0,"total_cost":0,"total_pnl":0,"pnl_ratio":0,"stock_count":0,"stock_pnl":[]}
-    ta, tc = pf["market_value"].sum(), (pf["avg_cost"]*pf["shares"]).sum()
+    if pf.empty: return {"total_assets": 0, "total_cost": 0, "total_pnl": 0, "pnl_ratio": 0, "stock_count": 0, "stock_pnl": []}
+    ta, tc = pf["market_value"].sum(), (pf["avg_cost"] * pf["shares"]).sum()
     tp = ta - tc
-    return {"total_assets":round(ta,2),"total_cost":round(tc,2),"total_pnl":round(tp,2),
-            "pnl_ratio":round(tp/tc*100,2) if tc else 0,"stock_count":len(pf),
-            "stock_pnl":pf[["name","symbol","pnl"]].to_dict("records")}
+    return {"total_assets": round(ta, 2), "total_cost": round(tc, 2), "total_pnl": round(tp, 2), "pnl_ratio": round(tp / tc * 100, 2) if tc else 0, "stock_count": len(pf), "stock_pnl": pf[["name", "symbol", "pnl"]].to_dict("records")}
 
-# ──────────────────────────────────────────────
-# 管理员汇总
-# ──────────────────────────────────────────────
 def get_admin_summary():
     stocks = get_stocks()
     if not stocks: return pd.DataFrame()
-    conn = get_db()
-    players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
-    conn.close()
-    all_pfs = {}
+    conn = get_db(); players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall(); conn.close()
+    aps = {}
     for p in players:
         df = get_user_portfolio(p["username"])
-        if not df.empty: all_pfs[p["username"]] = df
+        if not df.empty: aps[p["username"]] = df
     rows = []
     for s in stocks:
         sym = s["symbol"]; ts = tc = tp = 0.0; cnt = 0
-        for un, pf in all_pfs.items():
-            r = pf[pf["symbol"]==sym]
+        for un, pf in aps.items():
+            r = pf[pf["symbol"] == sym]
             if r.empty: continue
-            rr = r.iloc[0]; ts += rr["shares"]; tc += rr["avg_cost"]*rr["shares"]; tp += rr["pnl"]; cnt += 1
-        pct = round(tp/tc*100,2) if cnt and tc else 0
-        rows.append({"股票名称":s["name"],"代码":sym,"当前价":s["current_price"],
-            "持有用户数":cnt,"总持仓量":int(ts),"总成本":round(tc,2),"总盈亏":round(tp,2),"收益率":pct})
+            rr = r.iloc[0]; ts += rr["shares"]; tc += rr["avg_cost"] * rr["shares"]; tp += rr["pnl"]; cnt += 1
+        rows.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"], "持有用户数": cnt, "总持仓量": int(ts), "总成本": round(tc, 2), "总盈亏": round(tp, 2), "收益率": round(tp / tc * 100, 2) if cnt and tc else 0})
     return pd.DataFrame(rows)
 
 def get_holder_detail(symbol):
-    conn = get_db()
-    players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
-    conn.close()
+    conn = get_db(); players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall(); conn.close()
     r = []
     for p in players:
         pf = get_user_portfolio(p["username"])
         if pf.empty: continue
-        h = pf[pf["symbol"]==symbol]
+        h = pf[pf["symbol"] == symbol]
         if h.empty: continue
-        rr = h.iloc[0]
-        r.append({"用户名":p["username"],"持仓量":int(rr["shares"]),"成本价":rr["avg_cost"],
-                  "当前价":rr["current_price"],"盈亏":rr["pnl"],"收益率":rr["pnl_ratio"]})
+        rr = h.iloc[0]; r.append({"用户名": p["username"], "持仓量": int(rr["shares"]), "成本价": rr["avg_cost"], "当前价": rr["current_price"], "盈亏": rr["pnl"], "收益率": rr["pnl_ratio"]})
     return pd.DataFrame(r)
 
 def get_kline_data(symbol):
-    conn = get_db()
-    r = conn.execute("SELECT * FROM kline WHERE stock_symbol=? ORDER BY round", (symbol,)).fetchall()
-    conn.close()
+    conn = get_db(); r = conn.execute("SELECT * FROM kline WHERE stock_symbol=? ORDER BY round", (symbol,)).fetchall(); conn.close()
     return [dict(x) for x in r]
 
 def get_platform_stats():
     s = get_admin_summary()
-    if s.empty: return {"total_mv":0,"total_pnl":0,"active_users":0}
-    conn = get_db()
-    cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
-    conn.close()
-    return {"total_mv":round((s["当前价"]*s["总持仓量"]).sum(),2),
-            "total_pnl":round(s["总盈亏"].sum(),2),"active_users":cnt}
+    if s.empty: return {"total_mv": 0, "total_pnl": 0, "active_users": 0}
+    conn = get_db(); cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]; conn.close()
+    return {"total_mv": round((s["当前价"] * s["总持仓量"]).sum(), 2), "total_pnl": round(s["总盈亏"].sum(), 2), "active_users": cnt}
 
-# ──────────────────────────────────────────────
-# 华丽 UI 主题
-# ──────────────────────────────────────────────
-CUSTOM_CSS = """
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 响应式 CSS — 移动端优先
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESPONSIVE_CSS = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body, [class*="css"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
 
-    /* ====== 登录页 — Fintech 高端设计 ====== */
-    .login-bg {
-        position: fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
-        background: #F1F5F9;
-    }
-    .login-wrap {
-        position: fixed; top:0; left:0; right:0; bottom:0; z-index:0;
-        display:flex; align-items:center; justify-content:center;
-    }
-    .login-card {
-        display:flex; width:900px; min-height:580px;
-        border-radius:24px; background:#fff;
-        box-shadow:0 24px 80px rgba(0,0,0,.12);
-        overflow:hidden;
-    }
+/* ===== 颜色系统 ===== */
+:root {
+    --bg:       #F5F7FA;
+    --card:     #FFFFFF;
+    --text:     #1A1A2E;
+    --text-2nd: #4A4A6A;
+    --text-aux: #8A8AAA;
+    --border:   #E8E8F0;
+    --primary:  #2D6AFF;
+    --green:    #00C853;
+    --red:      #FF1744;
+}
 
-    /* 左侧品牌区 */
-    .brand-side {
-        flex:0 0 42%; position:relative; overflow:hidden;
-        background: linear-gradient(135deg, #0F172A 0%, #1E293B 60%, #0F172A 100%);
-        display:flex; flex-direction:column; justify-content:space-between;
-        padding:40px 36px;
-    }
-    .brand-version {
-        position:absolute; top:24px; right:28px;
-        font-size:12px; color:#64748B; font-weight:500; letter-spacing:1px;
-    }
-    .brand-mid { position:relative; z-index:1; }
-    .brand-title {
-        font-size:40px; font-weight:700; color:#fff; letter-spacing:2px; line-height:1.15;
-    }
-    .brand-line {
-        width:40px; height:3px; background:#3B82F6; margin:18px 0;
-    }
-    .brand-sub {
-        font-size:16px; color:#94A3B8; letter-spacing:1px; font-weight:400;
-    }
-    .brand-orbs { position:absolute; bottom:-100px; right:-120px; }
-    .brand-orb {
-        position:absolute; border-radius:50%; border:2px solid rgba(255,255,255,.06);
-    }
-    .brand-orb:nth-child(1) { width:320px; height:320px; bottom:0; right:0; }
-    .brand-orb:nth-child(2) { width:240px; height:240px; bottom:20px; right:40px; border-color:rgba(255,255,255,.03); }
-    .brand-orb:nth-child(3) { width:160px; height:160px; bottom:40px; right:80px; border-color:rgba(255,255,255,.02); }
-    .brand-footer {
-        position:relative; z-index:1;
-        font-size:12px; color:#475569; font-weight:500;
-    }
+/* ===== 移动端基础 ===== */
+.stApp { background: var(--bg); }
+section.main > div.block-container {
+    padding: 12px !important; max-width: 100% !important;
+}
 
-    /* 右侧表单区 */
-    .form-side {
-        flex:1; padding:48px 44px;
-        display:flex; flex-direction:column; justify-content:center;
-    }
-    .welcome-text { font-size:22px; font-weight:600; color:#0F172A; margin:0; }
-    .welcome-sub { font-size:14px; color:#94A3B8; margin:4px 0 24px 0; }
+/* 顶栏 */
+.topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0 12px 0; font-size: 14px; color: var(--text-aux);
+}
+.topbar .brand { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: 1px; }
+.topbar .topbar-right { display: flex; gap: 12px; align-items: center; }
 
-    /* Tab 按钮区域 */
-    .tab-row {
-        display:flex; gap:32px; margin-bottom:28px;
-        padding-bottom:10px; border-bottom:1px solid #E2E8F0;
-    }
-    .tab-btn {
-        font-size:16px; font-weight:500; color:#94A3B8;
-        background:none; border:none; cursor:pointer; padding:4px 0;
-        border-bottom:2px solid transparent; margin-bottom:-12px;
-    }
-    .tab-btn.active { color:#0F172A; border-bottom-color:#3B82F6; }
+/* KPI 网格 - 移动端 2x2 */
+.kpi-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    margin-bottom: 20px;
+}
+.kpi-card {
+    background: var(--card); border-radius: 12px; padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04); border: 1px solid var(--border);
+}
+.kpi-card .label { font-size: 11px; color: var(--text-aux); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.kpi-card .value {
+    font-size: 20px; font-weight: 700; color: var(--text);
+    font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
+}
+.kpi-card .delta { font-size: 12px; margin-top: 2px; }
+.kpi-card .delta.up { color: var(--green); }
+.kpi-card .delta.down { color: var(--red); }
 
-    /* 输入框风格覆盖 */
-    .form-side .stTextInput input {
-        height:46px !important; border:1.5px solid #E2E8F0 !important;
-        border-radius:10px !important; font-size:14px !important;
-        padding:0 16px !important; color:#0F172A !important;
-        background:#fff !important; outline:none !important;
-    }
-    .form-side .stTextInput input:focus {
-        border-color:#3B82F6 !important;
-        box-shadow:0 0 0 3px rgba(59,130,246,.12) !important;
-    }
-    .form-side .stTextInput input::placeholder { color:#94A3B8 !important; }
-    .form-side label { color:#0F172A !important; font-size:13px !important; font-weight:500 !important; margin-bottom:4px !important; }
+/* 移动端股票卡片 */
+.stock-card {
+    background: var(--card); border-radius: 12px; padding: 16px;
+    margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    border: 1px solid var(--border);
+}
+.stock-card .sc-header {
+    display: flex; justify-content: space-between; align-items: center;
+}
+.stock-card .sc-name { font-size: 16px; font-weight: 600; color: var(--text); }
+.stock-card .sc-pct { font-size: 15px; font-weight: 600; }
+.stock-card .sc-pct.up { color: var(--green); }
+.stock-card .sc-pct.down { color: var(--red); }
+.stock-card .sc-detail {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;
+    margin: 8px 0; font-size: 13px; color: var(--text-2nd);
+}
+.stock-card .sc-detail .val { color: var(--text); font-weight: 500; }
+.stock-card .sc-actions { display: flex; gap: 8px; }
+.sc-btn {
+    flex: 1; height: 40px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: transform .08s; background: var(--card); color: var(--text);
+}
+.sc-btn:active { transform: scale(.97); }
+.sc-btn.buy { background: var(--primary); color: #fff; }
+.sc-btn.sell { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
 
-    .form-side .stButton button[kind="primary"] {
-        width:100% !important; height:48px !important;
-        background:linear-gradient(135deg, #3B82F6, #6366F1) !important;
-        color:#fff !important; border:none !important; border-radius:10px !important;
-        font-size:16px !important; font-weight:600 !important;
-        margin-top:4px !important;
-    }
-    .form-side .stButton button[kind="primary"]:hover {
-        transform:scale(1.01); box-shadow:0 8px 24px rgba(59,130,246,.3) !important;
-    }
+/* 底部交易栏 — 移动端 */
+.trade-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    background: var(--card); padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+    box-shadow: 0 -2px 8px rgba(0,0,0,.04);
+}
+.trade-bar select, .trade-bar input {
+    height: 40px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 0 10px; font-size: 14px; font-family: inherit; flex: 1; min-width: 0;
+    background: var(--bg); color: var(--text);
+}
+.trade-bar button {
+    height: 40px; background: var(--primary); color: #fff;
+    border: none; border-radius: 8px; padding: 0 20px;
+    font-weight: 600; font-size: 14px; cursor: pointer; font-family: inherit;
+    transition: transform .08s;
+}
+.trade-bar button:active { transform: scale(.97); }
+.trade-bar-spacer { height: 60px; } /* 防止固定栏遮挡内容 */
 
-    /* 注册/错误/成功消息 */
-    .reg-msg { font-size:13px; padding:8px 0; }
-    .reg-msg.success { color:#10B981; }
-    .reg-msg.error { color:#EF4444; }
-    .divider-line {
-        display:flex; align-items:center; gap:12px; margin:20px 0 14px;
-        color:#94A3B8; font-size:12px;
-    }
-    .divider-line::before, .divider-line::after {
-        content:''; flex:1; height:1px; background:#E2E8F0;
-    }
-    .guest-link {
-        text-align:center; font-size:14px; color:#3B82F6; cursor:pointer;
-        background:none; border:1.5px solid #E2E8F0; border-radius:10px;
-        height:44px; line-height:44px; width:100%; display:block;
-    }
-    .guest-link:hover { border-color:#3B82F6; }
+/* 桌面端可见/隐藏 */
+.desktop-only { display: none; }
+.mobile-only { display: block; }
 
-    .login-page .stTabs { display:none; }
-    .form-side .stForm { margin:0; padding:0; border:none; }
-    .form-side .stForm > div:first-child { padding-top:0; }
+/* ===== 桌面端 @media (min-width: 768px) ===== */
+@media (min-width: 768px) {
+    section.main > div.block-container { padding: 32px !important; }
+    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .kpi-card .label { font-size: 10px; }
+    .kpi-card .value { font-size: 24px; }
+    .desktop-only { display: block; }
+    .mobile-only { display: none; }
+    .trade-bar { display: none; }
+    .trade-bar-spacer { display: none; }
 
-    /* 卡牌列布局：消除间隙 + 统一外观 */
-    .login-page [data-testid="stHorizontalBlock"] { gap:0 !important; }
-    .login-page [data-testid="column"]:first-child { border-radius:24px 0 0 24px; overflow:hidden; }
-    .login-page [data-testid="column"]:nth-child(2) { border-radius:0 24px 24px 0; }
-    .login-page [data-testid="column"] > div { height:100%; }
-    .login-page .stButton button { border-radius:10px !important; }
+    /* 桌面端表格替代卡片 */
+    .desktop-table {
+        background: var(--card); border-radius: 12px; padding: 4px 16px 16px 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,.04); border: 1px solid var(--border);
+    }
+}
 
-    /* == 主应用样式 == */
-    .stApp { background: #f0f4f8; }
-    .main-header {
-        background: linear-gradient(135deg, #0f1729 0%, #1a2a5e 50%, #0f1729 100%);
-        padding: 2rem; border-radius: 0 0 28px 28px;
-        margin: -3rem -3rem 2rem -3rem; text-align: center;
-        box-shadow: 0 8px 40px rgba(0,0,0,.15);
-        position:relative; overflow:hidden;
-    }
-    .main-header::before {
-        content:''; position:absolute; top:0; left:0; right:0; height:1px;
-        background: linear-gradient(90deg, transparent, rgba(99,102,241,.3), transparent);
-    }
-    .main-header h1 { color: #fff; font-size: 2rem; font-weight:800; letter-spacing: .5px; margin:0; }
-    .main-header p { color: rgba(255,255,255,.5); font-size:.85rem; margin:6px 0 0 0; }
-
-    /* 卡片 */
-    .card {
-        background: #fff; border-radius: 16px; padding: 1.3rem 1.6rem;
-        box-shadow: 0 2px 16px rgba(0,0,0,.04); border:1px solid rgba(0,0,0,.03);
-        margin-bottom:1rem; transition: all .3s cubic-bezier(.4,0,.2,1);
-    }
-    .card:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(0,0,0,.08); border-color: rgba(99,102,241,.1); }
-    .card-title { font-size:.82rem; color:#8892a4; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
-    .card-value { font-size:1.9rem; font-weight:800; color:#0f1729; margin:4px 0; }
-    .up { color:#10B981!important; } .down { color:#EF4444!important; }
-
-    /* 侧边栏 */
-    section[data-testid="stSidebar"] > div:first-child {
-        background: linear-gradient(180deg, #0b1020 0%, #131e3d 60%, #0f1729 100%);
-        box-shadow: inset -1px 0 0 rgba(255,255,255,.03);
-    }
-    section[data-testid="stSidebar"] .stMarkdown { color: rgba(255,255,255,.8); }
-    section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.06); }
-    section[data-testid="stSidebar"] .stRadio > div {
-        background: transparent;
-    }
-    section[data-testid="stSidebar"] .stRadio label {
-        color: rgba(255,255,255,.55) !important; padding: 10px 16px !important;
-        border-radius: 10px; font-weight:600; font-size:.85rem;
-        transition: all .2s; margin: 2px 0;
-    }
-    section[data-testid="stSidebar"] .stRadio label:hover {
-        background: rgba(255,255,255,.04); color: rgba(255,255,255,.9) !important;
-    }
-    section[data-testid="stSidebar"] .stRadio [data-checked="true"] + div label {
-        background: linear-gradient(135deg, rgba(99,102,241,.15), rgba(6,182,212,.1));
-        color: #a78bfa !important; border-left: 3px solid #6366f1;
-    }
-    section[data-testid="stSidebar"] .stButton button {
-        background: rgba(255,255,255,.04); border-radius: 12px;
-        color: rgba(255,255,255,.5); font-weight:600; border: 1px solid rgba(255,255,255,.06);
-    }
-    section[data-testid="stSidebar"] .stButton button:hover {
-        background: rgba(255,255,255,.08); color: #ff6b6b; border-color: rgba(255,107,107,.2);
-    }
-
-    /* 主按钮 */
-    .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #1e3a6e, #2d5fc0) !important;
-        border:none !important; border-radius: 10px !important;
-        font-weight:700 !important; box-shadow: 0 4px 15px rgba(30,58,110,.2);
-    }
-    .stButton button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #26478c, #3568d4) !important;
-        box-shadow: 0 6px 25px rgba(30,58,110,.35) !important;
-        transform: translateY(-1px);
-    }
-    .stButton button[kind="primary"]:active { transform: scale(.97); }
-
-    /* 输入框 */
-    .stTextInput input { border-radius: 10px; border:1px solid #d0d5dd; transition: all .2s; }
-    .stTextInput input:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.08); }
-
-    /* 指标卡片 */
-    .kpi-box {
-        background:#fff; border-radius:16px; padding:16px 20px; text-align:center;
-        height:120px; display:flex; flex-direction:column; justify-content:flex-end;
-        box-shadow:0 2px 12px rgba(0,0,0,.04); border:1px solid rgba(0,0,0,.03);
-        transition: all .3s; position:relative; overflow:hidden;
-    }
-    .kpi-box:hover { transform: translateY(-2px); box-shadow:0 10px 30px rgba(0,0,0,.06); border-color:rgba(99,102,241,.08); }
-    .kpi-box::before {
-        content:''; position:absolute; top:0; left:0; right:0; height:3px;
-        background: linear-gradient(90deg, #6366f1, #06b6d4);
-        transform: scaleX(0); transition: transform .4s;
-    }
-    .kpi-box:hover::before { transform: scaleX(1); }
-    .kpi-box .label { font-size:10px; color:#8892a4; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
-    .kpi-box .value {
-        font-size:1.8rem; font-weight:800; color:#0f1729; margin:4px 0;
-        font-feature-settings:"tnum"; font-variant-numeric:tabular-nums;
-    }
-    .kpi-box .delta { font-size:12px; font-weight:600; }
-
-    /* 表格 */
-    div[data-testid="stDataFrame"] table { border-radius: 12px; overflow:hidden; }
-    div[data-testid="stDataFrame"] th { background: #f8f9fc !important; font-weight:700; font-size:.78rem; color:#475569; }
-    div[data-testid="stDataFrame"] td { font-size:.82rem; }
-    div[data-testid="stDataFrame"] tbody tr:hover { background: rgba(99,102,241,.03) !important; }
-    div[data-testid="stDataFrame"] tbody tr:hover td { background: transparent; }
-
-    /* Expander */
-    .stExpander { border-radius:14px !important; border:1px solid rgba(0,0,0,.05) !important; margin-bottom:8px !important; }
-    .stExpander:hover { border-color: rgba(99,102,241,.1) !important; }
-    .stExpander summary { font-weight:700; font-size:.9rem; }
-
-    /* 页面间距 */
-    section.main > div.block-container { padding: 32px !important; max-width:100% !important; }
-    .stApp { background: #f0f4f8; }
-
-    /* 隐藏 Streamlit 品牌 */
-    [data-testid="stStatusWidget"] { display: none !important; }
-    .stDeployButton, footer, [data-testid="stDecoration"] { display: none !important; }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width:6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,.15); border-radius:3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,.3); }
+/* 侧边栏桌面样式 */
+@media (min-width: 768px) {
+    [data-testid="stSidebar"] { background: var(--text) !important; }
+    [data-testid="stSidebar"] > div:first-child { background: var(--text); padding: 0 !important; }
+    [data-testid="stSidebarNav"] { display: none !important; }
+}
 </style>
 """
 
-def render_header():
-    """深蓝渐变页面头"""
-    role_tag = "🛡️ 管理员" if st.session_state.role == "admin" else "🎯 选手"
-    st.markdown(f"""
-    <div class="main-header">
-        <h1>📊 股票交易系统</h1>
-        <p>{st.session_state.username} · {role_tag}</p>
-    </div>
-    """, unsafe_allow_html=True)
+SIDEBAR_CSS = """
+<style>
+    .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-brand .name { font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 2px; }
+    .sb-brand .sub { font-size: 10px; color: #64748B; letter-spacing: 2px; margin-top: 2px; }
+    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; }
+    .sb-user .urole { font-size: 11px; color: #8A8AAA; margin-top: 2px; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); margin-right: 6px; }
+    .menu-group-label { font-size: 9px; font-weight: 700; color: #4A4A6A; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        display: flex !important; align-items: center !important; padding: 10px 16px !important;
+        margin: 1px 8px !important; border-radius: 8px !important; color: #8A8AAA !important;
+        font-size: 13px !important; font-weight: 500 !important; transition: all .15s !important;
+        min-height: auto !important; position: relative !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background: rgba(255,255,255,.06) !important; color: #E8E8F0 !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
+        background: rgba(45,106,255,.15) !important; color: #2D6AFF !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
+        content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+        width: 3px; height: 20px; background: var(--primary); border-radius: 0 4px 4px 0;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        margin: 0; font-size: 13px; font-weight: 500;
+    }
+    .sb-exit-btn { padding: 20px 12px 16px 12px; }
+    .sb-exit-btn button {
+        width: 100% !important; background: transparent !important; border: 1px solid rgba(255,23,68,.2) !important;
+        color: var(--red) !important; border-radius: 8px !important; font-size: 13px !important;
+        font-weight: 600 !important; height: 40px !important; transition: all .15s !important;
+    }
+    .sb-exit-btn button:hover { background: rgba(255,23,68,.08) !important; color: #FF1744 !important; border-color: rgba(255,23,68,.4) !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    .stDeployButton, footer { display: none !important; }
+</style>
+"""
 
-def metric_card(title, value, delta=None, delta_color="normal"):
-    dc = {"normal":"up","inverse":"down","off":"gray"}.get(delta_color,"gray")
-    d = f'<div class="delta {dc}">{delta}</div>' if delta else ""
-    return f'<div class="kpi-box"><div class="label">{title}</div><div class="value">{value}</div>{d}</div>'
-
-def fmt_money(v):  return f"¥{v:,.0f}"
-def fmt_pnl(v):    return f"¥{v:,.2f}"
-def fmt_pct(v):    return f"{v:,.2f}%"
-
-CHART_GREEN = "#10B981"
-CHART_RED   = "#EF4444"
-
-# ──────────────────────────────────────────────
-# 页面
-# ──────────────────────────────────────────────
-
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 登录页
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LOGIN_HTML = r"""
-<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#F1F5F9;display:flex;justify-content:center;align-items:center;min-height:100vh;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F5F7FA;display:flex;justify-content:center;align-items:center;min-height:100vh;}
 .card{display:flex;width:880px;height:520px;background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.06);overflow:hidden;}
-.brand{flex:0 0 38%;background:#0F172A;padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;}
-.brand .ver{font-size:11px;color:#475569;letter-spacing:1px;}
+.brand{flex:0 0 38%;background:#1A1A2E;padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;}
+.brand .ver{font-size:11px;color:#4A4A6A;letter-spacing:1px;}
 .brand .title{font-size:28px;font-weight:600;color:#fff;letter-spacing:2px;}
-.brand .line{width:32px;height:2px;background:#2563EB;margin:16px 0;}
-.brand .desc{font-size:14px;color:#94A3B8;line-height:1.6;}
-.brand .copy{font-size:11px;color:#334155;}
+.brand .line{width:32px;height:2px;background:#2D6AFF;margin:16px 0;}
+.brand .desc{font-size:14px;color:#8A8AAA;line-height:1.6;}
+.brand .copy{font-size:11px;color:#4A4A6A;}
 .form{flex:1;padding:48px 44px;display:flex;flex-direction:column;justify-content:center;}
-.form h2{font-size:20px;font-weight:600;color:#0F172A;}
-.form .sub{font-size:14px;color:#94A3B8;margin:4px 0 28px;}
-.tabs{display:flex;gap:24px;border-bottom:1px solid #E2E8F0;padding-bottom:12px;margin-bottom:24px;}
-.tabs button{background:none;border:none;font-size:14px;font-weight:500;color:#94A3B8;cursor:pointer;padding:4px 0;font-family:inherit;}
-.tabs button.active{color:#0F172A;border-bottom:2px solid #2563EB;padding-bottom:10px;}
+.form h2{font-size:20px;font-weight:600;color:#1A1A2E;}
+.form .sub{font-size:14px;color:#8A8AAA;margin:4px 0 28px;}
+.tabs{display:flex;gap:24px;border-bottom:1px solid #E8E8F0;padding-bottom:12px;margin-bottom:24px;}
+.tabs button{background:none;border:none;font-size:14px;font-weight:500;color:#8A8AAA;cursor:pointer;padding:4px 0;font-family:inherit;}
+.tabs button.active{color:#1A1A2E;border-bottom:2px solid #2D6AFF;padding-bottom:10px;}
 .ig{margin-bottom:16px;}
-.ig label{display:block;font-size:12px;font-weight:500;color:#0F172A;margin-bottom:4px;}
-.ig input{width:100%;height:42px;border:1.5px solid #E2E8F0;border-radius:6px;padding:0 12px;font-size:14px;font-family:inherit;outline:none;transition:border .15s,box-shadow .15s;}
-.ig input:focus{border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.08);}
+.ig label{display:block;font-size:12px;font-weight:500;color:#1A1A2E;margin-bottom:4px;}
+.ig input{width:100%;height:42px;border:1.5px solid #E8E8F0;border-radius:6px;padding:0 12px;font-size:14px;font-family:inherit;outline:none;transition:border .15s;}
+.ig input:focus{border-color:#2D6AFF;box-shadow:0 0 0 3px rgba(45,106,255,.08);}
 .opts{display:flex;justify-content:space-between;font-size:12px;margin:4px 0 20px;}
-.opts a{color:#2563EB;text-decoration:none;}
-.opts input[type="checkbox"]{accent-color:#2563EB;}
-.btn{width:100%;height:42px;background:#2563EB;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:background .15s;}
+.opts a{color:#2D6AFF;text-decoration:none;}
+.opts input[type="checkbox"]{accent-color:#2D6AFF;}
+.btn{width:100%;height:42px;background:#2D6AFF;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:transform .08s,background .15s;}
 .btn:hover{background:#1D4ED8;}
-.divider{display:flex;align-items:center;gap:16px;margin:20px 0 16px;font-size:11px;color:#94A3B8;}
-.divider span{flex:1;height:1px;background:#E2E8F0;}
-.ghost{width:100%;height:42px;background:none;border:1.5px solid #E2E8F0;border-radius:6px;font-size:13px;font-family:inherit;color:#475569;cursor:pointer;transition:border .15s,color .15s;}
-.ghost:hover{border-color:#2563EB;color:#2563EB;}
+.btn:active{transform:scale(.97);}
+.divider{display:flex;align-items:center;gap:16px;margin:20px 0 16px;font-size:11px;color:#8A8AAA;}
+.divider span{flex:1;height:1px;background:#E8E8F0;}
+.ghost{width:100%;height:42px;background:none;border:1.5px solid #E8E8F0;border-radius:6px;font-size:13px;font-family:inherit;color:#4A4A6A;cursor:pointer;}
+.ghost:hover{border-color:#2D6AFF;color:#2D6AFF;}
 .msg{margin-top:12px;font-size:13px;}
-.msg.error{color:#EF4444;} .msg.success{color:#10B981;}
-@media(max-width:768px){.card{flex-direction:column;height:auto;max-width:400px}.brand{flex:0 0 auto;padding:32px 28px;min-height:140px}.form{padding:32px 28px}}
+.msg.error{color:#FF1744;} .msg.success{color:#00C853;}
+@media(max-width:768px){.card{flex-direction:column;width:92vw;height:auto;max-width:400px}.brand{flex:0 0 auto;padding:28px 24px;min-height:100px}.form{padding:28px 24px}}
 </style></head>
 <body>
 <div class="card">
-<div class="brand">
-<div class="ver">V2.0</div>
-<div><div class="title">双镜</div><div class="line"></div><div class="desc">智能投资<br>分析系统</div></div>
-<div class="copy">(c) 2026</div>
-</div>
+<div class="brand"><div class="ver">V2.0</div><div><div class="title">双镜</div><div class="line"></div><div class="desc">智能投资<br>分析系统</div></div><div class="copy">(c) 2026</div></div>
 <div class="form">
-<h2 id="formTitle">欢迎回来</h2>
-<div class="sub" id="formSub">登录您的账户</div>
+<h2 id="formTitle">欢迎回来</h2><div class="sub" id="formSub">登录您的账户</div>
 <div class="tabs">
 <button class="active" id="tabLogin" onclick="switchTab('login')">登录</button>
 <button id="tabRegister" onclick="switchTab('register')">注册</button>
@@ -729,8 +463,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 var msgs = __MESSAGES__;
 if(msgs.error) showMsg(msgs.error,'error');
 if(msgs.success) showMsg(msgs.success,'success');
-
-function send(d){if(window.Streamlit){window.Streamlit.setComponentValue(d);window.Streamlit.setFrameHeight(580);}}
+function send(d){if(window.Streamlit){window.Streamlit.setComponentValue(d);window.Streamlit.setFrameHeight(600);}}
 function showMsg(t,s){var e=document.getElementById('msg');e.textContent=t;e.className='msg '+s;}
 function switchTab(t){
     var L=document.getElementById('loginForm'),R=document.getElementById('registerForm');
@@ -739,723 +472,392 @@ function switchTab(t){
     else{L.style.display='none';R.style.display='block';TR.className='active';TL.className='';document.getElementById('formTitle').textContent='创建账户';document.getElementById('formSub').textContent='注册成为新用户';}
     document.getElementById('msg').textContent='';
 }
-function doLogin(){
-    var u=document.getElementById('loginUser').value,p=document.getElementById('loginPass').value;
-    if(!u||!p){showMsg('请输入用户名和密码','error');return;}
-    send({type:'login',user:u,pass:p});
-}
-function doRegister(){
-    var u=document.getElementById('regUser').value,p=document.getElementById('regPass').value,p2=document.getElementById('regPass2').value;
-    if(!u||!p||!p2){showMsg('请完整填写所有字段','error');return;}
-    if(p!==p2){showMsg('两次密码输入不一致','error');return;}
-    if(u.length<3){showMsg('用户名至少3位','error');return;}
-    if(p.length<4){showMsg('密码至少4位','error');return;}
-    send({type:'register',user:u,pass:p});
-}
+function doLogin(){var u=document.getElementById('loginUser').value,p=document.getElementById('loginPass').value;if(!u||!p){showMsg('请输入用户名和密码','error');return;}send({type:'login',user:u,pass:p});}
+function doRegister(){var u=document.getElementById('regUser').value,p=document.getElementById('regPass').value,p2=document.getElementById('regPass2').value;if(!u||!p||!p2){showMsg('请完整填写','error');return;}if(p!==p2){showMsg('两次密码不一致','error');return;}if(u.length<3){showMsg('用户名至少3位','error');return;}if(p.length<4){showMsg('密码至少4位','error');return;}send({type:'register',user:u,pass:p});}
 function doGuest(){send({type:'guest'});}
 </script>
 </body></html>
 """
 
-
 def page_login():
-    # 全屏覆盖 Streamlit 边框
     st.markdown("""
     <style>
         .stApp > header { display:none !important; }
         section.main > div.block-container { padding:0 !important; max-width:100% !important; }
-        .stApp { background:#F1F5F9 !important; }
-        .stDeployButton, footer { display:none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    import json as _json
-    msgs = {
-        "error": st.session_state.pop("login_error", ""),
-        "success": st.session_state.pop("login_ok", ""),
-    }
-    html = LOGIN_HTML.replace("__MESSAGES__", _json.dumps(msgs))
-
-    result = components.html(html, height=680, scrolling=False)
-
+        .stApp { background:#F5F7FA !important; }
+        .stDeployButton, footer, [data-testid="stStatusWidget"], [data-testid="stDecoration"] { display:none !important; }
+    </style>""", unsafe_allow_html=True)
+    msgs = {"error": st.session_state.pop("login_error", ""), "success": st.session_state.pop("login_ok", "")}
+    html = LOGIN_HTML.replace("__MESSAGES__", json.dumps(msgs))
+    result = components.html(html, height=620, scrolling=False)
     if result and isinstance(result, dict):
         t = result.get("type")
         if t == "login":
             ok, role = auth_user(result["user"], result["pass"])
-            if ok:
-                st.session_state.logged_in = True
-                st.session_state.username = result["user"]
-                st.session_state.role = role
-            else:
-                st.session_state.login_error = "用户名或密码错误"
-                st.rerun()
+            if ok: st.session_state.logged_in = True; st.session_state.username = result["user"]; st.session_state.role = role
+            else: st.session_state.login_error = "用户名或密码错误"; st.rerun()
         elif t == "register":
             ok, msg = register_user(result["user"], result["pass"])
-            if ok:
-                st.session_state.login_ok = "注册成功，请登录"
-            else:
-                st.session_state.login_error = msg
+            if ok: st.session_state.login_ok = "注册成功，请登录"
+            else: st.session_state.login_error = msg
             st.rerun()
         elif t == "guest":
-            st.session_state.logged_in = True
-            st.session_state.username = "guest"
-            st.session_state.role = "player"
+            st.session_state.logged_in = True; st.session_state.username = "guest"; st.session_state.role = "player"
         st.rerun()
 
-def page_overview():
-    render_header()
-    if st.session_state.role == "admin":
-        stats = get_platform_stats()
-        cols = st.columns(3)
-        for i,(t,v) in enumerate([("🏦 总市值",f"¥{stats['total_mv']:,.0f}"),
-                                   ("📈 平台总盈亏",f"¥{stats['total_pnl']:,.0f}"),
-                                   ("👥 活跃用户",str(stats['active_users']))]):
-            cols[i].markdown(metric_card(t,v), unsafe_allow_html=True)
-        st.divider()
-        summary = get_admin_summary()
-        if not summary.empty:
-            sdf = summary.sort_values("总盈亏")
-            fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"],
-                text=sdf["总盈亏"].apply(lambda x: f"¥{x:,.0f}"),
-                marker_color=["#EF4444" if v<0 else "#10B981" for v in sdf["总盈亏"]]))
-            fig.update_traces(textposition="outside")
-            fig.update_layout(title={"text":"🏆 各股票盈亏排行","x":0.5},
-                xaxis_title="",yaxis_title="总盈亏(¥)",height=380,
-                plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, use_container_width=True)
-        return
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 通用组件
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def kpi_card(label, value, delta=None, up=True):
+    d = f'<div class="delta {"up" if up else "down"}">{delta}</div>' if delta else ""
+    return f'<div class="kpi-card"><div class="label">{label}</div><div class="value">{value}</div>{d}</div>'
 
+def fmt_money(v):   return f"¥{v:,.0f}"
+def fmt_pnl(v):     return f"¥{v:,.2f}"
+def fmt_pct(v, s=True):
+    sign = "+" if (s and v > 0) else ("" if s else "")
+    return f"{sign}{v:,.2f}%"
+
+def fmt_num(v):     return f"{v:,}"
+
+GREEN = "#00C853"; RED = "#FF1744"
+
+def pnl_class(v): return "up" if v >= 0 else "down"
+def pnl_color(v): return GREEN if v >= 0 else RED
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 页面：总览
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def page_overview():
     data = get_user_overview(st.session_state.username)
-    cols = st.columns(4)
-    for i,(t,v,d,c) in enumerate([
-        ("💰 总资产",f"¥{data['total_assets']:,.0f}",None,"off"),
-        ("📉 总成本",f"¥{data['total_cost']:,.0f}",None,"off"),
-        ("📈 总盈亏",f"¥{data['total_pnl']:,.0f}",f"{data['pnl_ratio']:.2f}%",
-         "normal" if data['total_pnl']>=0 else "inverse"),
-        ("🧾 持仓数",str(data['stock_count']),None,"off"),
-    ]):
-        cols[i].markdown(metric_card(t,v,d,c), unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="topbar">
+        <span class="brand">双镜</span>
+        <span class="topbar-right"><span>{st.session_state.username}</span><span>更新 {datetime.now().strftime('%H:%M')}</span></span>
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="kpi-grid">
+        {kpi_card("总资产", fmt_money(data["total_assets"]))}
+        {kpi_card("今日盈亏", fmt_money(data["total_pnl"]),
+        fmt_pct(data["pnl_ratio"]), data["total_pnl"] >= 0)}
+        {kpi_card("收益率", fmt_pct(data["pnl_ratio"]), None, data["pnl_ratio"] >= 0)}
+        {kpi_card("持仓数", fmt_num(data["stock_count"]))}
+    </div>""", unsafe_allow_html=True)
 
     if data["stock_pnl"]:
-        st.divider()
+        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">各股票盈亏</div>""", unsafe_allow_html=True)
         df = pd.DataFrame(data["stock_pnl"])
-        fig = go.Figure(go.Bar(x=df["name"], y=df["pnl"],
-            text=df["pnl"].apply(lambda x: f"¥{x:,.0f}"),
-            marker_color=["#10B981" if v>=0 else "#EF4444" for v in df["pnl"]]))
-        fig.update_traces(textposition="outside")
-        fig.update_layout(title={"text":"📊 各股票盈亏","x":0.5},
-            xaxis_title="",yaxis_title="盈亏(¥)",height=350,
-            plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(go.Bar(
+            x=df["name"], y=df["pnl"],
+            marker_color=[pnl_color(v) for v in df["pnl"]],
+            text=[fmt_pnl(v) for v in df["pnl"]],
+            textposition="outside",
+            marker_line_width=0, width=.35,
+        ))
+        fig.update_layout(
+            margin=dict(t=8, b=0, l=0, r=0), height=240,
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showgrid=False, tickfont=dict(size=11, color="#8A8AAA")),
+            yaxis=dict(showgrid=False, tickfont=dict(size=11, color="#8A8AAA"), zeroline=False),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
-        st.info("💡 暂无持仓，请在「交易大厅」买入股票")
-
-def page_trade_hall():
-    render_header()
-    stocks = get_stocks()
-    if not stocks: st.error("暂无可用股票"); return
-    opts = {f"{s['name']} ({s['symbol']}) — ¥{s['current_price']:,.2f}":s for s in stocks}
-
-    # 当前轮次信息
-    conn = get_db()
-    rr = {}
-    for s in stocks:
-        r = conn.execute("SELECT MAX(round) as r, is_settled FROM rounds WHERE stock_symbol=?",
-                         (s["symbol"],)).fetchone()
-        rr[s["symbol"]] = r
-    conn.close()
-
-    col_left, col_right = st.columns([1,1.2])
-    with col_left:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 📝 下单")
-        with st.form("trade_form"):
-            sel = st.selectbox("选择股票", list(opts.keys()))
-            stock = opts[sel]
-            direction = st.radio("方向", ["📈 买入", "📉 卖出"], horizontal=True)
-            c1,c2 = st.columns(2)
-            with c1: price = st.number_input("委托价(元)", min_value=0.01, value=float(stock["current_price"]), step=0.5, format="%.2f")
-            with c2: shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
-            if st.form_submit_button("⚡ 提交委托", type="primary", use_container_width=True):
-                tt = "buy" if "买入" in direction else "sell"
-                add_trade(st.session_state.username, stock["symbol"], tt, price, shares)
-                st.success(f"✅ 委托已提交：{'买入' if tt=='buy' else '卖出'} {shares}股 × ¥{price:.2f}")
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # 定价因子面板
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 📐 定价因子面板")
-        sel_sym = st.selectbox("选择股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="param_sel")
-        sym = sel_sym.split("(")[1].rstrip(")")
-        s = next(x for x in stocks if x["symbol"]==sym)
-
-        # 计算因子
-        prev = s["previous_close"] or s["current_price"]
-        prem_f = round(1 + 0.2 * (s["premium_rate"] - 50) / 50, 4)
-        c_mean = max(s["industry_carbon_mean"], 1)
-        carb_f = round(1 - 0.5 * (s["carbon_price"] - c_mean) / c_mean, 4)
-
-        # 获取本轮买卖总额做实时演示
-        conn2 = get_db()
-        row_r = conn2.execute("SELECT MAX(round) as r FROM rounds WHERE stock_symbol=? AND is_settled=0", (sym,)).fetchone()
-        cr = row_r["r"] if row_r and row_r["r"] else 1
-        txns_demo = conn2.execute(
-            "SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?",
-            (sym, cr)).fetchall()
-        conn2.close()
-        b_total = sum(t["price"]*t["shares"] for t in txns_demo if t["trade_type"]=="buy")
-        s_total = sum(t["price"]*t["shares"] for t in txns_demo if t["trade_type"]=="sell")
-        demand_ratio = (b_total / max(s_total, 1))
-
-        # ===== 幸福度(溢价率) =====
-        st.markdown("#### 🟣 幸福度（溢价率）对价格的影响")
-        c1, c2, c3 = st.columns([1, 2, 1.5])
-        with c1:
-            st.metric("当前溢价率", f"{s['premium_rate']:.0f}%")
-        with c2:
-            bar = "█" * int(s["premium_rate"] / 5) + "░" * (20 - int(s["premium_rate"] / 5))
-            color = "#10B981" if prem_f >= 1 else "#EF4444"
-            st.markdown(f"""
-            <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
-                <span style="color:#a78bfa;font-size:.75rem;font-weight:700">溢价因子</span>
-                <span style="color:{color};font-size:1.3rem;font-weight:800;float:right">{prem_f}</span><br>
-                <div style="background:#333;border-radius:5px;height:10px;margin-top:6px">
-                  <div style="background:linear-gradient(90deg,#6366f1,#a78bfa);width:{s['premium_rate']}%;height:100%;border-radius:5px"></div>
-                </div>
-                <span style="color:#aaa;font-size:.65rem">{bar}</span>
-            </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            arrow = "📈 推高" if prem_f > 1 else ("📉 压低" if prem_f < 1 else "➖ 中性")
-            effect = f"{abs(prem_f-1)*100:.1f}%"
-            st.metric("对理论价", arrow, delta=effect,
-                      delta_color="normal" if prem_f > 1 else "inverse")
-
-        # ===== 碳排放(碳价) =====
-        st.markdown("#### 🟢 碳排放（碳价）对价格的影响")
-        c1, c2, c3 = st.columns([1, 2, 1.5])
-        with c1:
-            st.metric("当前碳价", f"¥{s['carbon_price']:.0f}",
-                      delta=f"行业均值 ¥{c_mean:.0f}",
-                      delta_color="off")
-        with c2:
-            eco_pct = max(0, min(100, (s["carbon_price"] / max(c_mean*2, 1)) * 100))
-            color2 = "#10B981" if carb_f >= 1 else "#EF4444"
-            st.markdown(f"""
-            <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
-                <span style="color:#06b6d4;font-size:.75rem;font-weight:700">碳因子</span>
-                <span style="color:{color2};font-size:1.3rem;font-weight:800;float:right">{carb_f}</span><br>
-                <div style="background:#333;border-radius:5px;height:10px;margin-top:6px">
-                  <div style="background:linear-gradient(90deg,#06b6d4,#10b981);width:{eco_pct:.0f}%;height:100%;border-radius:5px"></div>
-                </div>
-                <span style="color:#aaa;font-size:.65rem">碳价越高 → 碳因子越低(←抑制价格)</span>
-            </div>
-            """, unsafe_allow_html=True)
-        with c3:
-            arrow2 = "📈 推高" if carb_f > 1 else ("📉 压低" if carb_f < 1 else "➖ 中性")
-            effect2 = f"{abs(carb_f-1)*100:.1f}%"
-            st.metric("对理论价", arrow2, delta=effect2,
-                      delta_color="normal" if carb_f > 1 else "inverse")
-
-        # ===== 供需比 & 价格演示 =====
-        st.divider()
-        st.markdown("#### ⚖️ 供需比 & 最终定价演示")
-        show_price = round(prev * demand_ratio * prem_f * carb_f, 2)
-        clamped = max(prev * 0.9, min(prev * 1.1, show_price))
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("昨收价", f"¥{prev:,.2f}")
-        c2.metric("买/卖比", f"{demand_ratio:.2f}x",
-                  delta="买方强势" if demand_ratio > 1.5 else ("均衡" if demand_ratio > 0.67 else "卖方强势"))
-        c3.metric("理论价", f"¥{show_price:,.2f}",
-                  delta=f"{'涨停' if clamped == prev*1.1 else ('跌停' if clamped == prev*0.9 else '正常')}")
-        c4.metric("最终价", f"¥{clamped:,.2f}",
-                  delta=f"{'+' if clamped >= prev else ''}{round((clamped/prev-1)*100,2)}%")
-
-        st.caption(f"💰 公式: 最终价 = clamp( 昨收×{demand_ratio:.2f}×{prem_f}×{carb_f} , 昨收×0.9 , 昨收×1.1 )")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col_right:
-        # 当前未结算轮次的交易
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 📋 本轮委托记录")
-        sym2 = st.selectbox("筛选股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="txn_sym")
-        sym2 = sym2.split("(")[1].rstrip(")")
-        this_round = rr.get(sym2, {}).get("r", 1) if isinstance(rr.get(sym2), dict) else 1
-        conn = get_db()
-        txns = conn.execute(
-            "SELECT username,trade_type,price,shares,trade_date FROM transactions WHERE stock_symbol=? AND round=? ORDER BY trade_date DESC",
-            (sym2, this_round)
-        ).fetchall()
-        conn.close()
-        if txns:
-            d = pd.DataFrame([dict(x) for x in txns])
-            d["方向"] = d["trade_type"].map({"buy":"📈 买入","sell":"📉 卖出","force_close":"⚠️ 平仓"})
-            d["价格"] = d["price"].apply(lambda x: f"¥{x:,.2f}")
-            d["金额"] = (d["price"]*d["shares"]).apply(lambda x: f"¥{x:,.0f}")
-            st.dataframe(d[["username","方向","价格","shares","金额"]].rename(
-                columns={"username":"用户","shares":"数量"}), use_container_width=True, hide_index=True)
-        else:
-            st.info("本轮暂无委托")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.info("暂无持仓数据")
 
 def page_portfolio():
-    render_header()
     pf = get_user_portfolio(st.session_state.username)
-    if pf.empty: st.info("💡 暂无持仓，请在「交易大厅」买入股票"); return
-    d = pf[["name","shares","avg_cost","current_price","market_value","pnl","pnl_ratio"]].copy()
-    d.columns = ["股票","持仓","成本价","现价","市值","盈亏","收益率"]
-    d["成本价"]=d["成本价"].apply(lambda x:f"¥{x:,.2f}")
-    d["现价"]=d["现价"].apply(lambda x:f"¥{x:,.2f}")
-    d["市值"]=d["市值"].apply(lambda x:f"¥{x:,.2f}")
-    d["盈亏"]=d["盈亏"].apply(lambda x:f"¥{x:,.2f}")
-    d["收益率"]=d["收益率"].apply(lambda x:f"{x:.2f}%")
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+    if pf.empty: st.info("暂无持仓"); return
+
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的持仓</div>""", unsafe_allow_html=True)
+
+    # 移动端：卡片
+    st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+    for _, r in pf.iterrows():
+        pct = r["pnl_ratio"]; cls = pnl_class(pct)
+        st.markdown(f"""
+        <div class="stock-card">
+            <div class="sc-header">
+                <span class="sc-name">{r["name"]} &nbsp;<span style="font-size:12px;color:#8A8AAA">{r["symbol"]}</span></span>
+                <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
+            </div>
+            <div class="sc-detail">
+                <div>持仓 <span class="val">{fmt_num(r["shares"])}股</span></div>
+                <div>成本 <span class="val">{fmt_money(r["avg_cost"])}</span></div>
+                <div>现价 <span class="val">{fmt_money(r["current_price"])}</span></div>
+                <div>盈亏 <span class="val" style="color:{pnl_color(r["pnl"])}">{fmt_money(r["pnl"])}</span></div>
+            </div>
+            <div class="sc-actions">
+                <button class="sc-btn buy" onclick="quickTrade('{r["symbol"]}','buy')">买入</button>
+                <button class="sc-btn sell" onclick="quickTrade('{r["symbol"]}','sell')">卖出</button>
+            </div>
+        </div>""", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 桌面端：表格
+    st.markdown('<div class="desktop-only"><div class="desktop-table">', unsafe_allow_html=True)
+    d = pf[["name", "symbol", "shares", "avg_cost", "current_price", "market_value", "pnl", "pnl_ratio"]].copy()
+    d.columns = ["名称", "代码", "持仓", "成本", "现价", "市值", "盈亏", "收益率"]
+    d["成本"] = pf["avg_cost"].apply(lambda x: fmt_money(x))
+    d["现价"] = pf["current_price"].apply(lambda x: fmt_money(x))
+    d["市值"] = pf["market_value"].apply(lambda x: fmt_money(x))
+    d["盈亏"] = pf["pnl"].apply(lambda x: fmt_money(x))
+    d["收益率"] = pf["pnl_ratio"].apply(lambda x: f"{x:,.2f}%")
+    st.dataframe(d[["名称", "代码", "持仓", "成本", "现价", "盈亏", "收益率"]], use_container_width=True, hide_index=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+def page_market_making():
+    mm = get_user_market_making(st.session_state.username)
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的做市</div>""", unsafe_allow_html=True)
+    if mm.empty: st.info("无做市记录"); return
+    st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
+    d = mm.copy()
+    d["卖出价"] = d["卖出价"].apply(lambda x: f"¥{x:,.2f}")
+    d["当前价"] = d["当前价"].apply(lambda x: f"¥{x:,.2f}")
+    d["对手方盈亏"] = d["对手方盈亏"].apply(lambda x: f"¥{x:,.2f}")
     st.dataframe(d, use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    tv = pf["market_value"].sum()
-    tc = (pf["avg_cost"]*pf["shares"]).sum()
-    tp = tv - tc
-    cols = st.columns(3)
-    cols[0].markdown(metric_card("总市值",f"¥{tv:,.0f}"), unsafe_allow_html=True)
-    cols[1].markdown(metric_card("总成本",f"¥{tc:,.0f}"), unsafe_allow_html=True)
-    dc = "normal" if tp>=0 else "inverse"
-    cols[2].markdown(metric_card("总盈亏",f"¥{tp:,.0f}",f"{tp/tc*100:.2f}%" if tc else "0%",dc), unsafe_allow_html=True)
+def page_trade_hall():
+    stocks = get_stocks()
+    if not stocks: st.error("无股票"); return
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
 
-def page_market_making():
-    render_header()
-    mm = get_user_market_making(st.session_state.username)
-    tab1, tab2 = st.tabs(["📤 做市卖出", "⚠️ 强制平仓"])
-    with tab1:
-        if mm.empty: st.info("尚无做市记录")
-        else:
-            d = mm.copy()
-            d["卖出价"]=d["卖出价"].apply(lambda x:f"¥{x:,.2f}")
-            d["当前价"]=d["当前价"].apply(lambda x:f"¥{x:,.2f}")
-            d["对手方盈亏"]=d["对手方盈亏"].apply(lambda x:f"¥{x:,.2f}")
-            st.dataframe(d, use_container_width=True, hide_index=True)
-            st.metric("客户总盈亏", f"¥{mm['对手方盈亏'].sum():,.2f}")
-    with tab2:
-        st.info("暂无平仓记录")
+    # 桌面端表单
+    st.markdown('<div class="desktop-only">', unsafe_allow_html=True)
+    opts = {f"{s['name']} ({s['symbol']}) - {fmt_money(s['current_price'])}": s for s in stocks}
+    with st.form("trade_form_desk"):
+        sel = st.selectbox("股票", list(opts.keys()))
+        s = opts[sel]
+        c1, c2 = st.columns(2)
+        with c1: direction = st.radio("方向", ["买入", "卖出"], horizontal=True)
+        with c2:
+            price = st.number_input("价格", min_value=0.01, value=float(s["current_price"]), step=0.5, format="%.2f")
+            shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
+        if st.form_submit_button("确认交易", type="primary", use_container_width=True):
+            tt = "buy" if direction == "买入" else "sell"
+            add_trade(st.session_state.username, s["symbol"], tt, price, shares)
+            st.success("交易成功")
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 移动端底部交易栏 + 持仓列表
+    st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+    pf = get_user_portfolio(st.session_state.username)
+    if not pf.empty:
+        for _, r in pf.iterrows():
+            pct = r["pnl_ratio"]; cls = pnl_class(pct)
+            st.markdown(f"""
+            <div class="stock-card">
+                <div class="sc-header">
+                    <span class="sc-name">{r["name"]} <span style="font-size:12px;color:#8A8AAA">{r["symbol"]}</span></span>
+                    <span class="sc-pct {cls}">{fmt_pct(pct)}</span>
+                </div>
+                <div class="sc-detail">
+                    <div>持仓 <span class="val">{fmt_num(r["shares"])}股</span></div>
+                    <div>现价 <span class="val">{fmt_money(r["current_price"])}</span></div>
+                    <div>成本 <span class="val">{fmt_money(r["avg_cost"])}</span></div>
+                    <div>盈亏 <span class="val" style="color:{pnl_color(r["pnl"])}">{fmt_money(r["pnl"])}</span></div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 移动端固定底部交易栏
+    st.markdown('<div class="mobile-only trade-bar-spacer"></div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="mobile-only trade-bar">
+        <select id="tradeSymbol" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
+            {''.join(f'<option value="{s["symbol"]}">{s["name"]}</option>' for s in stocks)}
+        </select>
+        <select id="tradeDir" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
+            <option value="buy">买入</option>
+            <option value="sell">卖出</option>
+        </select>
+        <input id="tradeQty" type="number" value="100" min="1" step="100" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
+        <input id="tradePrice" type="number" value="{stocks[0]["current_price"]:.2f}" step="0.5" style="flex:1;height:40px;border:1px solid #E8E8F0;border-radius:8px;padding:0 10px;font-size:14px;font-family:inherit;background:#F5F7FA">
+    </div>""", unsafe_allow_html=True)
 
 def page_kline():
-    render_header()
     stocks = get_stocks()
-    if not stocks: st.info("暂无数据"); return
-    opts = {f"{s['name']} ({s['symbol']})":s for s in stocks}
-    sel = st.selectbox("选择股票查看K线", list(opts.keys()))
-    sym = opts[sel]["symbol"]
-    s = opts[sel]
-
+    if not stocks: st.info("无数据"); return
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">K 线展板</div>""", unsafe_allow_html=True)
+    opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
+    sel = st.selectbox("选择股票", list(opts.keys()))
+    sym = opts[sel]["symbol"]; s = opts[sel]
     data = get_kline_data(sym)
     if not data:
-        st.info("💡 尚无K线数据，请管理员在「交易管理」中结算轮次")
-        # 显示模拟K线（基于价格模拟）
-        st.info("正在生成模拟走势…")
-        import numpy as np
-        base = s["current_price"]
-        np.random.seed(42)
-        closes = [base]
-        for i in range(49):
-            change = np.random.normal(0, base*0.025)
-            nc = max(base*0.5, min(base*1.5, closes[-1]+change))
-            closes.append(nc)
-            base_use = closes[-1]
+        import numpy as np; np.random.seed(42)
+        base = s["current_price"]; closes = [base]
+        for i in range(49): closes.append(max(base * .5, min(base * 1.5, closes[-1] + np.random.normal(0, base * .025))))
         data = []
         for i in range(1, len(closes)):
-            o = closes[i-1]
-            c = closes[i]
-            h = max(o,c)*(1+abs(np.random.normal(0,.01)))
-            l = min(o,c)*(1-abs(np.random.normal(0,.01)))
-            v = abs(int(np.random.normal(5000,2000)))
-            data.append({"round":i,"open_price":round(o,2),"high_price":round(h,2),
-                        "low_price":round(l,2),"close_price":round(c,2),"volume":v,
-                        "change_pct":round((c-o)/o*100,2)})
-
+            o, c = closes[i - 1], closes[i]
+            h = max(o, c) * (1 + abs(np.random.normal(0, .01))); l = min(o, c) * (1 - abs(np.random.normal(0, .01)))
+            data.append({"round": i, "open_price": round(o, 2), "high_price": round(h, 2), "low_price": round(l, 2), "close_price": round(c, 2), "volume": abs(int(np.random.normal(5000, 2000))), "change_pct": round((c - o) / o * 100, 2)})
     df_k = pd.DataFrame(data)
     if df_k.empty: return
-
-    # 专业蜡烛图
-    colors = ["#10B981" if r["close_price"]>=r["open_price"] else "#EF4444" for _,r in df_k.iterrows()]
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-        vertical_spacing=0.05, row_heights=[0.75,0.25],
-        subplot_titles=(f"{sel} — 日K线图", "成交量"))
-
-    fig.add_trace(go.Candlestick(
-        x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
-        low=df_k["low_price"], close=df_k["close_price"],
-        increasing_line_color="#10B981", decreasing_line_color="#EF4444",
-        name="K线"), row=1, col=1)
-
-    fig.add_trace(go.Bar(x=df_k.index, y=df_k["volume"],
-        marker_color=colors, name="成交量", showlegend=False), row=2, col=1)
-
-    # 均线
-    if len(df_k)>=5:
-        ma5 = df_k["close_price"].rolling(5).mean()
-        fig.add_trace(go.Scatter(x=df_k.index, y=ma5, line=dict(color="#ff9100",width=1.5),
-            name="MA5",showlegend=False), row=1, col=1)
-    if len(df_k)>=20:
-        ma20 = df_k["close_price"].rolling(20).mean()
-        fig.add_trace(go.Scatter(x=df_k.index, y=ma20, line=dict(color="#7c4dff",width=1.5),
-            name="MA20",showlegend=False), row=1, col=1)
-
-    fig.update_layout(
-        title={"text":f"{sel} 价格走势","x":0.5,"font":{"size":20}},
-        height=620, margin=dict(t=60,b=20,l=20,r=20),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        xaxis_rangeslider_visible=False,
-        hovermode="x unified",
-    )
-    fig.update_xaxes(gridcolor="#eee", row=1, col=1)
-    fig.update_xaxes(gridcolor="#eee", row=2, col=1)
-    fig.update_yaxes(gridcolor="#eee", row=1, col=1)
-    fig.update_yaxes(gridcolor="#eee", row=2, col=1)
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 数据表
-    st.divider()
-    st.subheader("📄 K线数据明细")
-    disp = df_k.tail(30).copy()
-    disp["开盘"]=disp["open_price"].apply(lambda x:f"¥{x:,.2f}")
-    disp["最高"]=disp["high_price"].apply(lambda x:f"¥{x:,.2f}")
-    disp["最低"]=disp["low_price"].apply(lambda x:f"¥{x:,.2f}")
-    disp["收盘"]=disp["close_price"].apply(lambda x:f"¥{x:,.2f}")
-    disp["涨跌幅"]=disp["change_pct"].apply(lambda x:f"{x:.2f}%")
-    disp["成交量"]=disp["volume"].apply(lambda x:f"{x:,.0f}")
-    st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(
-        columns={"round":"轮次"}), use_container_width=True, hide_index=True)
-
-def page_admin_settle():
-    render_header()
-    st.markdown("### ⚙️ 交易管理")
-    stocks = get_stocks()
-    if not stocks: st.info("暂无股票"); return
-
-    conn = get_db()
-    for s in stocks:
-        r = conn.execute("SELECT MAX(round) as r, is_settled FROM rounds WHERE stock_symbol=?",
-                         (s["symbol"],)).fetchone()
-        conn.close()
-
-        cur_round = r["r"] if r and r["r"] else 1
-        settled = r["is_settled"] if r else 1
-
-        # 获取本轮交易
-        conn = get_db()
-        txns = conn.execute(
-            "SELECT COUNT(*) as cnt, SUM(shares) as vol FROM transactions WHERE stock_symbol=? AND round=?",
-            (s["symbol"], cur_round)
-        ).fetchone()
-        conn.close()
-        txn_cnt = txns["cnt"] if txns else 0
-        txn_vol = txns["vol"] if txns else 0
-
-        with st.container():
-            st.markdown(f'<div class="card">', unsafe_allow_html=True)
-            c1,c2,c3,c4,c5 = st.columns([2,1,1,1,2])
-            c1.markdown(f"**{s['name']}** ({s['symbol']})<br><small>当前价: ¥{s['current_price']:.2f} | 轮次: {cur_round}</small>", unsafe_allow_html=True)
-            c2.metric("委托笔数", txn_cnt or 0)
-            c3.metric("委托总量", f"{txn_vol or 0}股")
-            c4.metric("状态", "✅ 已结算" if settled else "⏳ 待结算")
-
-            if not settled:
-                if c5.button("⚡ 结算此轮", key=f"settle_{s['id']}", type="primary"):
-                    np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
-                    match_info = f" | 撮合价: ¥{mp:.2f}" if matched else " | ⚠️ 未撮合(最高买<最低卖)"
-                    st.success(f"""✅ {s['name']} 第{cur_round}轮结算完成！
-                    最终价: ¥{np_:.2f} | 溢价因子: {pf} | 碳因子: {cf}{match_info}""")
-                    st.rerun()
-            else:
-                c5.markdown("---")
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # 定价参数管理
-    st.divider()
-    st.markdown("### 📐 定价参数调整")
-    with st.form("param_form"):
-        sel_sym = st.selectbox("选择股票", [f"{s['name']}({s['symbol']})" for s in stocks])
-        sym = sel_sym.split("(")[1].rstrip(")")
-        s = next(x for x in stocks if x["symbol"]==sym)
-        c1,c2 = st.columns(2)
-        with c1:
-            cp = st.number_input("碳价 (¥)", min_value=0.0, value=float(s["carbon_price"]), step=1.0, format="%.1f")
-            icm = st.number_input("行业碳均值 (¥)", min_value=0.0, value=float(s["industry_carbon_mean"]), step=1.0, format="%.1f")
-        with c2:
-            pr = st.number_input("溢价率 (%)", min_value=0.0, value=float(s["premium_rate"]), step=1.0, format="%.1f")
-            sp = st.number_input("昨收价 (手动)" if False else "", value=float(s["previous_close"]), format="%.2f")
-        if st.form_submit_button("💾 保存参数", type="primary", use_container_width=True):
-            update_stock_params(s["id"], carbon_price=cp, industry_carbon_mean=icm, premium_rate=pr)
-            st.success("参数已更新")
-            st.rerun()
+    colors = [GREEN if r["close_price"] >= r["open_price"] else RED for _, r in df_k.iterrows()]
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.05, row_heights=[.75, .25])
+    fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["open_price"], high=df_k["high_price"], low=df_k["low_price"], close=df_k["close_price"], increasing_line_color=GREEN, decreasing_line_color=RED, name=""), row=1, col=1)
+    fig.add_trace(go.Bar(x=df_k.index, y=df_k["volume"], marker_color=colors, name="", showlegend=False), row=2, col=1)
+    if len(df_k) >= 5:
+        fig.add_trace(go.Scatter(x=df_k.index, y=df_k["close_price"].rolling(5).mean(), line=dict(color="#2D6AFF", width=1), name="MA5"), row=1, col=1)
+    fig.update_layout(height=400, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False, showlegend=False)
+    fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_admin_stock_summary():
-    render_header()
-    st.markdown("### 📋 股票汇总")
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票汇总</div>""", unsafe_allow_html=True)
     stats = get_platform_stats()
-    cols = st.columns(3)
-    cols[0].markdown(metric_card("🏦 总市值",f"¥{stats['total_mv']:,.0f}"), unsafe_allow_html=True)
-    dc = "normal" if stats['total_pnl']>=0 else "inverse"
-    cols[1].markdown(metric_card("📈 总盈亏",f"¥{stats['total_pnl']:,.0f}",delta_color=dc), unsafe_allow_html=True)
-    cols[2].markdown(metric_card("👥 活跃用户",str(stats['active_users'])), unsafe_allow_html=True)
-
+    st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), delta_color="normal")}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}<div></div></div>""", unsafe_allow_html=True)
     summary = get_admin_summary()
-    if summary.empty: st.info("暂无数据"); return
-
-    st.divider()
+    if summary.empty: st.info("无数据"); return
     sdf = summary.sort_values("总盈亏")
-    fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"],
-        text=sdf["总盈亏"].apply(lambda x:f"¥{x:,.0f}"),
-        marker_color=["#10B981" if v>=0 else "#EF4444" for v in sdf["总盈亏"]]))
-    fig.update_traces(textposition="outside")
-    fig.update_layout(title={"text":"🏆 盈亏排行","x":0.5}, height=380,
-        xaxis_title="",yaxis_title="总盈亏(¥)",plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
+    fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"], marker_color=[pnl_color(v) for v in sdf["总盈亏"]], text=[fmt_money(v) for v in sdf["总盈亏"]], textposition="outside"))
+    fig.update_layout(height=280, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"); fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     for _, row in summary.iterrows():
-        with st.expander(f"🔍 {row['股票名称']}({row['代码']}) — 持仓用户详情"):
+        with st.expander(f"{row['股票名称']} ({row['代码']})"):
             d = get_holder_detail(row["代码"])
-            if d.empty: st.info("无用户持有")
-            else:
+            if not d.empty:
                 dd = d.copy()
-                dd["成本价"]=dd["成本价"].apply(lambda x:f"¥{x:,.2f}")
-                dd["当前价"]=dd["当前价"].apply(lambda x:f"¥{x:,.2f}")
-                dd["盈亏"]=dd["盈亏"].apply(lambda x:f"¥{x:,.2f}")
-                dd["收益率"]=dd["收益率"].apply(lambda x:f"{x:.2f}%")
+                dd["成本价"] = dd["成本价"].apply(lambda x: f"¥{x:,.2f}")
+                dd["当前价"] = dd["当前价"].apply(lambda x: f"¥{x:,.2f}")
+                dd["盈亏"] = dd["盈亏"].apply(lambda x: f"¥{x:,.2f}")
+                dd["收益率"] = dd["收益率"].apply(lambda x: f"{x:,.2f}%")
                 st.dataframe(dd, use_container_width=True, hide_index=True)
-
     disp = summary.copy()
-    disp["当前价"]=disp["当前价"].apply(lambda x:f"¥{x:,.2f}")
-    disp["总成本"]=disp["总成本"].apply(lambda x:f"¥{x:,.2f}")
-    disp["总盈亏"]=disp["总盈亏"].apply(lambda x:f"¥{x:,.2f}")
-    disp["收益率"]=disp["收益率"].apply(lambda x:f"{x:.2f}%")
+    disp["当前价"] = disp["当前价"].apply(lambda x: f"¥{x:,.2f}")
+    disp["总成本"] = disp["总成本"].apply(lambda x: f"¥{x:,.2f}")
+    disp["总盈亏"] = disp["总盈亏"].apply(lambda x: f"¥{x:,.2f}")
+    disp["收益率"] = disp["收益率"].apply(lambda x: f"{x:,.2f}%")
+    st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
     st.dataframe(disp, use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def page_admin_stock_mgmt():
-    render_header()
-    # ── 表单外显示结果 ──
-    if st.session_state.get("stock_add_ok"):
-        st.success(f"✅ {st.session_state.stock_add_ok}")
-        st.session_state.stock_add_ok = ""
-    if st.session_state.get("stock_add_err"):
-        st.error(st.session_state.stock_add_err)
-        st.session_state.stock_add_err = ""
-
-    with st.expander("➕ 添加新股票", expanded=False):
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
+    if st.session_state.get("stock_add_ok"): st.success(st.session_state.stock_add_ok); st.session_state.stock_add_ok = ""
+    if st.session_state.get("stock_add_err"): st.error(st.session_state.stock_add_err); st.session_state.stock_add_err = ""
+    with st.expander("添加新股票"):
         with st.form("add_stock_form"):
-            c1,c2,c3 = st.columns(3)
-            with c1: sym = st.text_input("代码", max_chars=10, key="add_sym")
-            with c2: name = st.text_input("名称", key="add_name")
-            with c3: price = st.number_input("初始价", min_value=0.01, step=0.5, format="%.2f", key="add_price")
+            c1, c2, c3 = st.columns(3)
+            with c1: sym = st.text_input("代码", max_chars=10, key="asym")
+            with c2: name = st.text_input("名称", key="aname")
+            with c3: price = st.number_input("初始价", min_value=0.01, step=0.5, format="%.2f", key="aprice")
             if st.form_submit_button("添加", type="primary", use_container_width=True):
-                sym = sym.strip().upper()
-                name = name.strip()
-                if sym and name and price > 0:
-                    ok, msg = add_stock(sym, name, price)
-                    if ok:
-                        st.session_state.stock_add_ok = msg
-                    else:
-                        st.session_state.stock_add_err = msg
-                else:
-                    st.session_state.stock_add_err = "请完整填写代码、名称和价格"
+                s, n, p = sym.strip().upper(), name.strip(), price
+                if s and n and p > 0:
+                    ok, msg = add_stock(s, n, p)
+                    if ok: st.session_state.stock_add_ok = msg
+                    else: st.session_state.stock_add_err = msg
+                else: st.session_state.stock_add_err = "请完整填写"
                 st.rerun()
-
-    st.divider()
     stocks = get_stocks()
-    if not stocks: st.info("暂无股票"); return
+    if not stocks: st.info("无"); return
     sdf = pd.DataFrame(stocks)
-    sdf["current_price"] = sdf["current_price"].apply(lambda x:f"¥{x:,.2f}")
-    sdf["last_update"] = sdf["last_update"].apply(lambda x:str(x)[:19] if x else "-")
-    d = sdf[["symbol","name","current_price","carbon_price","premium_rate","last_update"]].copy()
-    d.columns = ["代码","名称","当前价","碳价","溢价率","更新"]
-    st.dataframe(d, use_container_width=True, hide_index=True)
-
+    sdf["price"] = sdf["current_price"].apply(lambda x: f"¥{x:,.2f}")
+    sdf["lu"] = sdf["last_update"].apply(lambda x: str(x)[:19] if x else "-")
+    st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
+    st.dataframe(sdf[["symbol", "name", "price", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     for s in stocks:
-        with st.expander(f"⚡ {s['name']}({s['symbol']})"):
-            c1,c2,c3 = st.columns(3)
+        with st.expander(f"{s['name']} ({s['symbol']})"):
+            c1, c2, c3 = st.columns(3)
             with c1:
-                st.markdown("**修改价格**")
-                np_ = st.number_input("新价格", min_value=0.01, step=0.5, format="%.2f",
-                    value=float(s["current_price"]), key=f"pr_{s['id']}")
-                if st.button("确认修改", key=f"up_{s['id']}"):
-                    conn = get_db()
-                    conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?",
-                                 (np_, np_, s["id"]))
-                    conn.commit(); conn.close()
-                    st.success(f"已更新"); st.rerun()
+                np_ = st.number_input("新价格", min_value=0.01, step=0.5, format="%.2f", value=float(s["current_price"]), key=f"np_{s['id']}")
+                if st.button("修改价格", key=f"up_{s['id']}"):
+                    conn = get_db(); conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE id=?", (np_, np_, s["id"])); conn.commit(); conn.close()
+                    st.rerun()
             with c2:
-                st.markdown("**参数调整**")
                 cp = st.number_input("碳价", value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
                 pr = st.number_input("溢价率", value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
-                if st.button("保存参数", key=f"sv_{s['id']}"):
-                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr)
-                    st.success("已保存"); st.rerun()
+                if st.button("保存参数", key=f"sv_{s['id']}"): update_stock_params(s["id"], carbon_price=cp, premium_rate=pr); st.rerun()
             with c3:
-                st.markdown("**删除股票**")
-                if st.button("🗑️ 删除", key=f"del_{s['id']}"):
-                    delete_stock(s["id"])
-                    st.success("已删除"); st.rerun()
+                if st.button("删除", key=f"del_{s['id']}"): delete_stock(s["id"]); st.rerun()
 
 def page_admin_user_mgmt():
-    render_header()
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">用户管理</div>""", unsafe_allow_html=True)
     users = get_all_users()
     df = pd.DataFrame(users)
-    df["created_at"] = df["created_at"].apply(lambda x:str(x)[:19] if x else "-")
-    df.columns = ["ID","用户名","角色","注册时间"]
-    df["角色"] = df["角色"].map({"admin":"管理员 👑","player":"选手 🎯"})
+    df["created_at"] = df["created_at"].apply(lambda x: str(x)[:19] if x else "-")
+    df.columns = ["ID", "用户名", "角色", "注册时间"]
+    df["角色"] = df["角色"].map({"admin": "管理员", "player": "选手"})
+    st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.divider()
+    st.markdown('</div>', unsafe_allow_html=True)
     with st.form("reset_pwd"):
-        target = st.selectbox("选择用户", [u["username"] for u in users if u["role"]=="player"])
+        target = st.selectbox("选择用户", [u["username"] for u in users if u["role"] == "player"])
         np_ = st.text_input("新密码", type="password", placeholder="至少4位")
         if st.form_submit_button("重置密码", type="primary", use_container_width=True):
-            if target and np_ and len(np_)>=4:
-                reset_pwd(target, np_); st.success(f"{target} 密码已重置"); st.rerun()
-            else: st.warning("请填写完整")
+            if target and np_ and len(np_) >= 4: reset_pwd(target, np_); st.success("已重置"); st.rerun()
+            else: st.warning("请完整填写")
 
-# ──────────────────────────────────────────────
-# 导航
-# ──────────────────────────────────────────────
+def page_admin_settle():
+    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易管理</div>""", unsafe_allow_html=True)
+    stocks = get_stocks()
+    if not stocks: st.info("无"); return
+    for s in stocks:
+        conn = get_db(); r = conn.execute("SELECT MAX(round),is_settled FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone(); conn.close()
+        cr = r[0] if r and r[0] else 1; settled = r[1] if r else 1
+        conn = get_db(); txns = conn.execute("SELECT COUNT(*) cnt, SUM(shares) vol FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchone(); conn.close()
+        st.markdown(f"""
+        <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #E8E8F0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:120px;"><div style="font-size:14px;font-weight:600;color:#1A1A2E;">{s['name']}</div><div style="font-size:11px;color:#8A8AAA;">{s['symbol']} | {fmt_money(s['current_price'])} | 第{cr}轮</div></div>
+            <div style="font-size:12px;color:#4A4A6A;">委托 {txns['cnt'] or 0}笔 / {txns['vol'] or 0}股</div>
+            <div style="font-size:12px;color:{"#00C853" if settled else "#8A8AAA"};">{"已结算" if settled else "待结算"}</div>
+        </div>""", unsafe_allow_html=True)
+        if not settled and st.button("结算此轮", key=f"settle_{s['id']}", type="primary"):
+            np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
+            st.success(f"结算完成 | 新价格: {fmt_money(np_)} | 溢价因子: {pf} | 碳因子: {cf}" + (f" | 撮合价: {fmt_money(mp)}" if matched else " | 未撮合"))
+            st.rerun()
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 导航 + main
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NAV = {
-    "总览":       page_overview,
-    "交易大厅":   page_trade_hall,
-    "我的持仓":   page_portfolio,
-    "我的做市":   page_market_making,
-    "K线展板":    page_kline,
-    "交易管理":   page_admin_settle,
-    "股票汇总":   page_admin_stock_summary,
-    "股票管理":   page_admin_stock_mgmt,
-    "用户管理":   page_admin_user_mgmt,
+    "总览": page_overview, "交易大厅": page_trade_hall,
+    "我的持仓": page_portfolio, "我的做市": page_market_making,
+    "K线展板": page_kline, "交易管理": page_admin_settle,
+    "股票汇总": page_admin_stock_summary,
+    "股票管理": page_admin_stock_mgmt, "用户管理": page_admin_user_mgmt,
 }
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
-ADMIN_NAV  = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板",
-              "交易管理", "股票汇总", "股票管理", "用户管理"]
+ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "交易管理", "股票汇总", "股票管理", "用户管理"]
 
-SIDEBAR_CSS = """
-<style>
-    [data-testid="stSidebar"] { background: #0F172A !important; padding: 0 !important; border-right: none !important; }
-    [data-testid="stSidebar"] > div:first-child { background: #0F172A; padding: 0 0 100px 0 !important; }
-    [data-testid="stSidebarNav"] { display: none !important; }
-
-    .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .sb-brand .name { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 2px; }
-    .sb-brand .sub { font-size: 10px; color: #475569; letter-spacing: 2px; margin-top: 2px; }
-    .sb-user { padding: 16px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
-    .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; }
-    .sb-user .urole { font-size: 11px; color: #64748b; }
-    .sb-user .urole .dot { display:inline-block;width:6px;height:6px;border-radius:50%;background:#3B82F6;margin-right:6px; }
-    .menu-group-label {
-        font-size: 9px; font-weight: 700; color: #475569; text-transform: uppercase;
-        letter-spacing: 1.5px; padding: 18px 20px 6px 20px;
-    }
-
-    /* Radio 美化 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important; align-items: center !important;
-        padding: 10px 16px !important; margin: 1px 8px !important;
-        border-radius: 8px !important; color: #94a3b8 !important;
-        font-size: 13px !important; font-weight: 500 !important;
-        transition: all .15s !important; position: relative !important;
-        min-height: auto !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.06) !important; color: #e2e8f0 !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(37,99,235,.15) !important; color: #60a5fa !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
-        content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 20px; background: #3B82F6; border-radius: 0 4px 4px 0;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label input {
-        display: none !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
-        margin-left: 0;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0; font-size: 13px; font-weight: 500;
-    }
-
-    /* 组间间距（通过 nth-child 匹配不同组的第一个item）*/
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(3) { margin-top: 8px !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(6) { margin-top: 16px !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(9) { margin-top: 16px !important; }
-
-    /* 退出按钮 */
-    .sb-exit-btn { padding: 20px 12px 16px 12px; }
-    .sb-exit-btn button {
-        width: 100% !important; background: transparent !important;
-        border: 1px solid rgba(239,68,68,.2) !important; color: #ef4444 !important;
-        border-radius: 8px !important; font-size: 13px !important; font-weight: 600 !important;
-        height: 40px !important; transition: all .15s !important;
-    }
-    .sb-exit-btn button:hover {
-        background: rgba(239,68,68,.08) !important; color: #f87171 !important;
-        border-color: rgba(239,68,68,.4) !important;
-    }
-</style>
-"""
-
-st.set_page_config(page_title="股票交易系统", page_icon="📊", layout="wide")
-st.markdown(CUSTOM_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
+st.set_page_config(page_title="股票交易系统", layout="wide")
+st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
 if "logged_in" not in st.session_state:
-    st.session_state.logged_in=False; st.session_state.username=""; st.session_state.role=""
+    st.session_state.logged_in = False; st.session_state.username = ""; st.session_state.role = ""
 
 def main():
     if not st.session_state.logged_in: page_login(); return
     with st.sidebar:
-        # 品牌 Logo
-        st.markdown("""
-        <div class="sb-brand">
-            <div class="name">双 镜</div>
-            <div class="sub">INSIGHT+</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 用户信息
         role_text = "管理员" if st.session_state.role == "admin" else "选手"
-        role_dot = '<span class="dot"></span>'
         st.markdown(f"""
-        <div class="sb-user">
-            <div class="uname">{st.session_state.username}</div>
-            <div class="urole">{role_dot}{role_text}</div>
-        </div>
+        <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
+        <div class="sb-user"><div class="uname">{st.session_state.username}</div><div class="urole"><span class="dot"></span>{role_text}</div></div>
         """, unsafe_allow_html=True)
-
         nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
-
-        # 分组标签（出现在 radio 上方）
-        st.markdown('<div class="menu-group-label">导 航</div>', unsafe_allow_html=True)
-        if any(x in nav for x in ["我的持仓", "我的做市", "K线展板"]):
-            st.markdown('<div class="menu-group-label">投 资</div>', unsafe_allow_html=True)
-        if any(x in nav for x in ["交易管理", "股票汇总", "股票管理"]):
-            st.markdown('<div class="menu-group-label">管 理</div>', unsafe_allow_html=True)
-        if any(x in nav for x in ["用户管理"]):
-            st.markdown('<div class="menu-group-label">系 统</div>', unsafe_allow_html=True)
-
+        st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.radio("", nav, key="nav_main", label_visibility="collapsed")
-
-        # 退出按钮
         st.markdown('<div class="sb-exit-btn">', unsafe_allow_html=True)
         if st.button("退出登录", use_container_width=True, key="sb_exit"):
-            st.session_state.logged_in = False
-            st.session_state.username = ""
-            st.session_state.role = ""
+            st.session_state.logged_in = False; st.session_state.username = ""; st.session_state.role = ""
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-
-    if sel in NAV:
-        NAV[sel]()
-    else:
-        page_overview()
+    if sel in NAV: NAV[sel]()
+    else: page_overview()
 
 if __name__ == "__main__":
     main()
