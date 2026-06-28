@@ -960,6 +960,11 @@ section.main > div.block-container {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 6px 6px 0 6px; backdrop-filter: blur(8px);
 }
+/* Plotly 图表容器透明 */
+.js-plotly-plot, .plot-container, .plotly, .main-svg {
+    background: transparent !important;
+}
+.svg-container { background: transparent !important; }
 .mobile-nav { margin: 0 0 10px 0; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
@@ -1467,7 +1472,7 @@ def page_overview():
     </div>""", unsafe_allow_html=True)
 
     if data["stock_pnl"]:
-        st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin:16px 0 8px 0;">各股票盈亏</div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:16px;font-weight:600;color:#eef2ff;margin:16px 0 8px 0;">各股票盈亏</div>""", unsafe_allow_html=True)
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(
             x=df["name"], y=df["pnl"],
@@ -1495,7 +1500,7 @@ def page_portfolio():
     <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持仓市值</div>
-            <div style="font-size:20px;font-weight:700;color:#0f172a;">{fmt_money(total_mv)}</div>
+            <div style="font-size:20px;font-weight:700;color:#eef2ff;">{fmt_money(total_mv)}</div>
         </div>
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">总盈亏</div>
@@ -1503,7 +1508,7 @@ def page_portfolio():
         </div>
         <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持股数</div>
-            <div style="font-size:20px;font-weight:700;color:#0f172a;">{fmt_num(total_shares)} 股</div>
+            <div style="font-size:20px;font-weight:700;color:#eef2ff;">{fmt_num(total_shares)} 股</div>
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -1546,7 +1551,7 @@ def page_portfolio():
 
 def page_market_making():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易记录</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">交易记录</div>""", unsafe_allow_html=True)
     with get_db_cm() as conn:
         rows = conn.execute("""
             SELECT t.stock_symbol, t.trade_type, t.price, t.shares, t.round, t.trade_date,
@@ -1572,7 +1577,7 @@ def page_trade_hall():
     mkt_open = is_market_open()
     mkt_round = get_market_round()
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
 
     if not mkt_open:
         st.warning("市场已闭市，无法交易。等待管理员开市。")
@@ -1638,7 +1643,7 @@ def page_trade_hall():
 
     # 移动端交易面板
     st.markdown('<div class="mobile-only" style="margin-bottom:12px;">', unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:15px;font-weight:600;color:#111827;margin-bottom:8px;">交易</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:15px;font-weight:600;color:#eef2ff;margin-bottom:8px;">交易</div>""", unsafe_allow_html=True)
     with st.form("trade_form_mobile"):
         cols = st.columns([2, 1, 1, 1])
         with cols[0]:
@@ -1834,7 +1839,7 @@ def page_kline():
 
     # 数据明细表
     st.divider()
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
     disp = pd.DataFrame(cleaned).tail(30).copy()
     disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
     disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
@@ -1846,7 +1851,7 @@ def page_kline():
 
 def page_admin_stock_summary():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票汇总</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票汇总</div>""", unsafe_allow_html=True)
     stats = get_platform_stats()
     st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}<div></div></div>""", unsafe_allow_html=True)
     summary = get_admin_summary()
@@ -1876,7 +1881,7 @@ def page_admin_stock_summary():
 
 def page_admin_stock_mgmt():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
     if st.session_state.get("stock_add_ok"): st.success(st.session_state.stock_add_ok); st.session_state.stock_add_ok = ""
     if st.session_state.get("stock_add_err"): st.error(st.session_state.stock_add_err); st.session_state.stock_add_err = ""
     with st.expander("添加新股票（Excel基础信息表）"):
@@ -1949,7 +1954,7 @@ def page_admin_stock_mgmt():
 
     # 因子可视化
     st.divider()
-    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">定价因子面板</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:16px;font-weight:600;color:#eef2ff;margin-bottom:12px">定价因子面板</div>""", unsafe_allow_html=True)
     fsel = st.selectbox("查看股票", [f"{s['name']} ({s['symbol']})" for s in stocks], key="admin_factor")
     fsym = fsel.split("(")[1].rstrip(")")
     fs = next(x for x in stocks if x["symbol"] == fsym)
@@ -1984,7 +1989,7 @@ def page_admin_stock_mgmt():
         </div>""", unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">股票信息（Excel基础信息表）</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:16px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票信息（Excel基础信息表）</div>""", unsafe_allow_html=True)
     st.caption("价格由撮合逻辑自动生成，不可手动修改。修改基础参数后系统自动计算理论价。")
     for s in stocks:
         with st.expander(f"{s['name']} ({s['symbol']}) — 当前价 {fmt_money(s['current_price'])}"):
@@ -2022,7 +2027,7 @@ def page_admin_stock_mgmt():
 
 def page_admin_user_mgmt():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">用户管理</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">用户管理</div>""", unsafe_allow_html=True)
     users = get_all_users()
     df = pd.DataFrame(users)
     df["created_at"] = df["created_at"].apply(lambda x: str(x)[:19] if x else "-")
@@ -2033,7 +2038,7 @@ def page_admin_user_mgmt():
     st.dataframe(df[["ID", "用户名", "角色", "状态", "注册时间"]], use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">操作</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin:20px 0 12px 0;">操作</div>""", unsafe_allow_html=True)
     with st.expander("创建比赛账号", expanded=False):
         with st.form("admin_create_user"):
             cu1, cu2 = st.columns(2)
@@ -2159,13 +2164,13 @@ def page_admin_user_mgmt():
 
     logs = get_audit_logs()
     if logs:
-        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
         log_df = pd.DataFrame(logs)
         log_df.columns = ["操作者", "动作", "对象", "详情", "时间"]
         st.dataframe(log_df, use_container_width=True, hide_index=True)
 def page_admin_settle():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:20px;font-weight:500;color:#eef2ff;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
 
     market_open = is_market_open()
     current_round = get_market_round()
