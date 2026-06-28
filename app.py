@@ -935,8 +935,8 @@ def page_admin_settle():
         if st.session_state.get(action):
             st.session_state[action] = False
             conn = get_db()
+            cnt = 0
             if action == "do_close_all":
-                cnt = 0
                 for s in stocks:
                     r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
                     if r and r[0]:
@@ -953,44 +953,38 @@ def page_admin_settle():
                         conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
                         conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
                         cnt += 1
-                conn.commit()
+                conn.commit(); conn.close()
                 st.success(f"已闭市 {cnt} 只"); st.rerun()
-            elif action == "do_open_all":
-                cnt = 0
+            if action == "do_open_all":
                 for s in stocks:
                     r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
                     if not r:
                         max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
                         conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
                         cnt += 1
-                conn.commit()
+                conn.commit(); conn.close()
                 st.success(f"已开市 {cnt} 只"); st.rerun()
-            elif action == "do_undo_all":
-                cnt = 0
+            if action == "do_undo_all":
                 for s in stocks:
                     max_r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=1", (s["symbol"],)).fetchone()[0]
                     if max_r and max_r > 1:
                         conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
                         conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
-                        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r-1)).fetchone()
-                        prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
+                        prev_price = s["previous_close"] or s["current_price"]
                         conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
                         cnt += 1
-                conn.commit()
+                conn.commit(); conn.close()
                 st.success(f"已撤销 {cnt} 只"); st.rerun()
-            elif action == "do_reset_all":
-                cnt = 0
+            if action == "do_reset_all":
                 for s in stocks:
-                    first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
-                    init_p = first_k["open_price"] if first_k else s["current_price"]
+                    init_p = s["current_price"]
                     conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
                     conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
                     conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_p, init_p, s["symbol"]))
                     conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
                     cnt += 1
-                conn.commit()
+                conn.commit(); conn.close()
                 st.success(f"已重置 {cnt} 只到第1轮"); st.rerun()
-            conn.close()
     st.divider()
 
     for s in stocks:
