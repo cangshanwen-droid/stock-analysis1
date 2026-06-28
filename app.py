@@ -58,6 +58,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
     """)
     conn.commit()
+    # 迁移：revenue 字段
+    try: cur.execute("ALTER TABLE stocks ADD COLUMN revenue REAL DEFAULT 100000")
+    except: pass
+    cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
     conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
     first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
     if first_boot:
@@ -107,6 +111,14 @@ def _seed(conn):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 价格引擎（Excel公式）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def calc_pe(stock):
+    """PE = 总市值 / 营业收入"""
+    rev = row_get(stock, "revenue", 0)
+    if not rev or rev <= 0: return row_get(stock, "industry_pe", 20)
+    cp = row_get(stock, "current_price", 0) or row_get(stock, "previous_close", 0) or 0
+    ts = row_get(stock, "total_shares", 10000)
+    return round(cp * ts / rev, 2)
+
 def compute_price(stock):
     prev = row_get(stock, "previous_close") or row_get(stock, "current_price") or 50
     bt = max(row_get(stock, "buy_total", 0), 1)
@@ -248,7 +260,7 @@ def add_stock(sym, name, price):
 
 def update_stock_params(sid, **kw):
     """仅允许安全字段更新"""
-    allowed = {"carbon_price", "premium_rate", "industry_carbon_mean"}
+    allowed = {"carbon_price", "premium_rate", "industry_carbon_mean", "revenue", "total_shares"}
     safe = {k: v for k, v in kw.items() if k in allowed}
     if not safe: return
     conn = get_db()
@@ -1171,12 +1183,15 @@ def page_admin_stock_mgmt():
     if not stocks: st.info("无"); return
     sdf = pd.DataFrame(stocks)
     sdf["price"] = sdf["current_price"].apply(lambda x: f"¥{x:,.2f}")
+    sdf["总股数"] = sdf.get("total_shares", 10000).apply(lambda x: f"{x:,.0f}")
+    sdf["营收"] = sdf.get("revenue", 100000).apply(lambda x: f"{x:,.0f}")
+    sdf["PE"] = [calc_pe(s) for s in stocks]
     sdf["lu"] = sdf["last_update"].apply(lambda x: str(x)[:19] if x else "-")
     global_open = is_market_open()
     mkt_status = "交易中" if global_open else "已闭市"
     sdf["status"] = mkt_status
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(sdf[["symbol", "name", "price", "status", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "status": "状态", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
+    st.dataframe(sdf[["symbol", "name", "price", "status", "总股数", "营收", "PE", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "status": "状态", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 因子可视化
@@ -1237,8 +1252,12 @@ def page_admin_stock_mgmt():
             with c2:
                 cp = st.number_input("碳价", value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
                 pr = st.number_input("溢价率", value=float(s["premium_rate"]), step=1.0, format="%.1f", key=f"pr_{s['id']}")
+                rev = st.number_input("营业收入(万)", value=float(row_get(s,"revenue",100000)), step=1000.0, format="%.0f", key=f"rev_{s['id']}")
+                ts_ = st.number_input("总股数(万手)", value=float(row_get(s,"total_shares",10000)), step=1000.0, format="%.0f", key=f"ts_{s['id']}")
+                pe_val = calc_pe(s)
+                st.caption(f"PE = {fmt_money(s['current_price'])} x {row_get(s,'total_shares',10000):,.0f} / {row_get(s,'revenue',100000):,.0f} = {pe_val}")
                 if st.button("保存参数", key=f"sv_{s['id']}"):
-                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr)
+                    update_stock_params(s["id"], carbon_price=cp, premium_rate=pr, revenue=rev, total_shares=ts_)
                     log_action(st.session_state.username, "stock_params_update", s["symbol"], f"carbon_price={cp}, premium_rate={pr}")
                     st.rerun()
             with c3:
