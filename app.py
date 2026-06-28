@@ -977,6 +977,35 @@ hr { border-color: #1a2332 !important; margin: 10px 0 !important; }
     background: #1e2a3a !important; color: #e2e8f0 !important; border-color: #f23645 !important;
 }
 .mobile-nav div[role="radiogroup"] label input { display: none !important; }
+/* 顶部导航栏 */
+.top-nav { display: flex; gap: 4px; margin: 0 0 8px 0; flex-wrap: wrap; }
+.tn-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; font-weight: 500; color: #64748b;
+    background: rgba(255,255,255,.03); border: 1px solid transparent;
+    cursor: pointer; transition: all .1s; white-space: nowrap;
+}
+.tn-item:hover { background: rgba(255,255,255,.06); color: #94a3b8; }
+.tn-item.active { background: rgba(242,54,69,.08); color: #f23645; font-weight: 600; border-color: rgba(242,54,69,.15); }
+.tn-item.active::before { content: ''; width: 0; }
+
+/* 顶部导航背后的 radio — 只留最小可交互区域 */
+div[role="radiogroup"]:has(#nav_top) { height: 0 !important; overflow: visible !important; padding: 0 !important; margin: 0 !important; }
+div[role="radiogroup"]:has(#nav_top) label { display: inline !important; padding: 0 !important; margin: 0 !important; border: none !important; font-size: 0 !important; color: transparent !important; background: transparent !important; }
+div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1px !important; height: 1px !important; position: fixed !important; }
+
+/* 移动端底部导航 */
+.mob-bar-inner {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 999;
+    background: #0a0f1a; border-top: 1px solid #1a2332;
+    padding: 6px 8px 8px; display: flex; gap: 4px;
+}
+.mob-bar-inner div[data-testid="column"] { padding: 0 !important; }
+.mob-bar-inner button {
+    font-size: 11px !important; padding: 8px 4px !important;
+    border-radius: 6px !important;
+}
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
@@ -2330,8 +2359,7 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        # 使用 st.radio 做导航，CSS 完全隐藏圆点，label 呈现为菜单项
-        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_main", label_visibility="collapsed")
+        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_side", label_visibility="collapsed")
         picked = picked.strip()
         if picked != sel:
             st.session_state.nav_current = picked
@@ -2342,10 +2370,21 @@ def main():
             st.session_state.username = ""
             st.session_state.role = ""
             st.rerun()
+    # 移动端底部导航（仅玩家，始终可见）
     sel = st.session_state.nav_current
-    # 移动端底部导航占位
-    if sel in PLAYER_NAV:
-        st.markdown('<div class="mob-nav-spacer"></div>', unsafe_allow_html=True)
+    if st.session_state.role == "player" and sel in PLAYER_NAV:
+        short = {"总览": "总览", "交易大厅": "交易", "我的持仓": "持仓", "交易记录": "记录", "K线展板": "K线"}
+        st.markdown('<div class="mob-bar-inner">', unsafe_allow_html=True)
+        mob_cols = st.columns(5)
+        for mi, mn in enumerate(PLAYER_NAV):
+            with mob_cols[mi]:
+                tp = "primary" if mn == sel else "secondary"
+                if st.button(short.get(mn, mn), key=f"mb_{mn}", type=tp, use_container_width=True):
+                    st.session_state.nav_current = mn
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div style="height:60px"></div>', unsafe_allow_html=True)
+    sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
 
