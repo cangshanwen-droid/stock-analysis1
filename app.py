@@ -651,7 +651,7 @@ def page_overview():
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
             yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
         )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # 每轮数据明细表
     st.divider()
