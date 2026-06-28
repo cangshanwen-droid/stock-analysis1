@@ -1024,6 +1024,7 @@ SIDEBAR_CSS = """
         width: 3px !important;
         background: #f23645 !important;
         border-radius: 0 2px 2px 0 !important;
+        pointer-events: none !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
