@@ -824,30 +824,18 @@ def page_kline():
     sym = opts[sel]["symbol"]; s = opts[sel]
     data = get_kline_data(sym)
 
-    # 轮次筛选
-    if data:
-        max_round = max(d["round"] for d in data)
-        round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
-        round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
-        if round_sel != "全部":
-            target_r = int(round_sel.replace("第","").replace("轮",""))
-            data = [d for d in data if d["round"] == target_r]
-            if len(data) == 1:
-                data = [
-                    {"round": 1, "open_price": data[0]["open_price"], "high_price": data[0]["high_price"],
-                     "low_price": data[0]["low_price"], "close_price": data[0]["close_price"],
-                     "volume": data[0]["volume"], "change_pct": data[0]["change_pct"]}
-                ]
-
     if not data:
-        import numpy as np; np.random.seed(42)
-        base = s["current_price"]; closes = [base]
-        for i in range(49): closes.append(max(base * .5, min(base * 1.5, closes[-1] + np.random.normal(0, base * .025))))
-        data = []
-        for i in range(1, len(closes)):
-            o, c = closes[i - 1], closes[i]
-            h = max(o, c) * (1 + abs(np.random.normal(0, .01))); l = min(o, c) * (1 - abs(np.random.normal(0, .01)))
-            data.append({"round": i, "open_price": round(o, 2), "high_price": round(h, 2), "low_price": round(l, 2), "close_price": round(c, 2), "volume": abs(int(np.random.normal(5000, 2000))), "change_pct": round((c - o) / o * 100, 2)})
+        st.info("暂无K线数据，请管理员开市并闭市后生成")
+        return
+
+    # 轮次筛选
+    max_round = max(d["round"] for d in data)
+    round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
+    round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
+    if round_sel != "全部":
+        target_r = int(round_sel.replace("第","").replace("轮",""))
+        data = [d for d in data if d["round"] == target_r]
+
     df_k = pd.DataFrame(data)
     if df_k.empty: return
 
