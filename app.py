@@ -44,20 +44,22 @@ def init_db():
         _seed(conn)
         for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
             cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,2,0)", (s["symbol"],))
-    else:
-        # 已有数据：补生成首轮K线（如果缺失）
-        for s in cur.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
-            has_k = cur.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchone()
-            if not has_k:
-                txns = cur.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
-                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-                tv = sum(t["shares"] for t in txns)
-                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-                pc = s["previous_close"] or s["current_price"]
-                cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
-        for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-            has_open = cur.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+    # 补全首轮K线（仅缺失时生成）
+    for s in cur.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
+        has_k = cur.execute("SELECT 1 FROM kline WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchone()
+        if not has_k:
+            txns = cur.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=1", (s["symbol"],)).fetchall()
+            bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+            st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+            tv = sum(t["shares"] for t in txns)
+            np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+            pc = s["previous_close"] or s["current_price"]
+            cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (s["symbol"], pc, max(np_,pc), min(np_,pc), np_, tv, bt, st_amt, round((np_-pc)/pc*100,2) if pc else 0))
+    for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+        has_open = cur.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+        if not has_open:
+            max_r = cur.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
+            cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
             if not has_open:
                 max_r = cur.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
                 cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
