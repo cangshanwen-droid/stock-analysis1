@@ -502,7 +502,7 @@ RESPONSIVE_CSS = """
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 html, body, [class*="css"] {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
 }
 
@@ -511,123 +511,98 @@ html, body, [class*="css"] {
 [data-testid="stDecoration"], [data-testid="stToolbar"],
 [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
-/* ===== 颜色系统 ===== */
+/* ===== 颜色系统 — 高端金融风 ===== */
 :root {
-    --bg:       #f5f7fb;
+    --bg:       #f0f2f8;
     --card:     #FFFFFF;
-    --text:     #111827;
-    --text-2nd: #666;
-    --primary:  #2D6AFF;
-    --green:    #16a34a;
+    --text:     #0f172a;
+    --text-2nd: #64748b;
+    --text-3rd: #94a3b8;
+    --primary:  #1d4ed8;
+    --primary-light: #3b82f6;
+    --accent:   #d4a853;
+    --green:    #10b981;
     --red:      #ef4444;
-    --border:   #e5e7eb;
+    --border:   #e2e8f0;
+    --shadow:   0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+    --shadow-lg: 0 4px 16px rgba(15,23,42,.08), 0 2px 4px rgba(15,23,42,.04);
 }
 
 /* ===== 移动端基础 ===== */
 .stApp { background: var(--bg); }
 section.main > div.block-container {
-    padding: 12px !important; max-width: 100% !important;
+    padding: 8px !important; max-width: 100% !important;
 }
 
-/* 顶栏 */
+/* 顶栏 - 极简 */
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 0 12px 0; font-size: 14px; color: #666;
+    padding: 4px 0 12px 0; font-size: 13px; color: var(--text-2nd);
+    border-bottom: 1px solid var(--border); margin-bottom: 16px;
 }
-.topbar .brand { font-size: 24px; font-weight: 700; color: var(--text); }
+.topbar .brand { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: 1px; }
 
 /* KPI 网格 - 移动端 2x2 */
 .kpi-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     margin-bottom: 20px;
 }
 .kpi-card {
-    background: var(--card); border-radius: 10px; padding: 24px 20px;
-    box-shadow: 0 2px 10px rgba(15,23,42,.04);
-    border: 1px solid var(--border);
+    background: var(--card); border-radius: 12px; padding: 20px 18px;
+    box-shadow: var(--shadow); border: 1px solid var(--border);
+    transition: box-shadow .2s;
 }
-.kpi-card .label { font-size: 13px; color: #666; margin-bottom: 6px; }
+.kpi-card:hover { box-shadow: var(--shadow-lg); }
+.kpi-card .label { font-size: 12px; color: var(--text-2nd); margin-bottom: 4px; letter-spacing: .5px; }
 .kpi-card .value {
-    font-size: 28px; font-weight: 600; color: var(--text);
+    font-size: 26px; font-weight: 700; color: var(--text);
     font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
 }
-.kpi-card .delta { font-size: 14px; margin-top: 2px; }
+.kpi-card .delta { font-size: 13px; margin-top: 2px; }
 .kpi-card .delta.up { color: var(--green); }
 .kpi-card .delta.down { color: var(--red); }
 
 /* 移动端股票卡片 */
 .stock-card {
     background: var(--card); border-radius: 12px; padding: 16px;
-    margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
-    border: 1px solid var(--border);
+    margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--border);
+    transition: box-shadow .2s;
 }
+.stock-card:active { box-shadow: var(--shadow-lg); }
 .stock-card .sc-header {
     display: flex; justify-content: space-between; align-items: center;
 }
-.stock-card .sc-name { font-size: 16px; font-weight: 600; color: var(--text); }
-.stock-card .sc-pct { font-size: 15px; font-weight: 600; }
+.stock-card .sc-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.stock-card .sc-pct { font-size: 14px; font-weight: 600; }
 .stock-card .sc-pct.up { color: var(--green); }
 .stock-card .sc-pct.down { color: var(--red); }
 .stock-card .sc-detail {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;
-    margin: 8px 0; font-size: 13px; color: var(--text-2nd);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px;
+    margin: 8px 0; font-size: 12px; color: var(--text-2nd);
 }
 .stock-card .sc-detail .val { color: var(--text); font-weight: 500; }
-.stock-card .sc-actions { display: flex; gap: 8px; }
-.sc-btn {
-    flex: 1; height: 40px; border: none; border-radius: 8px;
-    font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
-    transition: transform .08s; background: var(--card); color: var(--text);
-}
-.sc-btn:active { transform: scale(.97); }
-.sc-btn.buy { background: var(--primary); color: #fff; }
-.sc-btn.sell { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
-
-/* 底部交易栏 — 移动端 */
-.trade-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    background: var(--card); padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    display: flex; gap: 8px; align-items: center;
-    box-shadow: 0 -2px 8px rgba(0,0,0,.04);
-}
-.trade-bar select, .trade-bar input {
-    height: 40px; border: 1px solid var(--border); border-radius: 8px;
-    padding: 0 10px; font-size: 14px; font-family: inherit; flex: 1; min-width: 0;
-    background: var(--bg); color: var(--text);
-}
-.trade-bar button {
-    height: 40px; background: var(--primary); color: #fff;
-    border: none; border-radius: 8px; padding: 0 20px;
-    font-weight: 600; font-size: 14px; cursor: pointer; font-family: inherit;
-    transition: transform .08s;
-}
-.trade-bar button:active { transform: scale(.97); }
-.trade-bar-spacer { height: 60px; } /* 防止固定栏遮挡内容 */
 
 .section-title {
-    font-size: 14px; font-weight: 700; color: #111827; margin-bottom: 12px;
-    letter-spacing: 0;
+    font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px;
+    letter-spacing: .3px;
 }
 .chart-summary {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
     margin: 12px 0;
 }
 .chart-metric {
     background: #fff; border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; box-shadow: 0 1px 3px rgba(15,23,42,.04);
+    padding: 10px 12px; box-shadow: var(--shadow);
 }
-.chart-metric .label { font-size: 12px; color: #64748b; margin-bottom: 4px; }
-.chart-metric .value { font-size: 18px; line-height: 1.2; font-weight: 700; color: #111827; }
+.chart-metric .label { font-size: 11px; color: var(--text-2nd); margin-bottom: 2px; }
+.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: var(--text); }
 .chart-metric .value.up { color: var(--red); }
 .chart-metric .value.down { color: var(--green); }
 .chart-panel {
     background: #fff; border: 1px solid var(--border); border-radius: 12px;
-    padding: 10px 10px 2px 10px; box-shadow: 0 2px 12px rgba(15,23,42,.05);
+    padding: 8px 8px 2px 8px; box-shadow: var(--shadow);
 }
-.mobile-nav {
-    margin: 0 0 12px 0;
-}
+.mobile-nav { margin: 0 0 12px 0; }
 
 /* 桌面端可见/隐藏 */
 .desktop-only { display: none; }
@@ -635,20 +610,52 @@ section.main > div.block-container {
 
 /* ===== 桌面端 @media (min-width: 768px) ===== */
 @media (min-width: 768px) {
-    section.main > div.block-container { padding: 32px !important; }
-    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
-    .kpi-card .label { font-size: 10px; }
-    .kpi-card .value { font-size: 24px; }
+    section.main > div.block-container { padding: 24px 32px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .kpi-card { padding: 18px 22px; }
+    .kpi-card .label { font-size: 11px; }
+    .kpi-card .value { font-size: 22px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
     .trade-bar { display: none; }
     .trade-bar-spacer { display: none; }
-    .chart-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-
-    /* 桌面端表格替代卡片 */
+    .chart-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .desktop-table {
         background: var(--card); border-radius: 12px; padding: 4px 16px 16px 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.04); border: 1px solid var(--border);
+        box-shadow: var(--shadow); border: 1px solid var(--border);
+    }
+    /* Streamlit 表格美化 */
+    [data-testid="stDataFrame"] { border: none !important; }
+    [data-testid="stDataFrame"] th {
+        background: transparent !important; font-size: 12px !important;
+        color: var(--text-2nd) !important; font-weight: 600 !important;
+        text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border) !important;
+    }
+    [data-testid="stDataFrame"] td {
+        font-size: 14px !important; color: var(--text) !important;
+        border-bottom: 1px solid var(--border) !important;
+    }
+    /* 按钮美化 */
+    div[data-testid="stButton"] button {
+        border-radius: 8px !important; font-weight: 600 !important;
+        transition: all .15s !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"] {
+        background: linear-gradient(135deg, var(--primary), var(--primary-light)) !important;
+        border: none !important;
+        box-shadow: 0 2px 8px rgba(29,78,216,.3) !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(29,78,216,.4) !important;
+    }
+    /* 扩展器美化 */
+    .st-emotion-cache-1aej4i3, details {
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important; margin-bottom: 8px !important;
+    }
+    .st-emotion-cache-1aej4i3 summary, details summary {
+        font-weight: 600 !important; padding: 12px 16px !important;
     }
 }
 
@@ -661,37 +668,114 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    section[data-testid="stSidebar"] { background-color: #0b0f1a !important; }
-    section[data-testid="stSidebar"] > div:first-child { background-color: #0b0f1a !important; padding: 0 !important; }
+    section[data-testid="stSidebar"] { background: linear-gradient(180deg, #0a0e1a 0%, #12182b 100%) !important; }
+    section[data-testid="stSidebar"] > div:first-child { background: transparent !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
-    section[data-testid="stSidebar"] * { color: #ffffff !important; }
-    section[data-testid="stSidebar"] .sb-brand .sub p { color: #5c6a7d !important; letter-spacing: 2px; }
-    section[data-testid="stSidebar"] .sb-user .urole p { color: #94a3b8 !important; }
+    /* 侧边栏滚动条 */
+    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #2a3650; border-radius: 3px; }
 
-    .sb-brand { padding: 32px 24px 24px 24px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 28px; font-weight: 800; letter-spacing: 2px; margin: 0; }
-    .sb-user { padding: 22px 24px 22px 24px; border-bottom: 1px solid #1a2332; }
-    .sb-user .uname p { font-size: 15px; font-weight: 700; margin: 0 0 4px 0; }
-    .sb-user .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; margin-right: 8px; vertical-align: middle; }
-    .menu-group-label { padding: 22px 24px 6px 24px; }
-    .menu-group-label p { font-size: 10px; font-weight: 700; color: #5c6a7d !important; text-transform: uppercase; letter-spacing: 2px; }
+    section[data-testid="stSidebar"] * { color: #e8edf5 !important; }
 
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 13px 18px !important; margin: 2px 12px !important; border-radius: 8px !important;
-        font-size: 16px !important; font-weight: 500 !important;
-        min-height: auto !important; position: relative !important; cursor: pointer !important;
+    /* Brand 区域 — 更精致 */
+    .sb-brand {
+        padding: 36px 28px 20px 28px;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+        position: relative;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #1a2332 !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] { background: #152040 !important; color: #60a5fa !important; }
+    .sb-brand::after {
+        content: ''; position: absolute; bottom: -1px; left: 28px;
+        width: 32px; height: 2px; background: var(--accent, #d4a853); border-radius: 2px;
+    }
+    .sb-brand .name p {
+        font-size: 30px !important; font-weight: 800 !important;
+        letter-spacing: 4px !important; margin: 0 !important;
+        background: linear-gradient(135deg, #f0e6d3, #d4a853);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .sb-brand .sub p {
+        color: rgba(255,255,255,.35) !important;
+        font-size: 11px !important; letter-spacing: 6px !important;
+        margin-top: 4px !important; text-transform: uppercase;
+    }
+
+    /* 用户信息区域 */
+    .sb-user {
+        padding: 18px 28px 16px 28px;
+        border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .sb-user .uname p {
+        font-size: 16px !important; font-weight: 600 !important;
+        margin: 0 0 4px 0 !important; color: #f0f2f5 !important;
+    }
+    .sb-user .urole p {
+        font-size: 13px !important; color: rgba(255,255,255,.4) !important;
+        display: flex; align-items: center; gap: 6px;
+    }
+    .sb-user .dot {
+        display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+        background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,.5);
+        vertical-align: middle;
+    }
+
+    /* 导航分组标题 */
+    .menu-group-label { padding: 20px 28px 8px 28px; }
+    .menu-group-label p {
+        font-size: 10px !important; font-weight: 700 !important;
+        color: rgba(255,255,255,.25) !important;
+        text-transform: uppercase; letter-spacing: 3px !important;
+    }
+
+    /* 导航项 — 更精致 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        padding: 11px 18px !important; margin: 1px 14px !important;
+        border-radius: 10px !important;
+        font-size: 15px !important; font-weight: 500 !important;
+        min-height: auto !important; position: relative !important;
+        cursor: pointer !important;
+        transition: all .15s ease !important;
+        border: 1px solid transparent !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background: rgba(255,255,255,.06) !important;
+        border-color: rgba(255,255,255,.08) !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
+        background: rgba(29,78,216,.2) !important;
+        border-color: rgba(59,130,246,.3) !important;
+        color: #60a5fa !important;
+    }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
-        content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 24px; background: #3b82f6; border-radius: 0 3px 3px 0;
+        content: ''; position: absolute; left: -1px; top: 50%;
+        transform: translateY(-50%);
+        width: 3px; height: 20px;
+        background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+        border-radius: 0 3px 3px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { margin: 0; font-size: 16px; font-weight: 500; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        margin: 0; font-size: 15px; font-weight: 500;
+    }
+
+    /* 退出按钮 */
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+        background: rgba(255,255,255,.06) !important;
+        border: 1px solid rgba(255,255,255,.08) !important;
+        color: rgba(255,255,255,.6) !important;
+        border-radius: 10px !important; padding: 10px !important;
+        font-size: 14px !important; font-weight: 500 !important;
+        transition: all .15s ease !important;
+        margin: 0 14px !important; width: calc(100% - 28px) !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+        background: rgba(239,68,68,.15) !important;
+        border-color: rgba(239,68,68,.3) !important;
+        color: #fca5a5 !important;
+    }
 </style>
 """
 
@@ -712,16 +796,16 @@ def page_login():
     if "login_tab" not in st.session_state:
         st.session_state.login_tab = "login"
 
-    left, center, right = st.columns([1, 5, 1])
+    left, center, right = st.columns([1, 4, 1])
     with center:
-        st.markdown("<div style='height:4vh'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:6vh'></div>", unsafe_allow_html=True)
 
         # 品牌头部
         st.markdown("""
-        <div style="background:linear-gradient(135deg,#0f1420,#1a2236);padding:40px 20px;border-radius:14px 14px 0 0;text-align:center;">
-            <h1 style="font-size:42px;font-weight:700;color:#fff;letter-spacing:6px;margin:0;">双镜</h1>
-            <div style="width:60px;height:3px;background:#3182ce;margin:12px auto;border-radius:3px;"></div>
-            <p style="font-size:16px;color:#a0aec0;margin:8px 0 0 0;">智能投资分析系统</p>
+        <div style="background:linear-gradient(135deg,#0a0e1a,#1a2240);padding:40px 20px;border-radius:16px 16px 0 0;text-align:center;">
+            <h1 style="font-size:44px;font-weight:800;letter-spacing:6px;margin:0;background:linear-gradient(135deg,#f0e6d3,#d4a853);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</h1>
+            <div style="width:50px;height:2px;background:linear-gradient(90deg,transparent,#d4a853,transparent);margin:14px auto;border-radius:2px;"></div>
+            <p style="font-size:14px;color:rgba(255,255,255,.45);margin:8px 0 0 0;letter-spacing:4px;text-transform:uppercase;">智能投资分析系统</p>
         </div>""", unsafe_allow_html=True)
 
         # 消息显示
@@ -734,7 +818,7 @@ def page_login():
             st.session_state.login_ok = ""
 
         # 卡片体
-        st.markdown('<div style="background:#fff;padding:32px 36px;border-radius:0 0 14px 14px;box-shadow:0 4px 24px rgba(0,0,0,.08);">', unsafe_allow_html=True)
+        st.markdown('<div style="background:#fff;padding:28px 32px;border-radius:0 0 16px 16px;box-shadow:0 8px 32px rgba(0,0,0,.1);">', unsafe_allow_html=True)
 
         # Tab 行
         c_t, c_r = st.columns(2)
@@ -813,7 +897,7 @@ def page_overview():
 
     # 顶栏：品牌左 / 用户名+更新时间右
     c1, c2 = st.columns([7, 2])
-    with c1: st.markdown('<span style="font-size:24px;font-weight:700;color:#111827;">双镜</span>', unsafe_allow_html=True)
+    with c1: st.markdown('<span style="font-size:24px;font-weight:800;letter-spacing:2px;background:linear-gradient(135deg,#1e293b,#334155);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</span>', unsafe_allow_html=True)
     with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{esc(st.session_state.username)} | <span id="live-clock">{datetime.now().strftime("%H:%M:%S")}</span></p>', unsafe_allow_html=True)
     st.markdown("""
     <script>
@@ -1616,13 +1700,20 @@ def main():
     with st.sidebar:
         role_text = "管理员" if st.session_state.role == "admin" else "选手"
         bal = get_user_balance(st.session_state.username)
-        bal_text = f" | {fmt_money(bal)}" if st.session_state.role == "player" else ""
+        bal_text = f" ｜ {fmt_money(bal)}" if st.session_state.role == "player" else ""
         st.markdown(f"""
         <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
         <div class="sb-user"><div class="uname">{esc(st.session_state.username)}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
-        sel = st.radio("", nav, index=nav.index(st.session_state.nav_current), key=f"nav_main_{st.session_state.nav_current}", label_visibility="collapsed")
+        # 用图标前缀美化导航项
+        icon_map = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "我的做市": "🔄", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
+        display_nav = [f"{icon_map.get(n, '•')} {n}" for n in nav]
+        cur_display = f"{icon_map.get(st.session_state.nav_current, '•')} {st.session_state.nav_current}"
+        if cur_display not in display_nav:
+            cur_display = display_nav[0]
+        sel_display = st.radio("", display_nav, index=display_nav.index(cur_display), key=f"nav_main_{st.session_state.nav_current}", label_visibility="collapsed")
+        sel = sel_display.split(" ", 1)[1] if " " in sel_display else sel_display
         if sel != st.session_state.nav_current:
             st.session_state.nav_current = sel
         st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
