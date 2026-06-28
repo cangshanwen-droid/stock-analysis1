@@ -767,9 +767,20 @@ def page_login():
 
         tab1, tab2 = st.tabs(["🔐 登录", "📝 注册"])
 
+        # ── 表单外显示注册结果 ──
+        if st.session_state.get("reg_ok"):
+            st.success(f"✅ {st.session_state.reg_ok}")
+            st.balloons()
+            st.info("💡 已自动填入账号，请切换到「登录」页点击进入系统")
+            st.session_state.reg_ok = ""
+        if st.session_state.get("reg_err"):
+            st.error(st.session_state.reg_err)
+            st.session_state.reg_err = ""
+
         with tab1:
             with st.form("login"):
-                u = st.text_input("", placeholder="👤 用户名", label_visibility="collapsed")
+                u_val = st.session_state.get("reg_username", "")
+                u = st.text_input("", value=u_val, placeholder="👤 用户名", label_visibility="collapsed")
                 p = st.text_input("", type="password", placeholder="🔑 密码", label_visibility="collapsed")
                 if st.form_submit_button("⚡ 进入系统", type="primary", use_container_width=True):
                     if not u or not p:
@@ -780,6 +791,7 @@ def page_login():
                             st.session_state.logged_in = True
                             st.session_state.username = u
                             st.session_state.role = role
+                            st.session_state.reg_username = ""
                             st.rerun()
                         else:
                             st.error("用户名或密码错误")
@@ -792,16 +804,22 @@ def page_login():
                 p3 = st.text_input("   ", type="password", placeholder="🔑 确认密码", label_visibility="collapsed", key="rp2")
                 if st.form_submit_button("📝 注册", type="primary", use_container_width=True):
                     if not u2 or not p2:
-                        st.error("请填写完整")
+                        st.session_state.reg_err = "请填写完整"
                     elif len(u2) < 3:
-                        st.error("用户名至少3位")
+                        st.session_state.reg_err = "用户名至少3位"
                     elif len(p2) < 4:
-                        st.error("密码至少4位")
+                        st.session_state.reg_err = "密码至少4位"
                     elif p2 != p3:
-                        st.error("两次密码不一致")
+                        st.session_state.reg_err = "两次密码不一致"
                     else:
                         ok, m = register_user(u2, p2)
-                        st.success(m) if ok else st.error(m)
+                        if ok:
+                            st.session_state.reg_ok = m
+                            st.session_state.reg_username = u2
+                        else:
+                            st.session_state.reg_err = m
+                    if st.session_state.get("reg_ok") or st.session_state.get("reg_err"):
+                        st.rerun()
 
         st.markdown("""
             <div class="ai-footer">AI Trading System v2.0 · Powered by Intelligent Algorithms</div>
