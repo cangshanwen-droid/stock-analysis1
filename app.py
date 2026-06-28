@@ -540,24 +540,8 @@ def close_market():
         conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
         if r and r["state"] == "closed": return
-        stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
-        for s in stocks:
-            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
-            if open_r and open_r[0]:
-                cr = open_r[0]
-                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
-                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-                tv = sum(t["shares"] for t in txns)
-                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
-                pc = s["previous_close"] or s["current_price"]
-                hi = max(np_, pc); lo = min(np_, pc)
-                cpct = round((np_-pc)/pc*100,2) if pc else 0
-                conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-                conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
-                conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
-        # 闭市时批量撮合剩余挂单
+
+        # 第一步：批量撮合所有挂单（成交数据计入当前轮次）
         mkt_round = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
         mr = mkt_round["round"] if mkt_round else 1
         for stock in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
@@ -591,6 +575,25 @@ def close_market():
                     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
                         (s["username"], sym, mp, fill, mr))
         conn.execute("DELETE FROM order_book")
+
+        # 第二步：结算K线（包含第一步撮合的交易）
+        stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
+        for s in stocks:
+            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+            if open_r and open_r[0]:
+                cr = open_r[0]
+                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchall()
+                bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                tv = sum(t["shares"] for t in txns)
+                np_ = compute_price(dict(s, buy_total=bt, sell_total=st_amt))
+                pc = s["previous_close"] or s["current_price"]
+                hi = max(np_, pc); lo = min(np_, pc)
+                cpct = round((np_-pc)/pc*100,2) if pc else 0
+                conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
+                conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (s["symbol"], cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+                conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, s["symbol"]))
+                conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
 
