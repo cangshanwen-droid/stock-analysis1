@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from streamlit_autorefresh import st_autorefresh
 
 DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "stock_analysis.db")
@@ -1043,11 +1044,8 @@ def page_public_dashboard():
     # 底部
     st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
 
-    # 自动刷新
-    st.markdown(
-        '<meta http-equiv="refresh" content="5">',
-        unsafe_allow_html=True,
-    )
+    # 自动刷新（Streamlit websocket，无闪烁）
+    st_autorefresh(interval=10000, key="dash_refresh")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
