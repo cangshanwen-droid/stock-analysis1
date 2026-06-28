@@ -2,7 +2,7 @@
 股票交易系统 — 移动端优先响应式版本
 商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
-import os, sqlite3, hashlib, tempfile, secrets
+import os, sqlite3, hashlib, secrets
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -400,6 +400,7 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
         conn.commit()
+
 def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
@@ -441,6 +442,13 @@ def add_trade(username, symbol, tt, price, shares):
                 match_price = sell_order["price"]
                 match_cost = match_shares * match_price
 
+                # 检查卖家持仓（挂单后可能卖掉了）
+                seller_holding = get_holding_shares(sell_order["username"], symbol, conn)
+                seller_pending = conn.execute("SELECT COALESCE(SUM(shares),0) FROM order_book WHERE username=? AND stock_symbol=? AND trade_type='sell' AND id!=?", (sell_order["username"], symbol, sell_order["id"])).fetchone()[0]
+                seller_avail = seller_holding - seller_pending
+                if seller_avail < match_shares:
+                    conn.execute("DELETE FROM order_book WHERE id=?", (sell_order["id"],))
+                    continue
                 # 扣买家钱
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, username))
                 # 加卖家钱
@@ -468,10 +476,12 @@ def add_trade(username, symbol, tt, price, shares):
                 msg = f"全部成交 {shares} 股"
 
         else:  # sell
-            # 持仓检查
+            # 持仓检查（扣除已挂卖的订单，防止超卖）
             holding = get_holding_shares(username, symbol, conn)
-            if holding < remaining:
-                return False, f"持仓不足：当前仅持有 {holding} 股"
+            pending_sell = conn.execute("SELECT COALESCE(SUM(shares),0) FROM order_book WHERE username=? AND stock_symbol=? AND trade_type='sell'", (username, symbol)).fetchone()[0]
+            available = holding - pending_sell
+            if available < remaining:
+                return False, f"可卖持仓不足：持有 {holding} 股，已挂卖 {pending_sell} 股，可用 {available} 股"
 
             # 扫买一（最高买单），直到全部成交或没有可匹配的买单
             while remaining > 0:
@@ -486,6 +496,12 @@ def add_trade(username, symbol, tt, price, shares):
                 match_price = buy_order["price"]
                 match_cost = match_shares * match_price
 
+                # 检查买家余额（挂单后可能花了钱）
+                buyer_bal = conn.execute("SELECT balance FROM users WHERE username=?", (buy_order["username"],)).fetchone()
+                if not buyer_bal or buyer_bal["balance"] < match_cost:
+                    # 买家钱不够，跳过这个买单
+                    conn.execute("DELETE FROM order_book WHERE id=?", (buy_order["id"],))
+                    continue
                 # 买家扣钱
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, buy_order["username"]))
                 # 卖家加钱
