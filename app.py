@@ -219,6 +219,11 @@ def toggle_user(username):
     else: conn.close(); return
     conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username)); conn.commit(); conn.close()
 
+def delete_user(username):
+    conn = get_db()
+    conn.execute("DELETE FROM users WHERE username=? AND role='player'", (username,))
+    conn.commit(); conn.close()
+
 def register_user(u, p, role="player"):
     conn = get_db()
     try:
@@ -1343,6 +1348,15 @@ def page_admin_user_mgmt():
                 toggle_user(target2)
                 log_action(st.session_state.username, "user_toggle", target2, btn_label)
                 st.success(f"{target2} 已{btn_label}"); st.rerun()
+
+    st.divider()
+    st.markdown("**删除账户**")
+    with st.form("delete_user"):
+        target3 = st.selectbox("选择要删除的用户", [u["username"] for u in users if u["role"] == "player"], key="del_user")
+        confirm = st.checkbox("确认删除，此操作不可撤销")
+        if st.form_submit_button("删除账户", type="primary", use_container_width=True, disabled=not confirm):
+            delete_user(target3)
+            st.success(f"{target3} 已删除"); st.rerun()
 
     logs = get_audit_logs()
     if logs:
