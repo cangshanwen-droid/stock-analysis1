@@ -1140,6 +1140,45 @@ def page_admin_stock_mgmt():
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
     st.dataframe(sdf[["symbol", "name", "price", "status", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "status": "状态", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
+
+    # 因子可视化
+    st.divider()
+    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">定价因子面板</div>""", unsafe_allow_html=True)
+    fsel = st.selectbox("查看股票", [f"{s['name']} ({s['symbol']})" for s in stocks], key="admin_factor")
+    fsym = fsel.split("(")[1].rstrip(")")
+    fs = next(x for x in stocks if x["symbol"] == fsym)
+    prev = fs["previous_close"] or fs["current_price"]
+    pf = round(1 + 0.2 * (fs["premium_rate"] - 50) / 50, 4)
+    cm = max(fs["industry_carbon_mean"], 1)
+    cf = round(1 - 0.5 * (fs["carbon_price"] - cm) / cm, 4)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"""
+        <div style="background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+            <div style="font-size:13px;color:#666;margin-bottom:8px;">幸福度（溢价率）</div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
+                    <div style="width:{fs['premium_rate']}%;height:100%;background:#{'16a34a' if pf>=1 else 'ef4444'};border-radius:6px;"></div>
+                </div>
+                <span style="font-size:28px;font-weight:600;color:#{'16a34a' if pf>=1 else 'ef4444'};">{pf}</span>
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% | 昨收 {fmt_money(prev)} | 理论价 {fmt_money(round(prev*pf*cf,2))}</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+        <div style="background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+            <div style="font-size:13px;color:#666;margin-bottom:8px;">碳排放（碳价）</div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
+                    <div style="width:{max(0,min(100,(1-cf)*200+50)):.0f}%;height:100%;background:#{'16a34a' if cf>=1 else 'ef4444'};border-radius:6px;"></div>
+                </div>
+                <span style="font-size:28px;font-weight:600;color:#{'16a34a' if cf>=1 else 'ef4444'};">{cf}</span>
+            </div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">当前碳价 {fs['carbon_price']:.0f} | 行业均值 {cm:.0f} | 碳价越低价格越涨</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.divider()
+    st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin-bottom:12px">股票操作</div>""", unsafe_allow_html=True)
     for s in stocks:
         with st.expander(f"{s['name']} ({s['symbol']})"):
             c1, c2, c3 = st.columns(3)
