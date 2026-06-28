@@ -38,9 +38,16 @@ def init_db():
     except: pass
     cur.execute("UPDATE users SET status='active' WHERE status IS NULL")
     cur.execute("UPDATE users SET balance=1000000 WHERE balance IS NULL OR balance=0")
-    if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0: _seed(conn)
-    for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
-        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (s["symbol"],))
+    if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
+        _seed(conn)
+        for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+            cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,2,0)", (s["symbol"],))
+    else:
+        for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
+            has_open = cur.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+            if not has_open:
+                max_r = cur.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()[0]
+                cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
     conn.commit(); conn.close()
 
 def _seed(conn):
@@ -70,7 +77,7 @@ def compute_price(stock):
 def settle_round(symbol):
     conn = get_db(); cur = conn.cursor()
     stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
-    r = cur.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=?", (symbol,)).fetchone()
+    r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 0
     txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
     buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
@@ -867,8 +874,8 @@ def page_admin_settle():
     stocks = get_stocks()
     if not stocks: st.info("无股票"); return
     for s in stocks:
-        conn = get_db(); r = conn.execute("SELECT MAX(round),is_settled FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone(); conn.close()
-        cr = r[0] if r and r[0] else 1; settled = r[1] if r else 1
+        conn = get_db(); r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
+        cr = r[0] if r and r[0] else 0; settled = (cr == 0)
         conn = get_db(); txns = conn.execute("SELECT COUNT(*) cnt, SUM(shares) vol FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchone(); conn.close()
         status = "交易中" if not settled else "已闭市"
         status_color = "#16a34a" if not settled else "#8b949e"
