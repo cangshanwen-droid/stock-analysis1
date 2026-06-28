@@ -935,8 +935,31 @@ def page_admin_settle():
                     with c4_2:
                         if st.button("闭市", key=f"settle_{s['id']}", type="primary", disabled=not confirm_single):
                             np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
-                            st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)} | 溢价因子 {pf} | 碳因子 {cf}" + (f" | 撮合 {fmt_money(mp)}" if matched else ""))
+                            st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)}")
                             st.rerun()
+                else:
+                    c4_1, c4_2 = st.columns(2)
+                    with c4_1:
+                        if st.button("撤销", key=f"undo_{s['id']}"):
+                            conn = get_db()
+                            max_r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=1", (s["symbol"],)).fetchone()[0]
+                            if max_r and max_r > 1:
+                                conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                                conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                                prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r-1)).fetchone()
+                                prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
+                                conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
+                            conn.commit(); conn.close()
+                            st.success("已撤销"); st.rerun()
+                    with c4_2:
+                        confirm_reset = st.checkbox("确认", key=f"reset_{s['id']}", label_visibility="collapsed")
+                        if st.button("重置", key=f"rst_{s['id']}", type="secondary", disabled=not confirm_reset):
+                            conn = get_db()
+                            first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
+                            init_price = first_k["open_price"] if first_k else s["current_price"]
+                            conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_price, init_price, s["symbol"]))
+                            conn.commit(); conn.close()
+                            st.success(f"{s['name']} 价格已重置到 {fmt_money(init_price)}"); st.rerun()
         st.divider()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
