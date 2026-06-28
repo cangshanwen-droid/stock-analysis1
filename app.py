@@ -231,6 +231,25 @@ def open_market():
     conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
     conn.commit(); conn.close()
 
+def undo_market():
+    """撤销上一轮：回退到闭市前状态"""
+    conn = get_db()
+    r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
+    if not r or r["round"] <= 1: conn.close(); return
+    prev_round = r["round"] - 1
+    stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+    for s in stocks:
+        # 删除最新轮次的k线
+        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
+        # 删除最新轮次
+        conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], r["round"]))
+        # 恢复上一轮价格
+        prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_round)).fetchone()
+        if prev_k:
+            conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
+    conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
+    conn.commit(); conn.close()
+
 def get_user_portfolio(username):
     conn = get_db()
     buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
@@ -928,6 +947,10 @@ def page_admin_settle():
     status = "交易中" if market_open else "已闭市"
     color = "#16a34a" if market_open else "#ef4444"
 
+    # 初始化确认状态
+    for k in ["cf_close", "cf_open", "cf_undo"]:
+        if k not in st.session_state: st.session_state[k] = False
+
     st.markdown(f"""
     <div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.04);text-align:center;margin-bottom:20px;">
         <div style="font-size:13px;color:#666;">当前市场状态</div>
@@ -935,16 +958,69 @@ def page_admin_settle():
         <div style="font-size:14px;color:#8b949e;">第 {current_round} 轮</div>
     </div>""", unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
+    # 开关按钮 + 防误触确认
+    c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("一键闭市", type="primary", use_container_width=True, key="btn_close", disabled=not market_open):
-            close_market(); st.rerun()
+        if not st.session_state.cf_close:
+            if st.button("一键闭市", type="primary", use_container_width=True, disabled=not market_open):
+                st.session_state.cf_close = True; st.session_state.cf_open = False; st.session_state.cf_undo = False; st.rerun()
+        else:
+            st.warning("确认闭市？所有选手将无法交易")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("确认闭市", type="primary", use_container_width=True):
+                    close_market(); st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
+            with cc2:
+                if st.button("取消", use_container_width=True):
+                    st.session_state.cf_close = False; st.rerun()
+
     with c2:
-        if st.button("一键开市", use_container_width=True, key="btn_open", disabled=market_open):
-            open_market(); st.rerun()
+        if not st.session_state.cf_open:
+            if st.button("一键开市", use_container_width=True, disabled=market_open):
+                st.session_state.cf_open = True; st.session_state.cf_close = False; st.session_state.cf_undo = False; st.rerun()
+        else:
+            st.info("确认开市？将进入新一轮交易")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("确认开市", type="primary", use_container_width=True):
+                    open_market(); st.session_state.cf_open = False; st.rerun()
+            with cc2:
+                if st.button("取消", use_container_width=True):
+                    st.session_state.cf_open = False; st.rerun()
+
+    with c3:
+        if not st.session_state.cf_undo:
+            if st.button("撤销上一轮", use_container_width=True, disabled=current_round <= 1):
+                st.session_state.cf_undo = True; st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
+        else:
+            st.warning(f"确认回退到第 {current_round - 1} 轮？将删除最新K线")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("确认撤销", type="primary", use_container_width=True):
+                    undo_market(); st.session_state.cf_undo = False; st.rerun()
+            with cc2:
+                if st.button("取消", use_container_width=True):
+                    st.session_state.cf_undo = False; st.rerun()
 
     st.divider()
-    st.caption(f"闭市：结算所有股票价格 → 锁定交易 → 轮次保持 {current_round} | 开市：轮次+1 → 创建新一轮 → 恢复交易")
+
+    # 每轮K线历史
+    with st.expander("查看每轮K线历史"):
+        stocks = get_stocks()
+        sel_sym = st.selectbox("选择股票", [f"{s['name']} ({s['symbol']})" for s in stocks])
+        sym = sel_sym.split("(")[1].rstrip(")")
+        klines = get_kline_data(sym)
+        if klines:
+            df = pd.DataFrame(klines)
+            df["开盘"] = df["open_price"].apply(lambda x: f"¥{x:,.2f}")
+            df["最高"] = df["high_price"].apply(lambda x: f"¥{x:,.2f}")
+            df["最低"] = df["low_price"].apply(lambda x: f"¥{x:,.2f}")
+            df["收盘"] = df["close_price"].apply(lambda x: f"¥{x:,.2f}")
+            df["涨跌幅"] = df["change_pct"].apply(lambda x: f"{x:+.2f}%")
+            df["成交量"] = df["volume"].apply(lambda x: f"{x:,.0f}")
+            st.dataframe(df[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
+        else:
+            st.info("暂无K线数据")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 导航 + main
