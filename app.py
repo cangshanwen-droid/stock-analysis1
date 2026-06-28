@@ -73,17 +73,17 @@ def make_pwd(plain):
 def init_db():
     conn = get_db(); cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT NOW(), status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
-        CREATE TABLE IF NOT EXISTS stocks(id SERIAL PRIMARY KEY, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT NOW());
-        CREATE TABLE IF NOT EXISTS transactions(id SERIAL PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT NOW());
-        CREATE TABLE IF NOT EXISTS kline(id SERIAL PRIMARY KEY, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT NOW());
+        CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
+        CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY AUTOINCREMENT, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, PRIMARY KEY(stock_symbol, round));
         CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1), state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
-        CREATE TABLE IF NOT EXISTS audit_logs(id SERIAL PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT NOW());
+        CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
     """)
     conn.commit()
-    conn.execute("INSERT INTO market_state(id,state,round) VALUES(?,?,?) ON CONFLICT (id) DO NOTHING", (1, 'open', 1))
-    first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()["count"] == 0
+    conn.execute("INSERT OR IGNORE INTO market_state(id,state,round) VALUES(?,?,?)", (1, 'open', 1))
+    first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
     if first_boot:
         _seed(conn)
 
@@ -105,18 +105,18 @@ def init_db():
         has_open = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
         if not has_open:
             max_r = conn.execute("SELECT COALESCE(MAX(round),0) FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone()
-            mr = max_r["coalesce"] if max_r else 0
-            conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0) ON CONFLICT DO NOTHING", (s["symbol"], mr+1))
+            mr = max_r[0] if max_r else 0
+            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], mr+1))
     conn.commit(); conn.close()
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'admin',NOW(),'active',1000000)", (1, "admin", make_pwd("admin123")))
+    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd("admin123")))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'player',NOW(),'active',1000000)", (i, u, make_pwd(u)))
+        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(%s,%s,%s,%s,%s)", (sym, name, price, price, funds))
-        cur.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0) ON CONFLICT DO NOTHING", (sym,))
+        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
     trades = [("player1", "TSLA", "buy", 200.0, 100, 1), ("player1", "AAPL", "sell", 150.0, 80, 1), ("player1", "TSLA", "sell", 240.0, 80, 1), ("player2", "NVDA", "buy", 400.0, 30, 1), ("player2", "AAPL", "sell", 160.0, 40, 1), ("player3", "TSLA", "buy", 210.0, 50, 1), ("player3", "NVDA", "buy", 420.0, 20, 1)]
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
     # 为种子交易生成首轮K线
@@ -265,7 +265,7 @@ def add_stock(sym, name, price):
     try:
         funds = price * 10000 * 20 / 10000
         conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(%s,%s,%s,%s,%s)", (sym.upper(), name, price, price, funds))
-        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,1) ON CONFLICT DO NOTHING", (sym.upper(),))
+        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
         conn.commit(); return True, "添加成功"
     except sqlite3.IntegrityError: return False, "代码已存在"
     finally: conn.close()
@@ -350,7 +350,7 @@ def open_market():
     new_round = r["round"] + 1
     stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
     for s in stocks:
-        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,%s,0) ON CONFLICT DO NOTHING", (s["symbol"], new_round))
+        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
     conn.execute("UPDATE market_state SET state='open', round=%s WHERE id=1", (new_round,))
     conn.commit(); conn.close()
 
