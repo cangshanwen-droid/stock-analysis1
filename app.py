@@ -880,13 +880,15 @@ def page_admin_settle():
     with c1:
         confirm_close = st.checkbox("确认", key="cf_close")
         if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
-            settled_count = 0
+            settled_list = []
+            failed_list = []
             for s in stocks:
-                try:
-                    settle_round(s["symbol"])
-                    settled_count += 1
-                except: pass
-            st.success(f"已闭市 {settled_count}/{len(stocks)} 只股票"); st.rerun()
+                result = settle_round(s["symbol"])
+                if result and result[0]: settled_list.append(s["name"])
+                else: failed_list.append(s["name"])
+            msg = f"已闭市 {len(settled_list)} 只"
+            if failed_list: msg += f" | 跳过: {', '.join(failed_list)}"
+            st.success(msg); st.rerun()
     with c2:
         confirm_open = st.checkbox("确认", key="cf_open")
         if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
