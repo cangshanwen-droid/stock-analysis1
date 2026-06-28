@@ -980,8 +980,8 @@ section.main > div.block-container {
     font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
 }
 .kpi-card .delta { font-size: 13px; margin-top: 2px; }
-.kpi-card .delta.up { color: var(--green); }
-.kpi-card .delta.down { color: var(--red); }
+.kpi-card .delta.up { color: var(--red); }
+.kpi-card .delta.down { color: var(--green); }
 
 /* 移动端股票卡片 */
 .stock-card {
@@ -995,8 +995,8 @@ section.main > div.block-container {
 }
 .stock-card .sc-name { font-size: 15px; font-weight: 600; color: var(--text); }
 .stock-card .sc-pct { font-size: 14px; font-weight: 600; }
-.stock-card .sc-pct.up { color: var(--green); }
-.stock-card .sc-pct.down { color: var(--red); }
+.stock-card .sc-pct.up { color: var(--red); }
+.stock-card .sc-pct.down { color: var(--green); }
 .stock-card .sc-detail {
     display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px;
     margin: 8px 0; font-size: 12px; color: var(--text-2nd);
@@ -1515,7 +1515,7 @@ def download_db_button():
 GREEN = "#16a34a"; RED = "#ef4444"
 
 def pnl_class(v): return "up" if v >= 0 else "down"
-def pnl_color(v): return "#16a34a" if v >= 0 else "#ef4444"  # 盈亏绿涨红跌
+def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 红涨绿跌（A股标准）
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 页面：总览
@@ -1539,7 +1539,7 @@ def page_overview():
     with c1: st.markdown(f'<div class="kpi-card"><div class="label">总资产</div><div class="value">{fmt_money(data["total_assets"] + bal)}</div></div>', unsafe_allow_html=True)
     with c2: st.markdown(f'<div class="kpi-card"><div class="label">可用余额</div><div class="value">{fmt_money(bal)}</div></div>', unsafe_allow_html=True)
     with c3: st.markdown(f'<div class="kpi-card"><div class="label">今日盈亏</div><div class="value">{fmt_money(data["total_pnl"])}</div><div class="delta {"up" if data["total_pnl"]>=0 else "down"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
-    with c4: st.markdown(f'<div class="kpi-card"><div class="label">收益率</div><div class="value" style="color:{"#16a34a" if data["pnl_ratio"]>=0 else "#ef4444"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="kpi-card"><div class="label">收益率</div><div class="value" style="color:{"#ef4444" if data["pnl_ratio"]>=0 else "#16a34a"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
 
     if data["stock_pnl"]:
         st.markdown('<div style="font-size:20px;font-weight:500;color:#111827;margin:24px 0 16px 0;">各股票盈亏</div>', unsafe_allow_html=True)
