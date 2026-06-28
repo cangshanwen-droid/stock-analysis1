@@ -483,11 +483,23 @@ def add_trade(username, symbol, tt, price, shares):
                        f"💰 均价：¥{total_cost/matched_shares:.2f}\n"
                        f"💵 总花费：¥{total_cost:,.2f}")
             else:
-                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
-                    (username, symbol, "buy", price, remaining, cr))
-                msg = (f"⏳ {stock_name} 买入挂单已提交\n"
-                       f"📋 价格 ¥{price}，数量 {remaining} 股，共 ¥{price*remaining:,.2f}\n"
-                       f"📌 当前无人在这个价格卖出，已加入挂单等待成交")
+                # 无匹配时直接成交（系统兜底），保证游戏可玩
+                cost = price * remaining
+                if bal["balance"] >= cost:
+                    conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+                    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                        (username, symbol, "buy", price, remaining, cr))
+                    conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
+                        ("系统", symbol, price, remaining, cr))
+                    msg = (f"✅ {stock_name} 买入成交！\n"
+                           f"📊 数量：{remaining} 股 @ ¥{price}\n"
+                           f"💵 共花费：¥{cost:,.2f}")
+                else:
+                    conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                        (username, symbol, "buy", price, remaining, cr))
+                    msg = (f"⏳ {stock_name} 买入挂单已提交\n"
+                           f"📋 价格 ¥{price}，数量 {remaining} 股\n"
+                           f"📌 已加入挂单，等卖家出现自动成交")
 
         else:  # sell
             holding = get_holding_shares(username, symbol, conn)
@@ -543,11 +555,16 @@ def add_trade(username, symbol, tt, price, shares):
                        f"💰 均价：¥{total_cost/matched_shares:.2f}\n"
                        f"💵 总收入：¥{total_cost:,.2f}")
             else:
-                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                # 无匹配时直接成交（系统兜底）
+                cost = price * remaining
+                conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", price, remaining, cr))
-                msg = (f"⏳ {stock_name} 卖出挂单已提交\n"
-                       f"📋 价格 ¥{price}，数量 {remaining} 股，共 ¥{price*remaining:,.2f}\n"
-                       f"📌 当前没人出这个价买，已加入挂单等待成交")
+                conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
+                    ("系统", symbol, price, remaining, cr))
+                msg = (f"✅ {stock_name} 卖出成交！\n"
+                       f"📊 数量：{remaining} 股 @ ¥{price}\n"
+                       f"💵 共收入：¥{cost:,.2f}")
 
         log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, matched={matched_shares}", conn)
         conn.commit()
