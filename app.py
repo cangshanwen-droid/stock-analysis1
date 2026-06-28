@@ -1092,40 +1092,30 @@ SIDEBAR_CSS = """
     .menu-group-label { padding: 12px 20px 2px 20px; }
     .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    section[data-testid="stSidebar"] div[role="radiogroup"] {
-        padding: 2px 8px !important; gap: 0 !important; border: none !important; background: transparent !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
-        position: absolute !important; opacity: 0 !important;
-        width: 1px !important; height: 1px !important; margin: -1px !important;
-        padding: 0 !important; border: 0 !important; background: transparent !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important; align-items: center !important;
-        padding: 8px 12px !important; margin: 0 0 2px 0 !important;
+    /* 侧边栏导航按钮 */
+    section[data-testid="stSidebar"] button {
+        display: block !important; width: calc(100% - 16px) !important;
+        margin: 2px 8px !important; padding: 8px 12px !important;
         border-radius: 6px !important; font-size: 14px !important;
-        font-weight: 500 !important; color: #64748b !important;
+        font-weight: 500 !important; text-align: left !important;
         background: transparent !important; border: none !important;
-        cursor: pointer !important; position: relative !important;
-        gap: 0 !important; min-height: 0 !important; line-height: 1.3 !important;
-        z-index: 1 !important;
+        color: #64748b !important; cursor: pointer !important;
+        transition: background .1s !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+    section[data-testid="stSidebar"] button:hover {
         background: rgba(255,255,255,.04) !important; color: #94a3b8 !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
-        background: rgba(242,54,69,.08) !important; color: #f23645 !important; font-weight: 600 !important;
+    section[data-testid="stSidebar"] button[kind="primary"] {
+        background: rgba(242,54,69,.08) !important; color: #f23645 !important;
+        font-weight: 600 !important; position: relative !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
+    section[data-testid="stSidebar"] button[kind="primary"]::before {
         content: '' !important; position: absolute !important;
-        left: -1px !important; top: 6px !important; bottom: 6px !important;
+        left: 0 !important; top: 6px !important; bottom: 6px !important;
         width: 3px !important; background: #f23645 !important;
         border-radius: 0 2px 2px 0 !important;
-        pointer-events: none !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0 !important; font-size: 14px !important; color: inherit !important;
-    }
+    section[data-testid="stSidebar"] button[kind="secondary"] { border: none !important; background: transparent !important; }
     section[data-testid="stSidebar"] button:last-of-type {
         margin: 4px 12px !important; width: calc(100% - 24px) !important;
     }
@@ -2361,27 +2351,28 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_side", label_visibility="collapsed")
-        picked = picked.strip()
-        if picked != sel:
-            st.session_state.nav_current = picked
-            st.rerun()
+        for n in nav:
+            is_active = (n == sel)
+            tp = "primary" if is_active else "secondary"
+            if st.button(n, key=f"ns_{n}", type=tp, use_container_width=True):
+                st.session_state.nav_current = n
+                st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
             st.rerun()
-    # 移动端底部导航（仅玩家，始终可见）
+    # 移动端底部导航（仅玩家）
     sel = st.session_state.nav_current
     if st.session_state.role == "player" and sel in PLAYER_NAV:
         short = {"总览": "总览", "交易大厅": "交易", "我的持仓": "持仓", "交易记录": "记录", "K线展板": "K线"}
         st.markdown('<div class="mob-bar-inner">', unsafe_allow_html=True)
-        mob_cols = st.columns(5)
+        mm = st.columns(5)
         for mi, mn in enumerate(PLAYER_NAV):
-            with mob_cols[mi]:
+            with mm[mi]:
                 tp = "primary" if mn == sel else "secondary"
-                if st.button(short.get(mn, mn), key=f"mb_{mn}", type=tp, use_container_width=True):
+                if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
                     st.session_state.nav_current = mn
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
