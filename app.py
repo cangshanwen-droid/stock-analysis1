@@ -962,18 +962,37 @@ section.main > div.block-container {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 6px 6px 0 6px; backdrop-filter: blur(8px);
 }
+/* 核选项：所有不确定的容器透明 */
+div[class*="css"] { background: transparent !important; }
+div[class*="st-"] { background: transparent !important; }
+section[class*="main"] > div { background: transparent !important; }
 /* Plotly 图表容器透明 */
 .js-plotly-plot, .plot-container, .plotly, .main-svg {
     background: transparent !important;
 }
 .svg-container { background: transparent !important; }
 .mobile-nav { margin: 0 0 10px 0; }
-.mobile-nav div[data-baseweb="select"] > div {
-    background: rgba(10,20,42,.8) !important;
-    border: 1px solid rgba(255,255,255,.06) !important;
-    border-radius: 8px !important; color: #eef2ff !important;
+.mobile-nav div[role="radiogroup"] {
+    display: flex !important; flex-wrap: wrap !important; gap: 4px !important;
 }
-.mobile-nav div[data-baseweb="select"] svg { fill: rgba(255,255,255,.3) !important; }
+.mobile-nav div[role="radiogroup"] label {
+    padding: 6px 10px !important;
+    border-radius: 6px !important;
+    font-size: 12px !important;
+    color: rgba(255,255,255,.4) !important;
+    background: rgba(255,255,255,.03) !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+}
+.mobile-nav div[role="radiogroup"] label:hover {
+    background: rgba(255,255,255,.06) !important;
+}
+.mobile-nav div[role="radiogroup"] label[data-checked="true"] {
+    background: rgba(212,168,83,.1) !important;
+    border-color: rgba(212,168,83,.15) !important;
+    color: #fff !important;
+}
+.mobile-nav div[role="radiogroup"] label input { display: none !important; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
@@ -2352,10 +2371,15 @@ def main():
             st.session_state.role = ""
             st.rerun()
     st.markdown('<div class="mobile-only mobile-nav">', unsafe_allow_html=True)
-    mobile_sel = st.selectbox("导航", nav, index=nav.index(st.session_state.nav_current), key=f"nav_mobile_{st.session_state.nav_current}")
+    icon_map_m = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "交易记录": "📜", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
+    mob_opts = [f"{icon_map_m.get(n,'•')} {n}" for n in nav]
+    mob_cur = f"{icon_map_m.get(st.session_state.nav_current,'•')} {st.session_state.nav_current}"
+    mob_idx = mob_opts.index(mob_cur) if mob_cur in mob_opts else 0
+    mob_pick = st.radio("", mob_opts, index=mob_idx, key="nav_mobile", label_visibility="collapsed", horizontal=True)
+    mob_new = mob_pick.split(" ", 1)[1] if " " in mob_pick else mob_pick
+    if mob_new != st.session_state.nav_current:
+        st.session_state.nav_current = mob_new
     st.markdown('</div>', unsafe_allow_html=True)
-    if mobile_sel != st.session_state.nav_current:
-        st.session_state.nav_current = mobile_sel
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
