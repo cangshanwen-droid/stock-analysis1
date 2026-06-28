@@ -5,4 +5,3 @@ numpy>=1.24.0
 openpyxl>=3.0
 yfinance>=0.2.30
 streamlit-lightweight-charts-v5>=0.1.8
-streamlit-autorefresh
