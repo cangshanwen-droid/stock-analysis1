@@ -25,7 +25,20 @@ def row_get(row, key, default=None):
     except (KeyError, IndexError, TypeError):
         return default
 
-def hash_pwd(p): return hashlib.sha256(p.encode()).hexdigest()
+def hash_pwd(p, salt=""): return hashlib.sha256((p + salt).encode()).hexdigest()
+
+def check_pwd(stored, plain):
+    """验证密码，兼容旧版无盐哈希"""
+    if ":" in stored:
+        salt, h = stored.split(":", 1)
+        return hash_pwd(plain, salt) == h
+    return hash_pwd(plain) == stored
+
+def make_pwd(plain):
+    """生成加盐密码"""
+    import secrets
+    salt = secrets.token_hex(8)
+    return f"{salt}:{hash_pwd(plain, salt)}"
 
 def init_db():
     conn = get_db(); cur = conn.cursor()
@@ -72,9 +85,9 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime(),'active',1000000)", (hash_pwd("admin123"),))
+    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',datetime(),'active',1000000)", (1, "admin", make_pwd("admin123")))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime(),'active',1000000)", (i, u, hash_pwd(u)))
+        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',datetime(),'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
@@ -167,7 +180,7 @@ def settle_round(symbol):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
     conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
-    if not r or r["password"] != hash_pwd(p): return False, ""
+    if not r or not check_pwd(r["password"], p): return False, ""
     try:
         if r["status"] == "disabled": return False, ""
     except: pass
@@ -183,7 +196,7 @@ def toggle_user(username):
 def register_user(u, p, role="player"):
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, hash_pwd(p), role))
+        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, make_pwd(p), role))
         conn.commit(); return True, "注册成功"
     except sqlite3.IntegrityError: return False, "用户名已存在"
     finally: conn.close()
@@ -199,7 +212,7 @@ def get_audit_logs(limit=80):
     return [dict(x) for x in r]
 
 def reset_pwd(u, np_):
-    conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (hash_pwd(np_), u)); conn.commit(); conn.close()
+    conn = get_db(); conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u)); conn.commit(); conn.close()
 
 def get_stocks():
     conn = get_db(); r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall(); conn.close()
@@ -220,8 +233,15 @@ def add_stock(sym, name, price):
     finally: conn.close()
 
 def update_stock_params(sid, **kw):
-    conn = get_db(); sets = ", ".join(f"{k}=?" for k in kw); vals = list(kw.values()) + [sid]
-    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals); conn.commit(); conn.close()
+    """仅允许安全字段更新"""
+    allowed = {"carbon_price", "premium_rate", "industry_carbon_mean"}
+    safe = {k: v for k, v in kw.items() if k in allowed}
+    if not safe: return
+    conn = get_db()
+    sets = ", ".join(f"{k}=?" for k in safe)
+    vals = list(safe.values()) + [sid]
+    conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
+    conn.commit(); conn.close()
 
 def delete_stock(sid):
     conn = get_db(); conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,)); conn.commit(); conn.close()
