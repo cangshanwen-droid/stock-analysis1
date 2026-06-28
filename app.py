@@ -966,6 +966,12 @@ section.main > div.block-container {
 }
 .svg-container { background: transparent !important; }
 .mobile-nav { margin: 0 0 10px 0; }
+.mobile-nav div[data-baseweb="select"] > div {
+    background: rgba(10,20,42,.8) !important;
+    border: 1px solid rgba(255,255,255,.06) !important;
+    border-radius: 8px !important; color: #eef2ff !important;
+}
+.mobile-nav div[data-baseweb="select"] svg { fill: rgba(255,255,255,.3) !important; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
@@ -1028,6 +1034,10 @@ section.main > div.block-container {
     }
     input:focus { border-color: rgba(212,168,83,.25) !important; }
     div[data-testid="stMarkdown"] { color: #c8d0e0 !important; }
+    /* 移除所有默认组件白色/黑色块 */
+    div[data-testid="stVerticalBlock"] > div { background: transparent !important; }
+    section.main > div:not([class]) { background: transparent !important; }
+    [data-testid="column"] { background: transparent !important; gap: 0 !important; }
 }
 
 @media (min-width: 768px) {
