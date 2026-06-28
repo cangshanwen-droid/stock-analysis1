@@ -865,15 +865,80 @@ def page_kline():
             data.append({"round": i, "open_price": round(o, 2), "high_price": round(h, 2), "low_price": round(l, 2), "close_price": round(c, 2), "volume": abs(int(np.random.normal(5000, 2000))), "change_pct": round((c - o) / o * 100, 2)})
     df_k = pd.DataFrame(data)
     if df_k.empty: return
-    colors = [GREEN if r["close_price"] >= r["open_price"] else RED for _, r in df_k.iterrows()]
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.05, row_heights=[.75, .25])
-    fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["open_price"], high=df_k["high_price"], low=df_k["low_price"], close=df_k["close_price"], increasing_line_color=GREEN, decreasing_line_color=RED, name=""), row=1, col=1)
-    fig.add_trace(go.Bar(x=df_k.index, y=df_k["volume"], marker_color=colors, name="", showlegend=False), row=2, col=1)
+
+    colors = ["#ef4444" if r["close_price"] < r["open_price"] else "#22c55e" for _, r in df_k.iterrows()]
+    vol_colors = ["#ef444466" if r["close_price"] < r["open_price"] else "#22c55e66" for _, r in df_k.iterrows()]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=.02, row_heights=[.7, .3],
+        subplot_titles=("", ""),
+    )
+
+    fig.add_trace(go.Candlestick(
+        x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
+        low=df_k["low_price"], close=df_k["close_price"],
+        increasing=dict(line=dict(color="#22c55e", width=1), fillcolor="#22c55e"),
+        decreasing=dict(line=dict(color="#ef4444", width=1), fillcolor="#ef4444"),
+        name="", showlegend=False,
+    ), row=1, col=1)
+
+    fig.add_trace(go.Bar(
+        x=df_k.index, y=df_k["volume"], marker_color=vol_colors,
+        name="", showlegend=False,
+    ), row=2, col=1)
+
     if len(df_k) >= 5:
-        fig.add_trace(go.Scatter(x=df_k.index, y=df_k["close_price"].rolling(5).mean(), line=dict(color="#2D6AFF", width=1), name="MA5"), row=1, col=1)
-    fig.update_layout(height=400, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False, showlegend=False)
-    fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        ma5 = df_k["close_price"].rolling(5).mean()
+        fig.add_trace(go.Scatter(x=df_k.index, y=ma5, mode="lines",
+            line=dict(color="#f59e0b", width=1.5), name="MA5", showlegend=True), row=1, col=1)
+    if len(df_k) >= 10:
+        ma10 = df_k["close_price"].rolling(10).mean()
+        fig.add_trace(go.Scatter(x=df_k.index, y=ma10, mode="lines",
+            line=dict(color="#3b82f6", width=1.5), name="MA10", showlegend=True), row=1, col=1)
+    if len(df_k) >= 20:
+        ma20 = df_k["close_price"].rolling(20).mean()
+        fig.add_trace(go.Scatter(x=df_k.index, y=ma20, mode="lines",
+            line=dict(color="#8b5cf6", width=1.5), name="MA20", showlegend=True), row=1, col=1)
+
+    fig.update_layout(
+        height=500,
+        margin=dict(t=30, b=10, l=10, r=20),
+        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+        xaxis_rangeslider_visible=False,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="top", y=1.12, xanchor="left", x=0),
+        hovermode="x unified",
+        font=dict(family="Inter, sans-serif", size=12, color="#374151"),
+    )
+    fig.update_xaxes(
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1,
+        tickfont=dict(size=11, color="#6b7280"),
+        row=1, col=1,
+    )
+    fig.update_xaxes(
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1,
+        tickfont=dict(size=11, color="#6b7280"),
+        title_text="轮次", title_font=dict(size=11, color="#6b7280"),
+        row=2, col=1,
+    )
+    fig.update_yaxes(
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1,
+        tickfont=dict(size=11, color="#6b7280"), tickformat=",.0f",
+        title_text="价格 (¥)", title_font=dict(size=11, color="#6b7280"),
+        row=1, col=1,
+    )
+    fig.update_yaxes(
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1,
+        tickfont=dict(size=11, color="#6b7280"), tickformat=",.0f",
+        title_text="成交量", title_font=dict(size=11, color="#6b7280"),
+        row=2, col=1,
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={
+        "displayModeBar": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        "displaylogo": False,
+    })
 
 def page_admin_stock_summary():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
