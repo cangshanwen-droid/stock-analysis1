@@ -422,14 +422,13 @@ def add_trade(username, symbol, tt, price, shares):
         if not stock: return False, "股票不存在或已停用"
 
         remaining = shares
-        matched = []
+        matched_shares = 0
 
         if tt == "buy":
             # 余额检查（按最大可能成本）
             max_cost = price * remaining
             bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
             if not bal or bal["balance"] < max_cost:
-                # 允许部分成交：减少数量到余额够买
                 max_can_buy = int(bal["balance"] / price)
                 if max_can_buy <= 0:
                     return False, f"余额不足，最多可买 {int(bal['balance']/price)} 股"
@@ -455,17 +454,14 @@ def add_trade(username, symbol, tt, price, shares):
                 if seller_avail < match_shares:
                     conn.execute("DELETE FROM order_book WHERE id=?", (sell_order["id"],))
                     continue
-                # 扣买家钱
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, username))
-                # 加卖家钱
                 conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, sell_order["username"]))
-                # 记录成交
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "buy", match_price, match_shares, cr))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (sell_order["username"], symbol, "sell", match_price, match_shares, cr))
-                matched.append((match_price, match_shares))
 
+                matched_shares += match_shares
                 remaining -= match_shares
                 new_sell_shares = sell_order["shares"] - match_shares
                 if new_sell_shares <= 0:
@@ -473,23 +469,24 @@ def add_trade(username, symbol, tt, price, shares):
                 else:
                     conn.execute("UPDATE order_book SET shares=? WHERE id=?", (new_sell_shares, sell_order["id"]))
 
-            # 有未成交部分 → 挂单
-            if remaining > 0:
+            if matched_shares > 0 and remaining > 0:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "buy", price, remaining, cr))
-                msg = f"部分成交 {shares - remaining} 股，剩余 {remaining} 股已挂单"
+                msg = f"成交 {matched_shares} 股，剩余 {remaining} 股已挂单等待"
+            elif matched_shares > 0:
+                msg = f"全部成交 {matched_shares} 股"
             else:
-                msg = f"全部成交 {shares} 股"
+                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "buy", price, remaining, cr))
+                msg = f"已挂单等待成交 {remaining} 股（当前无匹配卖单）"
 
         else:  # sell
-            # 持仓检查（扣除已挂卖的订单，防止超卖）
             holding = get_holding_shares(username, symbol, conn)
             pending_sell = conn.execute("SELECT COALESCE(SUM(shares),0) FROM order_book WHERE username=? AND stock_symbol=? AND trade_type='sell'", (username, symbol)).fetchone()[0]
             available = holding - pending_sell
             if available < remaining:
                 return False, f"可卖持仓不足：持有 {holding} 股，已挂卖 {pending_sell} 股，可用 {available} 股"
 
-            # 扫买一（最高买单），直到全部成交或没有可匹配的买单
             while remaining > 0:
                 buy_order = conn.execute("""
                     SELECT id, username, price, shares FROM order_book
@@ -502,23 +499,18 @@ def add_trade(username, symbol, tt, price, shares):
                 match_price = buy_order["price"]
                 match_cost = match_shares * match_price
 
-                # 检查买家余额（挂单后可能花了钱）
                 buyer_bal = conn.execute("SELECT balance FROM users WHERE username=?", (buy_order["username"],)).fetchone()
                 if not buyer_bal or buyer_bal["balance"] < match_cost:
-                    # 买家钱不够，跳过这个买单
                     conn.execute("DELETE FROM order_book WHERE id=?", (buy_order["id"],))
                     continue
-                # 买家扣钱
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, buy_order["username"]))
-                # 卖家加钱
                 conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, username))
-                # 记录成交
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (buy_order["username"], symbol, "buy", match_price, match_shares, cr))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", match_price, match_shares, cr))
-                matched.append((match_price, match_shares))
 
+                matched_shares += match_shares
                 remaining -= match_shares
                 new_buy_shares = buy_order["shares"] - match_shares
                 if new_buy_shares <= 0:
@@ -526,15 +518,18 @@ def add_trade(username, symbol, tt, price, shares):
                 else:
                     conn.execute("UPDATE order_book SET shares=? WHERE id=?", (new_buy_shares, buy_order["id"]))
 
-            # 有未成交部分 → 挂单
-            if remaining > 0:
+            if matched_shares > 0 and remaining > 0:
                 conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", price, remaining, cr))
-                msg = f"部分成交 {shares - remaining} 股，剩余 {remaining} 股已挂单"
+                msg = f"成交 {matched_shares} 股，剩余 {remaining} 股已挂单等待"
+            elif matched_shares > 0:
+                msg = f"全部成交 {matched_shares} 股"
             else:
-                msg = f"全部成交 {shares} 股"
+                conn.execute("INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
+                    (username, symbol, "sell", price, remaining, cr))
+                msg = f"已挂单等待成交 {remaining} 股（当前无匹配买单）"
 
-        log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, matched={len(matched)}", conn)
+        log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, matched={matched_shares}", conn)
         conn.commit()
     try:
         get_public_quote_snapshot.clear()
