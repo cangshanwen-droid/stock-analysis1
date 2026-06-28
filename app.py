@@ -1179,11 +1179,11 @@ DASHBOARD_CSS = """
         border-top: 1px solid rgba(255,255,255,.06); margin-top: 4px;
         font-size: 11px; color: rgba(255,255,255,.18); font-family: monospace; }
 
-    .login-btn { padding: 6px 18px; border-radius: 8px; font-size: 13px; font-weight: 500;
-        cursor: pointer; border: 1px solid rgba(255,255,255,.15); background: transparent;
-        color: rgba(255,255,255,.5); font-family: inherit; text-decoration: none; transition: all .15s;
+    .login-btn { padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 600;
+        cursor: pointer; border: 1px solid rgba(212,168,83,.3); background: rgba(212,168,83,.1);
+        color: #d4a853; font-family: inherit; text-decoration: none; transition: all .15s;
         display: inline-block; text-align: center; }
-    .login-btn:hover { background: rgba(255,255,255,.08); color: rgba(255,255,255,.8); }
+    .login-btn:hover { background: rgba(212,168,83,.2); color: #f0e6d3; border-color: rgba(212,168,83,.5); }
 
     @media (max-width: 768px) { .stock-grid { grid-template-columns: repeat(2, 1fr); } .s-card .pr { font-size: 22px; } }
 </style>
@@ -1206,13 +1206,12 @@ def page_public_dashboard():
     mkt_text = "交易中" if mkt_open else "已闭市"
 
     # 顶栏（实时时钟用 JS 走浏览器时间）
-    c1, c2, c3 = st.columns([2, 1, 1])
+    c1, c2 = st.columns([3, 1])
     with c1:
         st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;"><span class="dash-brand">双镜</span><span class="dash-sub">智能投资分析系统</span></div>', unsafe_allow_html=True)
     with c2:
-        st.markdown(f'<div class="dash-clock" style="text-align:center;" id="liveClock"></div>', unsafe_allow_html=True)
-    with c3:
-        if st.button("登录交易", key="dash_login_btn"):
+        st.markdown(f'<div style="text-align:right;"><span class="dash-clock" id="liveClock"></span></div>', unsafe_allow_html=True)
+        if st.button("登录交易", key="dash_login_btn", type="primary", use_container_width=True):
             st.session_state.show_login = True
             st.rerun()
 
