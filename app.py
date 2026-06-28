@@ -1460,46 +1460,61 @@ def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 红涨绿跌（A�
 def page_overview():
     data = get_user_overview(st.session_state.username)
     bal = get_user_balance(st.session_state.username)
+    mv = data["total_assets"]
+    total = mv + bal
 
-    # 顶栏：品牌左 / 用户名+更新时间右
-    c1, c2 = st.columns([7, 2])
-    with c1: st.markdown('<span style="font-size:24px;font-weight:800;letter-spacing:2px;background:linear-gradient(135deg,#1e293b,#334155);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</span>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{esc(st.session_state.username)} | <span id="live-clock">{datetime.now().strftime("%H:%M:%S")}</span></p>', unsafe_allow_html=True)
-    st.markdown("""
-    <script>
-        setInterval(function(){var d=new Date();var e=document.getElementById('live-clock');if(e)e.textContent=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');},1000);
-    </script>
-    """, unsafe_allow_html=True)
-
-    # 4 KPI卡片
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f'<div class="kpi-card"><div class="label">总资产</div><div class="value">{fmt_money(data["total_assets"] + bal)}</div></div>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<div class="kpi-card"><div class="label">可用余额</div><div class="value">{fmt_money(bal)}</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="kpi-card"><div class="label">今日盈亏</div><div class="value">{fmt_money(data["total_pnl"])}</div><div class="delta {"up" if data["total_pnl"]>=0 else "down"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
-    with c4: st.markdown(f'<div class="kpi-card"><div class="label">收益率</div><div class="value" style="color:{"#ef4444" if data["pnl_ratio"]>=0 else "#16a34a"}">{fmt_pct(data["pnl_ratio"])}</div></div>', unsafe_allow_html=True)
+    # KPI卡片：总资产拆明细
+    css_col2 = "grid-template-columns:repeat(2,1fr)!important;" if st.session_state.get('mobile', False) else ""
+    st.markdown(f"""
+    <div class="kpi-grid" style="{css_col2}">
+        <div class="kpi-card"><div class="label">总资产</div><div class="value">{fmt_money(total)}</div><div class="delta {"up" if data["total_pnl"]>=0 else "down"}">持仓 {fmt_money(mv)} ｜ 余额 {fmt_money(bal)}</div></div>
+        <div class="kpi-card"><div class="label">可用余额</div><div class="value">{fmt_money(bal)}</div></div>
+        <div class="kpi-card"><div class="label">持仓盈亏</div><div class="value">{fmt_money(data["total_pnl"])}</div><div class="delta {"up" if data["total_pnl"]>=0 else "down"}">{fmt_pct(data["pnl_ratio"])}</div></div>
+        <div class="kpi-card"><div class="label">收益率</div><div class="value" style="color:{"#ef4444" if data["pnl_ratio"]>=0 else "#16a34a"}">{fmt_pct(data["pnl_ratio"])}</div></div>
+    </div>""", unsafe_allow_html=True)
 
     if data["stock_pnl"]:
-        st.markdown('<div style="font-size:20px;font-weight:500;color:#111827;margin:24px 0 16px 0;">各股票盈亏</div>', unsafe_allow_html=True)
+        st.markdown("""<div style="font-size:16px;font-weight:600;color:#111827;margin:16px 0 8px 0;">各股票盈亏</div>""", unsafe_allow_html=True)
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(
-            x=df["name"], y=df["pnl"],
-            marker_color=[pnl_color(v) for v in df["pnl"]], text=[fmt_pnl(v) for v in df["pnl"]],
+            y=df["name"], x=df["pnl"], orientation="h",
+            marker_color=[pnl_color(v) for v in df["pnl"]],
+            text=[fmt_pnl(v) for v in df["pnl"]],
             textposition="outside", marker_line_width=0,
         ))
         fig.update_layout(
-            margin=dict(t=16, b=0, l=20, r=20), height=380,
+            margin=dict(t=8, b=0, l=0, r=80), height=max(120, len(df)*45+40),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
-            yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
+            yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False, autorange="reversed"),
         )
+        fig.update_traces(textposition="outside", cliponaxis=False)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
     if pf.empty: st.info("暂无持仓"); return
 
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的持仓</div>""", unsafe_allow_html=True)
+    # 汇总行
+    total_mv = pf["market_value"].sum()
+    total_pnl = pf["pnl"].sum()
+    total_shares = pf["shares"].sum()
+    pnl_cls = "up" if total_pnl >= 0 else "down"
+    st.markdown(f"""
+    <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+            <div style="font-size:11px;color:#64748b;">持仓市值</div>
+            <div style="font-size:20px;font-weight:700;color:#0f172a;">{fmt_money(total_mv)}</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+            <div style="font-size:11px;color:#64748b;">总盈亏</div>
+            <div style="font-size:20px;font-weight:700;color:{pnl_color(total_pnl)};">{fmt_money(total_pnl)}</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+            <div style="font-size:11px;color:#64748b;">持股数</div>
+            <div style="font-size:20px;font-weight:700;color:#0f172a;">{fmt_num(total_shares)} 股</div>
+        </div>
+    </div>""", unsafe_allow_html=True)
 
     # 移动端：卡片
     st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
@@ -1529,96 +1544,106 @@ def page_portfolio():
     d["市值"] = pf["market_value"].apply(lambda x: fmt_money(x))
     d["盈亏"] = pf["pnl"].apply(lambda x: fmt_money(x))
     d["收益率"] = pf["pnl_ratio"].apply(lambda x: f"{x:,.2f}%")
-    st.dataframe(d[["名称", "代码", "持仓", "成本", "现价", "盈亏", "收益率"]], use_container_width=True, hide_index=True)
+    st.dataframe(d[["名称", "代码", "持仓", "成本", "现价", "市值", "盈亏", "收益率"]], use_container_width=True, hide_index=True)
     st.markdown('</div></div>', unsafe_allow_html=True)
 
+    # 买入时间（从最近一笔买入记录取）
+    with get_db_cm() as conn:
+        times = conn.execute("SELECT DISTINCT stock_symbol, MAX(trade_date) as t FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol ORDER BY t DESC", (st.session_state.username,)).fetchall()
+    if times:
+        st.caption(f"最近买入：{times[0]['stock_symbol']} {str(times[0]['t'])[:16]}" if times[0]['t'] else "")
+
 def page_market_making():
-    mm = get_user_market_making(st.session_state.username)
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">我的做市</div>""", unsafe_allow_html=True)
-    if mm.empty: st.info("无做市记录"); return
-    st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    d = mm.copy()
-    d["卖出价"] = d["卖出价"].apply(lambda x: f"¥{x:,.2f}")
-    d["当前价"] = d["当前价"].apply(lambda x: f"¥{x:,.2f}")
-    d["对手方盈亏"] = d["对手方盈亏"].apply(lambda x: f"¥{x:,.2f}")
-    st.dataframe(d, use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易记录</div>""", unsafe_allow_html=True)
+    with get_db_cm() as conn:
+        rows = conn.execute("""
+            SELECT t.stock_symbol, t.trade_type, t.price, t.shares, t.round, t.trade_date,
+                   COALESCE(s.name, t.stock_symbol) AS nm
+            FROM transactions t
+            LEFT JOIN stocks s ON t.stock_symbol = s.symbol
+            WHERE t.username=?
+            ORDER BY t.trade_date DESC LIMIT 100
+        """, (st.session_state.username,)).fetchall()
+    if not rows:
+        st.info("暂无交易记录"); return
+    df = pd.DataFrame([{
+        "股票": r["nm"], "类型": "买入" if r["trade_type"]=="buy" else "卖出",
+        "价格": f"¥{r['price']:.2f}", "数量": f"{r['shares']:,}股",
+        "金额": f"¥{r['price']*r['shares']:,.2f}", "轮次": f"第{r['round']}轮",
+        "时间": str(r["trade_date"])[:19] if r["trade_date"] else "-",
+    } for r in rows])
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
 def page_trade_hall():
     stocks = get_stocks()
     if not stocks: st.error("无股票"); return
+    mkt_open = is_market_open()
+    mkt_round = get_market_round()
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
 
-    if not is_market_open():
+    if not mkt_open:
         st.warning("市场已闭市，无法交易。等待管理员开市。")
         return
 
-    # 桌面端表单
+    opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
+
+    # 桌面端：左右布局（交易+因子）
     st.markdown('<div class="desktop-only">', unsafe_allow_html=True)
-    opts = {f"{s['name']} ({s['symbol']}) - {fmt_money(s['current_price'])}": s for s in stocks}
-    with st.form("trade_form_desk"):
-        sel = st.selectbox("股票", list(opts.keys()))
-        s = opts[sel]
-        c1, c2 = st.columns(2)
-        with c1: direction = st.radio("方向", ["买入", "卖出"], horizontal=True)
-        with c2:
+    col_trade, col_factor = st.columns([1, 1])
+    with col_trade:
+        with st.form("trade_form_desk"):
+            sel = st.selectbox("股票", list(opts.keys()))
+            s = opts[sel]
+            st.markdown(f"**当前价：{fmt_money(s['current_price'])}**")
+            direction = st.radio("方向", ["买入", "卖出"], horizontal=True)
             price = st.number_input("价格", min_value=0.01, value=float(s["current_price"]), step=0.5, format="%.2f")
             shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
-        if st.form_submit_button("确认交易", type="primary", use_container_width=True):
-            tt = "buy" if direction == "买入" else "sell"
-            with st.spinner("交易处理中..."):
-                ok, msg = add_trade(st.session_state.username, s["symbol"], tt, price, shares)
-            if ok: st.success(msg)
-            else: st.error(msg)
-            st.rerun()
+            if st.form_submit_button("确认交易", type="primary", use_container_width=True):
+                tt = "buy" if direction == "买入" else "sell"
+                with st.spinner("交易处理中..."):
+                    ok, msg = add_trade(st.session_state.username, s["symbol"], tt, price, shares)
+                if ok: st.success(msg)
+                else: st.error(msg)
+                st.rerun()
+    with col_factor:
+        factor_sym = st.selectbox("查看股票", list(opts.keys()), key="factor_sel")
+        fs = opts[factor_sym]
+        prev = fs["previous_close"] or fs["current_price"]
+        pf_ = round(1 + 0.2 * (fs["premium_rate"] - 50) / 50, 4)
+        cm_ = max(fs["industry_carbon_mean"], 1)
+        cf_ = round(1 - 0.5 * (fs["carbon_price"] - cm_) / cm_, 4)
+        st.markdown(f"""
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+                <div style="font-size:11px;color:#666;">幸福因子</div>
+                <div style="font-size:22px;font-weight:700;color:#{'16a34a' if pf_>=1 else 'ef4444'};">{pf_}</div>
+                <div style="font-size:11px;color:#999;">溢价率 {fs['premium_rate']:.0f}%</div>
+            </div>
+            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+                <div style="font-size:11px;color:#666;">碳因子</div>
+                <div style="font-size:22px;font-weight:700;color:#{'16a34a' if cf_>=1 else 'ef4444'};">{cf_}</div>
+                <div style="font-size:11px;color:#999;">碳价 {fs['carbon_price']:.0f}（均值{cm_:.0f}）</div>
+            </div>
+            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+                <div style="font-size:11px;color:#666;">上轮收盘</div>
+                <div style="font-size:22px;font-weight:700;">{fmt_money(prev)}</div>
+                <div style="font-size:11px;color:#999;">理论价 {fmt_money(round(prev*max(1,pf_)*cf_,2))}</div>
+            </div>
+        </div>""", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 因子面板（桌面端）
-    st.markdown('<div style="margin-top:20px;">', unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:12px">定价因子</div>""", unsafe_allow_html=True)
-    factor_sym = st.selectbox("查看股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="factor_sel")
-    fsym = factor_sym.split("(")[1].rstrip(")")
-    fs = next(x for x in stocks if x["symbol"] == fsym)
-    prev = fs["previous_close"] or fs["current_price"]
-    prem_f = round(1 + 0.2 * (fs["premium_rate"] - 50) / 50, 4)
-    cm = max(fs["industry_carbon_mean"], 1)
-    carb_f = round(1 - 0.5 * (fs["carbon_price"] - cm) / cm, 4)
-    # 幸福度（溢价率）
-    st.markdown(f"""
-    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-        <div style="font-size:13px;color:#666;margin-bottom:8px;">幸福度（溢价率）对价格的影响</div>
-        <div style="display:flex;align-items:center;gap:12px;">
-            <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
-                <div style="width:{fs['premium_rate']}%;height:100%;background:#{ '16a34a' if prem_f >= 1 else 'ef4444' };border-radius:6px;"></div>
-            </div>
-            <span style="font-size:28px;font-weight:600;color:#{ '16a34a' if prem_f >= 1 else 'ef4444' };">{prem_f}</span>
-        </div>
-        <div style="font-size:12px;color:#999;margin-top:4px;">溢价率 {fs['premium_rate']:.0f}% → 因子 {prem_f}</div>
-    </div>""", unsafe_allow_html=True)
-    # 碳排放（碳价）
-    st.markdown(f"""
-    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-        <div style="font-size:13px;color:#666;margin-bottom:8px;">碳排放（碳价）对价格的影响</div>
-        <div style="display:flex;align-items:center;gap:12px;">
-            <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
-                <div style="width:{max(0, min(100, (1-carb_f)*200+50)):.0f}%;height:100%;background:#{ '16a34a' if carb_f >= 1 else 'ef4444' };border-radius:6px;"></div>
-            </div>
-            <span style="font-size:28px;font-weight:600;color:#{ '16a34a' if carb_f >= 1 else 'ef4444' };">{carb_f}</span>
-        </div>
-        <div style="font-size:12px;color:#999;margin-top:4px;">碳价 {fs['carbon_price']:.0f}（均值 {cm:.0f}）→ 因子 {carb_f} · 碳价越低价格越涨</div>
-    </div>""", unsafe_allow_html=True)
-    # 价格
-    st.markdown(f"""
-    <div style="background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
-        <div style="display:flex;justify-content:space-around;text-align:center;">
-            <div><div style="font-size:12px;color:#666;">上轮收盘</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev)}</div></div>
-            <div><div style="font-size:12px;color:#666;">理论价</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(round(prev*max(1,prem_f)*carb_f,2))}</div></div>
-            <div><div style="font-size:12px;color:#666;">涨跌停</div><div style="font-size:20px;font-weight:600;color:#111827;">{fmt_money(prev*0.9)}~{fmt_money(prev*1.1)}</div></div>
-        </div>
-    </div>""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 挂单状态
+    with get_db_cm() as conn:
+        pending = conn.execute("""
+            SELECT stock_symbol, trade_type, SUM(shares) as s FROM order_book
+            WHERE username=?
+            GROUP BY stock_symbol, trade_type
+        """, (st.session_state.username,)).fetchall()
+    if pending:
+        pend_parts = [f"{'买入' if p['trade_type']=='buy' else '卖出'} {p['s']}股 {p['stock_symbol']}" for p in pending]
+        st.info(f"⏳ 当前挂单：{'，'.join(pend_parts)}")
 
     # 移动端交易面板
     st.markdown('<div class="mobile-only" style="margin-bottom:12px;">', unsafe_allow_html=True)
@@ -2272,7 +2297,7 @@ NAV = {
     "股票汇总": page_admin_stock_summary,
     "股票管理": page_admin_stock_mgmt, "用户管理": page_admin_user_mgmt,
 }
-PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
+PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "交易记录", "K线展板"]
 ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
 
 st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="auto")
@@ -2305,7 +2330,7 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         # 用图标前缀美化导航项
-        icon_map = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "我的做市": "🔄", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
+        icon_map = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "交易记录": "📜", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
         display_nav = [f"{icon_map.get(n, '•')} {n}" for n in nav]
         cur_display = f"{icon_map.get(st.session_state.nav_current, '•')} {st.session_state.nav_current}"
         if cur_display not in display_nav:
