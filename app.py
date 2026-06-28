@@ -1081,88 +1081,74 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 3px; }
 
-    /* 所有文字默认白色高可见度 */
-    section[data-testid="stSidebar"] * { color: #f0f4ff !important; }
+    section[data-testid="stSidebar"] * { color: #eef2ff !important; }
 
     .sb-brand {
         padding: 36px 28px 20px 28px;
         border-bottom: 1px solid rgba(255,255,255,.04);
-        position: relative;
-    }
-    .sb-brand::after {
-        content: ''; position: absolute; bottom: -1px; left: 28px;
-        width: 32px; height: 2px;
-        background: linear-gradient(90deg, #d4a853, transparent);
-        border-radius: 2px;
     }
     .sb-brand .name p {
         font-size: 30px !important; font-weight: 800 !important;
-        letter-spacing: 4px !important; margin: 0 !important;
-        background: linear-gradient(135deg, #f0e6d3, #d4a853);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text;
+        letter-spacing: 4px !important;
+        background: linear-gradient(135deg, #f0e6d3, #d4a853) !important;
+        -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
     }
-    .sb-brand .sub p {
-        color: rgba(255,255,255,.2) !important;
-        font-size: 11px !important; letter-spacing: 6px !important;
-        margin-top: 4px !important; text-transform: uppercase;
-    }
-
-    .sb-user {
-        padding: 18px 28px 16px 28px;
-        border-bottom: 1px solid rgba(255,255,255,.04);
-    }
-    .sb-user .uname p {
-        font-size: 16px !important; font-weight: 600 !important;
-        margin: 0 0 4px 0 !important; color: #ffffff !important;
-    }
-    .sb-user .urole p {
-        font-size: 13px !important; color: rgba(255,255,255,.35) !important;
-        display: flex; align-items: center; gap: 6px;
-    }
-    .sb-user .dot {
-        display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-        background: #10b981;
-        box-shadow: 0 0 8px rgba(16,185,129,.6);
-    }
-
+    .sb-brand .sub p { color: rgba(255,255,255,.2) !important; font-size: 11px !important; letter-spacing: 6px !important; }
+    .sb-user { padding: 18px 28px 16px 28px; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .sb-user .uname p { font-size: 16px !important; font-weight: 600 !important; color: #ffffff !important; }
+    .sb-user .urole p { font-size: 13px !important; color: rgba(255,255,255,.35) !important; }
+    .sb-user .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,.6); }
     .menu-group-label { padding: 20px 28px 8px 28px; }
-    .menu-group-label p {
-        font-size: 10px !important; font-weight: 700 !important;
-        color: rgba(255,255,255,.15) !important;
-        text-transform: uppercase; letter-spacing: 3px !important;
-    }
+    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
 
-    /* 导航项 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 12px 20px !important; margin: 2px 14px !important;
+    /* === 导航项 — 高对比度 === */
+    section[data-testid="stSidebar"] label[data-testid^="stRadio"],
+    section[data-testid="stSidebar"] div[role="radiogroup"] label,
+    section[data-testid="stSidebar"] .stRadio label {
+        padding: 14px 20px !important;
+        margin: 2px 14px !important;
         border-radius: 10px !important;
-        font-size: 15px !important; font-weight: 500 !important;
-        color: rgba(255,255,255,.55) !important;
-        transition: all .2s ease !important;
+        font-size: 16px !important;
+        font-weight: 500 !important;
+        color: rgba(255,255,255,.5) !important;
+        background: transparent !important;
         border: 1px solid transparent !important;
+        transition: all .2s !important;
+        cursor: pointer !important;
+        display: flex !important;
+        align-items: center !important;
     }
+    section[data-testid="stSidebar"] label[data-testid^="stRadio"]:hover,
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.06) !important;
-        color: rgba(255,255,255,.85) !important;
-    }
-    /* 选中项 — 高亮白色+金色左边框 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(212,168,83,.08) !important;
-        border-color: rgba(212,168,83,.15) !important;
+        background: rgba(255,255,255,.08) !important;
         color: #ffffff !important;
-        font-weight: 600 !important;
     }
+    /* 选中项 — 金色底+白字+左边框 */
+    section[data-testid="stSidebar"] label[data-testid^="stRadio"][aria-checked="true"],
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
+        background: rgba(212,168,83,.12) !important;
+        border-color: rgba(212,168,83,.2) !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        position: relative !important;
+    }
+    section[data-testid="stSidebar"] label[data-testid^="stRadio"][aria-checked="true"]::before,
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
-        content: ''; position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
-        width: 3px; height: 24px;
-        background: linear-gradient(180deg, #d4a853, #b8942f);
-        border-radius: 0 3px 3px 0;
-        box-shadow: 0 0 12px rgba(212,168,83,.4);
+        content: '' !important;
+        display: block !important;
+        position: absolute !important;
+        left: -1px !important;
+        top: 8px !important;
+        bottom: 8px !important;
+        width: 3px !important;
+        background: linear-gradient(180deg, #d4a853, #b8942f) !important;
+        border-radius: 0 3px 3px 0 !important;
+        box-shadow: 0 0 12px rgba(212,168,83,.5) !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0; font-size: 15px; font-weight: 500;
+        margin: 0; font-size: 16px; font-weight: 500;
     }
 
     /* 退出按钮 */
@@ -1173,7 +1159,6 @@ SIDEBAR_CSS = """
         border-radius: 10px !important; padding: 10px !important;
         font-size: 14px !important;
         margin: 0 14px !important; width: calc(100% - 28px) !important;
-        transition: all .2s !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
         background: rgba(239,68,68,.1) !important;
