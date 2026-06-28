@@ -31,6 +31,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL,round INTEGER DEFAULT 0,is_settled INTEGER DEFAULT 0,PRIMARY KEY(stock_symbol,round));
     """)
     conn.commit()
+    # 迁移：添加用户状态列
+    try: cur.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'")
+    except: pass
+    cur.execute("UPDATE users SET status='active' WHERE status IS NULL")
     if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0: _seed(conn)
     for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (s["symbol"],))
@@ -38,9 +42,9 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime())", (hash_pwd("admin123"),))
+    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime(),'active')", (hash_pwd("admin123"),))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime())", (i, u, hash_pwd(u)))
+        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime(),'active')", (i, u, hash_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym,))
@@ -98,7 +102,16 @@ def settle_round(symbol):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
     conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
-    return (True, r["role"]) if r and r["password"] == hash_pwd(p) else (False, "")
+    if not r or r["password"] != hash_pwd(p): return False, ""
+    if r.get("status") == "disabled": return False, ""
+    return True, r["role"]
+
+def toggle_user(username):
+    conn = get_db()
+    cur = conn.execute("SELECT status FROM users WHERE username=? AND role='player'", (username,)).fetchone()
+    if cur: new_s = "disabled" if cur["status"] != "disabled" else "active"
+    else: conn.close(); return
+    conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username)); conn.commit(); conn.close()
 
 def register_user(u, p, role="player"):
     conn = get_db()
@@ -109,7 +122,7 @@ def register_user(u, p, role="player"):
     finally: conn.close()
 
 def get_all_users():
-    conn = get_db(); r = conn.execute("SELECT id,username,role,created_at FROM users ORDER BY id").fetchall(); conn.close()
+    conn = get_db(); r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall(); conn.close()
     return [dict(x) for x in r]
 
 def reset_pwd(u, np_):
@@ -788,17 +801,31 @@ def page_admin_user_mgmt():
     users = get_all_users()
     df = pd.DataFrame(users)
     df["created_at"] = df["created_at"].apply(lambda x: str(x)[:19] if x else "-")
-    df.columns = ["ID", "用户名", "角色", "注册时间"]
+    df["状态"] = df.get("status", "active").fillna("active").map({"active": "正常", "disabled": "已禁用"})
+    df.columns = ["ID", "用户名", "角色", "注册时间", "status_col", "状态"]
     df["角色"] = df["角色"].map({"admin": "管理员", "player": "选手"})
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df[["ID", "用户名", "角色", "状态", "注册时间"]], use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
-    with st.form("reset_pwd"):
-        target = st.selectbox("选择用户", [u["username"] for u in users if u["role"] == "player"])
-        np_ = st.text_input("新密码", type="password", placeholder="至少4位")
-        if st.form_submit_button("重置密码", type="primary", use_container_width=True):
-            if target and np_ and len(np_) >= 4: reset_pwd(target, np_); st.success("已重置"); st.rerun()
-            else: st.warning("请完整填写")
+
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">操作</div>""", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**重置密码**")
+        with st.form("reset_pwd"):
+            target = st.selectbox("用户", [u["username"] for u in users if u["role"] == "player"], key="rp_user")
+            np_ = st.text_input("新密码", type="password", placeholder="至少4位")
+            if st.form_submit_button("重置密码", type="primary", use_container_width=True):
+                if target and np_ and len(np_) >= 4: reset_pwd(target, np_); st.success("已重置"); st.rerun()
+                else: st.warning("请完整填写")
+    with c2:
+        st.markdown("**启用/禁用账户**")
+        with st.form("toggle_user"):
+            target2 = st.selectbox("用户", [u["username"] for u in users if u["role"] == "player"], key="tg_user")
+            cur_status = next((u.get("status", "active") for u in users if u["username"] == target2), "active")
+            btn_label = "禁用" if cur_status != "disabled" else "启用"
+            if st.form_submit_button(btn_label, type="primary", use_container_width=True):
+                toggle_user(target2); st.success(f"{target2} 已{btn_label}"); st.rerun()
 
 def page_admin_settle():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
