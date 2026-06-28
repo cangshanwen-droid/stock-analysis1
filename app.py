@@ -522,12 +522,24 @@ def undo_market():
         pass
 
 def reset_to_round1():
-    """回到第一轮：不清除K线历史，只重置轮次"""
+    """重开赛局：清空交易/K线/轮次，价格和资金回到初始状态，从第1轮重新开始。"""
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+        stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
+        conn.execute("DELETE FROM transactions")
+        conn.execute("DELETE FROM kline")
+        conn.execute("DELETE FROM rounds")
+        conn.execute("UPDATE users SET balance=1000000 WHERE role='player'")
         for s in stocks:
-            conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+            init_price = calc_initial_price(
+                row_get(s, "revenue", 0),
+                row_get(s, "total_shares", 0),
+                row_get(s, "industry_pe", 0),
+            ) or row_get(s, "current_price", 0) or 1
+            conn.execute(
+                "UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?",
+                (init_price, init_price, s["symbol"]),
+            )
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
         conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
         conn.commit()
@@ -2071,7 +2083,7 @@ def page_admin_settle():
             if st.button("回到第一轮", use_container_width=True, disabled=current_round <= 1):
                 st.session_state.cf_r1 = True; st.session_state.cf_close = False; st.session_state.cf_open = False; st.session_state.cf_undo = False; st.rerun()
         else:
-            st.warning("确认回到第1轮？将清空所有K线历史")
+            st.warning("确认重开赛局？将清空所有交易、持仓和K线历史，资金与股票价格回到初始状态。")
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认重置", type="primary", use_container_width=True):
