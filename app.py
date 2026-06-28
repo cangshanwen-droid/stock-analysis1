@@ -1066,41 +1066,59 @@ SIDEBAR_CSS = """
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
 
-    /* === 导航按钮 === */
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        border-radius: 8px !important; padding: 11px 16px !important;
-        font-size: 14px !important; font-weight: 500 !important;
-        margin: 1px 12px !important; width: calc(100% - 24px) !important;
-        transition: all .12s ease !important; text-align: left !important;
-        border: 1px solid transparent !important; background: transparent !important;
+    /* === 导航按钮 — 全覆盖 === */
+    section[data-testid="stSidebar"] button {
+        border-radius: 8px !important;
+        padding: 11px 16px !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        margin: 1px 12px !important;
+        width: calc(100% - 24px) !important;
+        text-align: left !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
         color: rgba(255,255,255,.35) !important;
+        box-shadow: none !important;
+        outline: none !important;
+        transition: all .12s ease !important;
+        height: auto !important;
+        min-height: 0 !important;
+        line-height: 1.4 !important;
+        display: flex !important;
+        align-items: center !important;
     }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+    section[data-testid="stSidebar"] button:hover {
         background: rgba(255,255,255,.04) !important;
         color: rgba(255,255,255,.7) !important;
+        border-color: rgba(255,255,255,.04) !important;
     }
-    section[data-testid="stSidebar"] button[kind="primary"] {
+    section[data-testid="stSidebar"] button[kind="primary"],
+    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"] {
         background: rgba(212,168,83,.08) !important;
         border-color: rgba(212,168,83,.15) !important;
-        color: #ffffff !important; font-weight: 600 !important;
+        color: #ffffff !important;
+        font-weight: 600 !important;
         position: relative !important;
     }
-    section[data-testid="stSidebar"] button[kind="primary"]::before {
-        content: '' !important; position: absolute !important;
-        left: -1px !important; top: 5px !important; bottom: 5px !important;
+    section[data-testid="stSidebar"] button[kind="primary"]::before,
+    section[data-testid="stSidebar"] button[data-testid="baseButton-primary"]::before {
+        content: '' !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: 5px !important;
+        bottom: 5px !important;
         width: 2px !important;
         background: linear-gradient(180deg, #d4a853, #b8942f) !important;
         border-radius: 0 2px 2px 0 !important;
-        box-shadow: 0 0 8px rgba(212,168,83,.3) !important;
+        box-shadow: 0 0 6px rgba(212,168,83,.3) !important;
     }
-
-    /* 退出按钮 — 仅作用于最后那个按钮 */
+    /* 退出按钮 */
     section[data-testid="stSidebar"] button:last-of-type {
-        margin-top: 6px !important;
+        margin-top: 8px !important;
     }
     section[data-testid="stSidebar"] button:last-of-type:hover {
         background: rgba(239,68,68,.08) !important;
-        border-color: rgba(239,68,68,.15) !important;
+        border-color: rgba(239,68,68,.12) !important;
         color: #fca5a5 !important;
     }
 </style>
