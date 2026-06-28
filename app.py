@@ -773,6 +773,7 @@ def get_admin_summary():
                 COUNT(DISTINCT t.username) AS holder_cnt,
                 SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) -
                 SUM(CASE WHEN t.trade_type IN('sell','force_close') THEN t.shares ELSE 0 END) AS net_shares,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) AS total_bought,
                 SUM(CASE WHEN t.trade_type='buy' THEN t.price*t.shares ELSE 0 END) AS buy_cost
             FROM transactions t
             JOIN users u ON t.username = u.username
@@ -780,19 +781,19 @@ def get_admin_summary():
             GROUP BY t.stock_symbol
             HAVING net_shares > 0
         """).fetchall()
-    holder_map = {r["sym"]: {"cnt": r["holder_cnt"], "shares": int(r["net_shares"]), "cost": round(r["buy_cost"], 2)} for r in rows}
+    holder_map = {r["sym"]: {"cnt": r["holder_cnt"], "shares": int(r["net_shares"]), "bought": int(r["total_bought"]), "cost": round(r["buy_cost"], 2)} for r in rows}
     result = []
     for s in stocks:
         sym = s["symbol"]
         h = holder_map.get(sym)
         if h:
-            avg_cost = round(h["cost"] / h["shares"], 2) if h["shares"] else 0
+            avg_cost = round(h["cost"] / h["bought"], 2) if h["bought"] else 0
             mv_ = round(s["current_price"] * h["shares"], 2)
-            pnl = round(mv_ - h["cost"], 2)
+            pnl = round((s["current_price"] - avg_cost) * h["shares"], 2)
             result.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"],
-                "持有用户数": h["cnt"], "总持仓量": h["shares"], "总成本": h["cost"],
+                "持有用户数": h["cnt"], "总持仓量": h["shares"], "总成本": round(avg_cost * h["shares"], 2),
                 "总市值": mv_, "总盈亏": pnl,
-                "收益率": round(pnl / h["cost"] * 100, 2) if h["cost"] else 0})
+                "收益率": round(pnl / (avg_cost * h["shares"]) * 100, 2) if avg_cost and h["shares"] else 0})
         else:
             result.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"],
                 "持有用户数": 0, "总持仓量": 0, "总成本": 0, "总市值": 0, "总盈亏": 0, "收益率": 0})
