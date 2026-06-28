@@ -1383,11 +1383,19 @@ def page_admin_user_mgmt():
             st.info(f"检测到 {len(valid)} 个用户")
             confirm_batch_create = st.checkbox("确认批量创建")
             if st.button("一键创建", type="primary", disabled=not confirm_batch_create):
-                created = 0
+                created, skipped = 0, []
+                seen = set()
                 for u, p in valid:
-                    ok, _ = register_user(u, p)
+                    if u in seen:
+                        skipped.append(f"{u}(重复)")
+                        continue
+                    seen.add(u)
+                    ok, msg = register_user(u, p)
                     if ok: created += 1
-                st.success(f"成功创建 {created}/{len(valid)} 人"); st.rerun()
+                    else: skipped.append(f"{u}({msg})")
+                result = f"成功创建 {created} 人"
+                if skipped: result += f"，跳过 {len(skipped)} 人: {', '.join(skipped[:5])}{'...' if len(skipped)>5 else ''}"
+                st.success(result); st.rerun()
         else:
             st.error("Excel 格式错误，至少需要两列（用户名/密码）")
 
