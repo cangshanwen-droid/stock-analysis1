@@ -1102,41 +1102,38 @@ SIDEBAR_CSS = """
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: rgba(255,255,255,.15) !important; text-transform: uppercase; letter-spacing: 3px !important; }
 
-    /* === 导航按钮 — 完全自定义 === */
+    /* === 导航按钮 === */
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
         border-radius: 10px !important;
         padding: 14px 16px !important;
-        margin: 2px 12px !important;
         font-size: 15px !important;
         font-weight: 500 !important;
-        text-align: left !important;
+        margin: 2px 14px !important;
+        width: calc(100% - 28px) !important;
         transition: all .15s ease !important;
-        display: block !important;
-        width: calc(100% - 24px) !important;
-    }
-    /* 未选中 */
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"] {
-        background: transparent !important;
+        text-align: left !important;
         border: 1px solid transparent !important;
+        background: transparent !important;
         color: rgba(255,255,255,.45) !important;
+        box-shadow: none !important;
     }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"]:hover {
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
         background: rgba(255,255,255,.06) !important;
-        color: rgba(255,255,255,.8) !important;
-        border-color: rgba(255,255,255,.06) !important;
+        color: rgba(255,255,255,.85) !important;
     }
-    /* 选中 — 用 primary 类型标记当前页 */
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, rgba(212,168,83,.15), rgba(212,168,83,.05)) !important;
-        border: 1px solid rgba(212,168,83,.25) !important;
+    /* 选中（当前导航项用 primary） */
+    section[data-testid="stSidebar"] button[kind="primary"] {
+        background: linear-gradient(135deg, rgba(212,168,83,.12), rgba(212,168,83,.04)) !important;
+        border-color: rgba(212,168,83,.2) !important;
         color: #ffffff !important;
         font-weight: 600 !important;
         position: relative !important;
-        box-shadow: inset 0 0 20px rgba(212,168,83,.05) !important;
     }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"]::before {
-        content: '' !important; position: absolute !important;
-        left: -1px !important; top: 6px !important; bottom: 6px !important;
+    section[data-testid="stSidebar"] button[kind="primary"]::before {
+        content: '' !important;
+        position: absolute !important;
+        left: -1px !important;
+        top: 7px !important; bottom: 7px !important;
         width: 3px !important;
         background: linear-gradient(180deg, #d4a853, #b8942f) !important;
         border-radius: 0 3px 3px 0 !important;
@@ -2366,8 +2363,8 @@ def main():
                 st.session_state.nav_current = n
                 st.rerun()
         sel = st.session_state.nav_current
-        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-        if st.button("退出登录", type="primary", use_container_width=True, key="sb_exit"):
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        if st.button("退出登录", key="sb_exit", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
