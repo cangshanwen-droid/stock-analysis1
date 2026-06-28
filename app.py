@@ -27,10 +27,6 @@ def get_db_cm():
     finally:
         conn.close()
 
-def get_db():
-    """旧版兼容 — 优先使用 get_db_cm()"""
-    return sqlite3.connect(DB_PATH)
-
 def row_get(row, key, default=None):
     try: return row[key]
     except (KeyError, IndexError, TypeError): return default
@@ -1301,7 +1297,6 @@ def page_public_dashboard():
     sym = st.session_state.dash_sym
     data = get_kline_data(sym)
     if data:
-        import pandas as pd
         df_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
         df_k["x"] = df_k["round"].apply(lambda r: f"第{r}轮")
 
