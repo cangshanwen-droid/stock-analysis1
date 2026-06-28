@@ -10,6 +10,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from streamlit_autorefresh import st_autorefresh
 
 DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "stock_analysis.db")
@@ -1122,13 +1123,9 @@ def page_public_dashboard():
         if st.button("🔄 刷新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
-    # 自动刷新：meta refresh 每15秒（有淡入过渡减少闪烁感）
-    st.markdown("""
-    <meta http-equiv="refresh" content="15">
-    <div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">
-        ⏱ 数据每15秒自动刷新
-    </div>
-    """, unsafe_allow_html=True)
+    # 自动刷新（Streamlit WebSocket，无闪烁）
+    st_autorefresh(interval=10000, key="dash_auto_refresh")
+    st.markdown('<div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">⏱ 数据每10秒自动刷新</div>', unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 登录页
