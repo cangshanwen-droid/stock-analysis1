@@ -395,13 +395,14 @@ SIDEBAR_CSS = """
     .stDeployButton, footer { display: none !important; }
 
     .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid #21262d; }
-    .sb-brand .name { font-size: 24px; font-weight: 700; color: #f0f6fc; }
-    .sb-brand .sub { font-size: 12px; color: #cfd4db; margin-top: 4px; letter-spacing: 1px; }
+    .sb-brand .name { font-size: 24px; font-weight: 700; }
+    .sb-brand .name p { color: #f0f6fc !important; font-size: 24px; font-weight: 700; margin: 0; }
+    .sb-brand .sub p { color: #cfd4db !important; font-size: 12px; margin: 4px 0 0 0; letter-spacing: 1px; }
     .sb-user { padding: 18px 20px 20px 20px; border-bottom: 1px solid #21262d; }
-    .sb-user .uname { font-size: 15px; font-weight: 600; color: #f0f6fc; margin-bottom: 4px; }
-    .sb-user .urole { font-size: 13px; color: #c9d1d9; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3fb950; margin-right: 8px; vertical-align: middle; }
-    .menu-group-label { font-size: 10px; font-weight: 600; color: #e6e6e6; letter-spacing: 1px; padding: 20px 20px 8px 20px; text-transform: uppercase; }
+    .sb-user .uname p { font-size: 15px; font-weight: 600; color: #f0f6fc !important; margin: 0 0 4px 0; }
+    .sb-user .urole p { font-size: 13px; color: #c9d1d9 !important; margin: 0; }
+    .menu-group-label p { font-size: 10px; font-weight: 600; color: #e6e6e6 !important; letter-spacing: 1px; margin: 0; text-transform: uppercase; }
+    .menu-group-label { padding: 20px 20px 8px 20px; }
 
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         padding: 10px 14px !important; margin: 2px 10px !important; border-radius: 6px !important;
