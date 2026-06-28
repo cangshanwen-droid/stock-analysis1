@@ -2,7 +2,7 @@
 股票交易系统 — 完整版
 基于Excel公式的股票交易定价模型 + 专业K线图表 + 精美UI
 """
-import os, sqlite3, hashlib, json
+import os, sqlite3, hashlib, json, tempfile
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -14,7 +14,8 @@ from plotly.subplots import make_subplots
 # ──────────────────────────────────────────────
 # 数据库
 # ──────────────────────────────────────────────
-DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
+import tempfile
+DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
