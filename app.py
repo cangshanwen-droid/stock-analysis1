@@ -1498,15 +1498,15 @@ def page_portfolio():
     pnl_cls = "up" if total_pnl >= 0 else "down"
     st.markdown(f"""
     <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+        <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持仓市值</div>
             <div style="font-size:20px;font-weight:700;color:#eef2ff;">{fmt_money(total_mv)}</div>
         </div>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+        <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">总盈亏</div>
             <div style="font-size:20px;font-weight:700;color:{pnl_color(total_pnl)};">{fmt_money(total_pnl)}</div>
         </div>
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
+        <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持股数</div>
             <div style="font-size:20px;font-weight:700;color:#eef2ff;">{fmt_num(total_shares)} 股</div>
         </div>
@@ -1612,17 +1612,17 @@ def page_trade_hall():
         cf_ = round(1 - 0.5 * (fs["carbon_price"] - cm_) / cm_, 4)
         st.markdown(f"""
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+            <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
                 <div style="font-size:11px;color:#666;">幸福因子</div>
                 <div style="font-size:22px;font-weight:700;color:#{'16a34a' if pf_>=1 else 'ef4444'};">{pf_}</div>
                 <div style="font-size:11px;color:#999;">溢价率 {fs['premium_rate']:.0f}%</div>
             </div>
-            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+            <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
                 <div style="font-size:11px;color:#666;">碳因子</div>
                 <div style="font-size:22px;font-weight:700;color:#{'16a34a' if cf_>=1 else 'ef4444'};">{cf_}</div>
                 <div style="font-size:11px;color:#999;">碳价 {fs['carbon_price']:.0f}（均值{cm_:.0f}）</div>
             </div>
-            <div style="flex:1;min-width:120px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;">
+            <div style="flex:1;min-width:120px;background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:8px;padding:10px 14px;">
                 <div style="font-size:11px;color:#666;">上轮收盘</div>
                 <div style="font-size:22px;font-weight:700;">{fmt_money(prev)}</div>
                 <div style="font-size:11px;color:#999;">理论价 {fmt_money(round(prev*max(1,pf_)*cf_,2))}</div>
@@ -1965,7 +1965,7 @@ def page_admin_stock_mgmt():
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"""
-        <div style="background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;">
             <div style="font-size:13px;color:#666;margin-bottom:8px;">幸福度（溢价率）</div>
             <div style="display:flex;align-items:center;gap:12px;">
                 <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
@@ -1977,7 +1977,7 @@ def page_admin_stock_mgmt():
         </div>""", unsafe_allow_html=True)
     with c2:
         st.markdown(f"""
-        <div style="background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:16px 20px;">
             <div style="font-size:13px;color:#666;margin-bottom:8px;">碳排放（碳价）</div>
             <div style="display:flex;align-items:center;gap:12px;">
                 <div style="flex:1;background:#e8ecf1;border-radius:6px;height:8px;overflow:hidden;">
@@ -2182,7 +2182,7 @@ def page_admin_settle():
         if k not in st.session_state: st.session_state[k] = False
 
     st.markdown(f"""
-    <div style="background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.04);text-align:center;margin-bottom:20px;">
+    <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:12px;padding:24px;text-align:center;margin-bottom:20px;">
         <div style="font-size:13px;color:#666;">当前市场状态</div>
         <div style="font-size:36px;font-weight:700;color:{color};margin:8px 0;">{status}</div>
         <div style="font-size:14px;color:#8b949e;">第 {current_round} 轮</div>
