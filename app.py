@@ -869,64 +869,84 @@ html, body, [class*="css"] {
 [data-testid="stDecoration"], [data-testid="stToolbar"],
 [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
-/* ===== 颜色系统 — 高端金融风 ===== */
+/* ===== 科技感深色主题 ===== */
 :root {
-    --bg:       #f0f2f8;
-    --card:     #FFFFFF;
-    --text:     #0f172a;
-    --text-2nd: #64748b;
-    --text-3rd: #94a3b8;
-    --primary:  #1d4ed8;
-    --primary-light: #3b82f6;
-    --accent:   #d4a853;
+    --bg:       #0a0e17;
+    --bg-card:  rgba(18,25,45,.85);
+    --text:     #e2e8f0;
+    --text-2nd: #8892a8;
+    --text-3rd: #5a6480;
+    --primary:  #2563eb;
+    --primary-light: #60a5fa;
+    --accent:   #06b6d4;
     --green:    #10b981;
     --red:      #ef4444;
-    --border:   #e2e8f0;
-    --shadow:   0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
-    --shadow-lg: 0 4px 16px rgba(15,23,42,.08), 0 2px 4px rgba(15,23,42,.04);
+    --border:   rgba(59,130,246,.15);
+    --glow:     0 0 20px rgba(6,182,212,.08);
+    --glow-lg:  0 0 40px rgba(6,182,212,.12);
+    --shadow:   0 1px 3px rgba(0,0,0,.3);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,.4);
 }
 
-/* ===== 移动端基础 ===== */
-.stApp { background: var(--bg); }
+/* 背景 + 网格纹理 */
+.stApp {
+    background: linear-gradient(160deg, #080c1a 0%, #0d1528 50%, #0a0e17 100%) !important;
+}
+.stApp::before {
+    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+        linear-gradient(rgba(6,182,212,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(6,182,212,.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+}
 section.main > div.block-container {
-    padding: 8px !important; max-width: 100% !important;
+    padding: 8px !important; max-width: 100% !important; position: relative; z-index: 1;
 }
 
-/* 顶栏 - 极简 */
+/* 顶栏 */
 .topbar {
     display: flex; justify-content: space-between; align-items: center;
     padding: 4px 0 12px 0; font-size: 13px; color: var(--text-2nd);
     border-bottom: 1px solid var(--border); margin-bottom: 16px;
 }
-.topbar .brand { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: 1px; }
+.topbar .brand {
+    font-size: 22px; font-weight: 800;
+    background: linear-gradient(135deg, #f0e6d3, #d4a853);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
 
-/* KPI 网格 - 移动端 2x2 */
+/* 磨砂玻璃卡片通用 */
 .kpi-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    margin-bottom: 20px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;
 }
 .kpi-card {
-    background: var(--card); border-radius: 12px; padding: 20px 18px;
-    box-shadow: var(--shadow); border: 1px solid var(--border);
-    transition: box-shadow .2s;
+    background: var(--bg-card); border-radius: 14px; padding: 20px 18px;
+    border: 1px solid var(--border); box-shadow: var(--glow);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    transition: all .25s ease;
 }
-.kpi-card:hover { box-shadow: var(--shadow-lg); }
-.kpi-card .label { font-size: 12px; color: var(--text-2nd); margin-bottom: 4px; letter-spacing: .5px; }
+.kpi-card:hover {
+    box-shadow: var(--glow-lg); border-color: rgba(6,182,212,.3);
+    transform: translateY(-2px);
+}
+.kpi-card .label { font-size: 11px; color: var(--text-2nd); margin-bottom: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
 .kpi-card .value {
-    font-size: 26px; font-weight: 700; color: var(--text);
+    font-size: 26px; font-weight: 700; color: #f0f4ff;
     font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
 }
-.kpi-card .delta { font-size: 13px; margin-top: 2px; }
+.kpi-card .delta { font-size: 12px; margin-top: 2px; }
 .kpi-card .delta.up { color: var(--red); }
 .kpi-card .delta.down { color: var(--green); }
 
-/* 移动端股票卡片 */
+/* 磨砂股票卡片 */
 .stock-card {
-    background: var(--card); border-radius: 12px; padding: 16px;
-    margin-bottom: 10px; box-shadow: var(--shadow); border: 1px solid var(--border);
-    transition: box-shadow .2s;
+    background: var(--bg-card); border-radius: 14px; padding: 16px;
+    margin-bottom: 10px; border: 1px solid var(--border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    transition: all .2s ease;
 }
-.stock-card:active { box-shadow: var(--shadow-lg); }
+.stock-card:active { transform: scale(.98); }
 .stock-card .sc-header {
     display: flex; justify-content: space-between; align-items: center;
 }
@@ -938,40 +958,37 @@ section.main > div.block-container {
     display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px;
     margin: 8px 0; font-size: 12px; color: var(--text-2nd);
 }
-.stock-card .sc-detail .val { color: var(--text); font-weight: 500; }
+.stock-card .sc-detail .val { color: #f0f4ff; font-weight: 500; }
 
 .section-title {
-    font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px;
-    letter-spacing: .3px;
+    font-size: 15px; font-weight: 700; color: #f0f4ff; margin-bottom: 12px; letter-spacing: .3px;
 }
 .chart-summary {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-    margin: 12px 0;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0;
 }
 .chart-metric {
-    background: #fff; border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; box-shadow: var(--shadow);
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; backdrop-filter: blur(8px);
 }
 .chart-metric .label { font-size: 11px; color: var(--text-2nd); margin-bottom: 2px; }
-.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: var(--text); }
+.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: #f0f4ff; }
 .chart-metric .value.up { color: var(--red); }
 .chart-metric .value.down { color: var(--green); }
 .chart-panel {
-    background: #fff; border: 1px solid var(--border); border-radius: 12px;
-    padding: 8px 8px 2px 8px; box-shadow: var(--shadow);
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 8px 8px 2px 8px; backdrop-filter: blur(8px);
 }
 .mobile-nav { margin: 0 0 12px 0; }
 
-/* 桌面端可见/隐藏 */
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
-/* ===== 桌面端 @media (min-width: 768px) ===== */
+/* ===== 桌面端 @media ===== */
 @media (min-width: 768px) {
     section.main > div.block-container { padding: 24px 32px !important; max-width: 1400px !important; margin: 0 auto !important; }
     .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
     .kpi-card { padding: 18px 22px; }
-    .kpi-card .label { font-size: 11px; }
+    .kpi-card .label { font-size: 10px; }
     .kpi-card .value { font-size: 22px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
@@ -979,45 +996,57 @@ section.main > div.block-container {
     .trade-bar-spacer { display: none; }
     .chart-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .desktop-table {
-        background: var(--card); border-radius: 12px; padding: 4px 16px 16px 16px;
-        box-shadow: var(--shadow); border: 1px solid var(--border);
+        background: var(--bg-card); border-radius: 14px; padding: 4px 16px 16px 16px;
+        border: 1px solid var(--border); backdrop-filter: blur(12px);
     }
-    /* Streamlit 表格美化 */
+    /* Streamlit 表格深色 */
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] th {
-        background: transparent !important; font-size: 12px !important;
+        background: transparent !important; font-size: 11px !important;
         color: var(--text-2nd) !important; font-weight: 600 !important;
-        text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border) !important;
+        text-transform: uppercase; letter-spacing: 1px;
+        border-bottom: 1px solid var(--border) !important;
     }
     [data-testid="stDataFrame"] td {
         font-size: 14px !important; color: var(--text) !important;
-        border-bottom: 1px solid var(--border) !important;
+        border-bottom: 1px solid rgba(255,255,255,.04) !important;
     }
-    /* 按钮美化 */
+    /* 按钮 — 科技感 */
     div[data-testid="stButton"] button {
         border-radius: 8px !important; font-weight: 600 !important;
-        transition: all .15s !important;
+        transition: all .2s !important; background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important; color: var(--text) !important;
+    }
+    div[data-testid="stButton"] button:hover {
+        border-color: rgba(6,182,212,.4) !important;
+        box-shadow: 0 0 16px rgba(6,182,212,.1) !important;
     }
     div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, var(--primary), var(--primary-light)) !important;
-        border: none !important;
-        box-shadow: 0 2px 8px rgba(29,78,216,.3) !important;
+        background: linear-gradient(135deg, #2563eb, #06b6d4) !important;
+        border: none !important; color: #fff !important;
+        box-shadow: 0 4px 16px rgba(6,182,212,.3) !important;
     }
     div[data-testid="stButton"] button[kind="primary"]:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(29,78,216,.4) !important;
+        box-shadow: 0 6px 24px rgba(6,182,212,.4) !important;
     }
-    /* 扩展器美化 */
+    /* 扩展器深色 */
     .st-emotion-cache-1aej4i3, details {
+        background: var(--bg-card) !important;
         border: 1px solid var(--border) !important;
         border-radius: 10px !important; margin-bottom: 8px !important;
     }
     .st-emotion-cache-1aej4i3 summary, details summary {
-        font-weight: 600 !important; padding: 12px 16px !important;
+        font-weight: 600 !important; padding: 12px 16px !important; color: var(--text) !important;
     }
+    /* 输入框深色 */
+    input, select, textarea, div[data-baseweb="select"] > div {
+        background: rgba(255,255,255,.05) !important;
+        border-color: var(--border) !important; color: var(--text) !important;
+    }
+    div[data-testid="stMarkdown"] { color: var(--text) !important; }
 }
 
-/* 侧边栏桌面样式 */
 @media (min-width: 768px) {
     [data-testid="stSidebarNav"] { display: none !important; }
 }
@@ -1026,27 +1055,31 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    section[data-testid="stSidebar"] { background: linear-gradient(180deg, #0a0e1a 0%, #12182b 100%) !important; }
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #060b1a 0%, #0c1630 100%) !important;
+        border-right: 1px solid rgba(59,130,246,.1) !important;
+    }
     section[data-testid="stSidebar"] > div:first-child { background: transparent !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
-    /* 侧边栏滚动条 */
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #2a3650; border-radius: 3px; }
+    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: rgba(6,182,212,.2); border-radius: 3px; }
 
-    section[data-testid="stSidebar"] * { color: #e8edf5 !important; }
+    section[data-testid="stSidebar"] * { color: #c8d0e0 !important; }
 
-    /* Brand 区域 — 更精致 */
     .sb-brand {
         padding: 36px 28px 20px 28px;
-        border-bottom: 1px solid rgba(255,255,255,.06);
+        border-bottom: 1px solid rgba(6,182,212,.1);
         position: relative;
     }
     .sb-brand::after {
         content: ''; position: absolute; bottom: -1px; left: 28px;
-        width: 32px; height: 2px; background: var(--accent, #d4a853); border-radius: 2px;
+        width: 32px; height: 2px;
+        background: linear-gradient(90deg, #06b6d4, transparent);
+        border-radius: 2px;
+        box-shadow: 0 0 8px rgba(6,182,212,.4);
     }
     .sb-brand .name p {
         font-size: 30px !important; font-weight: 800 !important;
@@ -1056,82 +1089,80 @@ SIDEBAR_CSS = """
         background-clip: text;
     }
     .sb-brand .sub p {
-        color: rgba(255,255,255,.35) !important;
+        color: rgba(255,255,255,.25) !important;
         font-size: 11px !important; letter-spacing: 6px !important;
         margin-top: 4px !important; text-transform: uppercase;
     }
 
-    /* 用户信息区域 */
     .sb-user {
         padding: 18px 28px 16px 28px;
-        border-bottom: 1px solid rgba(255,255,255,.06);
+        border-bottom: 1px solid rgba(6,182,212,.08);
     }
     .sb-user .uname p {
         font-size: 16px !important; font-weight: 600 !important;
-        margin: 0 0 4px 0 !important; color: #f0f2f5 !important;
+        margin: 0 0 4px 0 !important; color: #e8edf5 !important;
     }
     .sb-user .urole p {
-        font-size: 13px !important; color: rgba(255,255,255,.4) !important;
+        font-size: 13px !important; color: rgba(255,255,255,.35) !important;
         display: flex; align-items: center; gap: 6px;
     }
     .sb-user .dot {
         display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-        background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,.5);
+        background: #10b981;
+        box-shadow: 0 0 8px rgba(16,185,129,.6);
         vertical-align: middle;
     }
 
-    /* 导航分组标题 */
     .menu-group-label { padding: 20px 28px 8px 28px; }
     .menu-group-label p {
         font-size: 10px !important; font-weight: 700 !important;
-        color: rgba(255,255,255,.25) !important;
+        color: rgba(255,255,255,.2) !important;
         text-transform: uppercase; letter-spacing: 3px !important;
     }
 
-    /* 导航项 — 更精致 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         padding: 11px 18px !important; margin: 1px 14px !important;
         border-radius: 10px !important;
         font-size: 15px !important; font-weight: 500 !important;
         min-height: auto !important; position: relative !important;
         cursor: pointer !important;
-        transition: all .15s ease !important;
+        transition: all .2s ease !important;
         border: 1px solid transparent !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.06) !important;
-        border-color: rgba(255,255,255,.08) !important;
+        background: rgba(6,182,212,.08) !important;
+        border-color: rgba(6,182,212,.15) !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(29,78,216,.2) !important;
-        border-color: rgba(59,130,246,.3) !important;
-        color: #60a5fa !important;
+        background: rgba(6,182,212,.12) !important;
+        border-color: rgba(6,182,212,.25) !important;
+        color: #67e8f9 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ''; position: absolute; left: -1px; top: 50%;
         transform: translateY(-50%);
         width: 3px; height: 20px;
-        background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+        background: linear-gradient(180deg, #06b6d4, #2563eb);
         border-radius: 0 3px 3px 0;
+        box-shadow: 0 0 8px rgba(6,182,212,.5);
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         margin: 0; font-size: 15px; font-weight: 500;
     }
 
-    /* 退出按钮 */
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        background: rgba(255,255,255,.06) !important;
-        border: 1px solid rgba(255,255,255,.08) !important;
-        color: rgba(255,255,255,.6) !important;
+        background: rgba(255,255,255,.04) !important;
+        border: 1px solid rgba(255,255,255,.06) !important;
+        color: rgba(255,255,255,.4) !important;
         border-radius: 10px !important; padding: 10px !important;
         font-size: 14px !important; font-weight: 500 !important;
-        transition: all .15s ease !important;
+        transition: all .2s ease !important;
         margin: 0 14px !important; width: calc(100% - 28px) !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-        background: rgba(239,68,68,.15) !important;
-        border-color: rgba(239,68,68,.3) !important;
+        background: rgba(239,68,68,.12) !important;
+        border-color: rgba(239,68,68,.25) !important;
         color: #fca5a5 !important;
     }
 </style>
