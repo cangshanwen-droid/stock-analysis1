@@ -535,34 +535,66 @@ def get_user_overview(username):
     return {"total_assets": round(ta, 2), "total_cost": round(tc, 2), "total_pnl": round(tp, 2), "pnl_ratio": round(tp / tc * 100, 2) if tc else 0, "stock_count": len(pf), "stock_pnl": pf[["name", "symbol", "pnl"]].to_dict("records")}
 
 def get_admin_summary():
-    stocks = get_stocks()
+    """单条SQL汇总所有选手持仓数据，替代原来O(n)循环"""
+    stocks = get_stocks_cached()
     if not stocks: return pd.DataFrame()
     with get_db_cm() as conn:
-        players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
-    aps = {}
-    for p in players:
-        df = get_user_portfolio(p["username"])
-        if not df.empty: aps[p["username"]] = df
-    rows = []
+        rows = conn.execute("""
+            SELECT
+                t.stock_symbol AS sym,
+                COUNT(DISTINCT t.username) AS holder_cnt,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) -
+                SUM(CASE WHEN t.trade_type IN('sell','force_close') THEN t.shares ELSE 0 END) AS net_shares,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.price*t.shares ELSE 0 END) AS buy_cost
+            FROM transactions t
+            JOIN users u ON t.username = u.username
+            WHERE u.role = 'player'
+            GROUP BY t.stock_symbol
+            HAVING net_shares > 0
+        """).fetchall()
+    holder_map = {r["sym"]: {"cnt": r["holder_cnt"], "shares": int(r["net_shares"]), "cost": round(r["buy_cost"], 2)} for r in rows}
+    result = []
     for s in stocks:
-        sym = s["symbol"]; ts = tc = tp = 0.0; cnt = 0
-        for un, pf in aps.items():
-            r = pf[pf["symbol"] == sym]
-            if r.empty: continue
-            rr = r.iloc[0]; ts += rr["shares"]; tc += rr["avg_cost"] * rr["shares"]; tp += rr["pnl"]; cnt += 1
-        rows.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"], "持有用户数": cnt, "总持仓量": int(ts), "总成本": round(tc, 2), "总盈亏": round(tp, 2), "收益率": round(tp / tc * 100, 2) if cnt and tc else 0})
-    return pd.DataFrame(rows)
+        sym = s["symbol"]
+        h = holder_map.get(sym)
+        if h:
+            avg_cost = round(h["cost"] / h["shares"], 2) if h["shares"] else 0
+            mv_ = round(s["current_price"] * h["shares"], 2)
+            pnl = round(mv_ - h["cost"], 2)
+            result.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"],
+                "持有用户数": h["cnt"], "总持仓量": h["shares"], "总成本": h["cost"],
+                "总市值": mv_, "总盈亏": pnl,
+                "收益率": round(pnl / h["cost"] * 100, 2) if h["cost"] else 0})
+        else:
+            result.append({"股票名称": s["name"], "代码": sym, "当前价": s["current_price"],
+                "持有用户数": 0, "总持仓量": 0, "总成本": 0, "总市值": 0, "总盈亏": 0, "收益率": 0})
+    return pd.DataFrame(result)
 
 def get_holder_detail(symbol):
+    """单条SQL查询某只股票的持仓明细"""
     with get_db_cm() as conn:
-        players = conn.execute("SELECT username FROM users WHERE role='player'").fetchall()
+        rows = conn.execute("""
+            SELECT
+                t.username,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.shares ELSE 0 END) -
+                SUM(CASE WHEN t.trade_type IN('sell','force_close') THEN t.shares ELSE 0 END) AS net_shares,
+                SUM(CASE WHEN t.trade_type='buy' THEN t.price*t.shares ELSE 0 END) AS buy_cost
+            FROM transactions t
+            WHERE t.stock_symbol=?
+            GROUP BY t.username
+            HAVING net_shares > 0
+        """, (symbol,)).fetchall()
+    stock_info = get_stocks_cached()
+    sp = {s["symbol"]: s["current_price"] for s in stock_info}
+    cp = sp.get(symbol, 0)
     r = []
-    for p in players:
-        pf = get_user_portfolio(p["username"])
-        if pf.empty: continue
-        h = pf[pf["symbol"] == symbol]
-        if h.empty: continue
-        rr = h.iloc[0]; r.append({"用户名": p["username"], "持仓量": int(rr["shares"]), "成本价": rr["avg_cost"], "当前价": rr["current_price"], "盈亏": rr["pnl"], "收益率": rr["pnl_ratio"]})
+    for row in rows:
+        avg = round(row["buy_cost"] / row["net_shares"], 2) if row["net_shares"] else 0
+        mv_ = round(cp * row["net_shares"], 2)
+        pnl = round(mv_ - row["buy_cost"], 2)
+        r.append({"用户名": row["username"], "持仓量": int(row["net_shares"]),
+                  "成本价": avg, "当前价": cp, "盈亏": pnl,
+                  "收益率": round(pnl / row["buy_cost"] * 100, 2) if row["buy_cost"] else 0})
     return pd.DataFrame(r)
 
 @st.cache_data(ttl=5, show_spinner=False)
