@@ -22,6 +22,10 @@ def get_db():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def row_get(row, key, default=None):
+    try: return row[key]
+    except: return default
+
 def hash_pwd(p, salt=""): return hashlib.sha256((p + salt).encode()).hexdigest()
 
 def esc(s):
