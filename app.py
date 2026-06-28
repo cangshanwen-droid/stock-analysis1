@@ -921,8 +921,7 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-div[data-testid="stVerticalBlock"] { gap: 4px !important; }
-.row-widget.stRadio { padding: 0 !important; }
+div[data-testid="stVerticalBlock"] { gap: 2px !important; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #2a3a4e; }
@@ -1068,9 +1067,9 @@ SIDEBAR_CSS = """
         padding: 2px 8px !important; gap: 0 !important; border: none !important; background: transparent !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
-        appearance: none !important; -webkit-appearance: none !important;
-        width: 0 !important; height: 0 !important; position: absolute !important;
-        opacity: 0 !important; margin: 0 !important; padding: 0 !important; pointer-events: none !important;
+        opacity: 0 !important; position: absolute !important;
+        width: 1px !important; height: 1px !important; margin: -1px !important;
+        padding: 0 !important; overflow: hidden !important; pointer-events: none !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important; align-items: center !important;
