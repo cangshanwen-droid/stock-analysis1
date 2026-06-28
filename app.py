@@ -98,36 +98,36 @@ def init_db():
                 conn.execute("DELETE FROM kline WHERE stock_symbol=?", (sym,))
             conn.commit()
 
-        # 生成标准K线数据（如果为空）
+        # 生成标准K线数据 — 每只股票20轮，模拟真实走势
+        import random as _rand
+        _rand.seed(42)
+        def _gen_kline(start_price, trend=1.0, vol_base=5000):
+            """生成20轮模拟K线，trend>1上涨，<1下跌"""
+            rows = []
+            p = float(start_price)
+            for i in range(20):
+                o = p
+                # 带趋势的随机波动
+                drift = (trend - 1.0) * 0.3 / 20  # 趋势漂移
+                noise = _rand.gauss(0, 0.025)     # 随机噪声
+                ret = drift + noise
+                c = round(p * (1 + ret), 2)
+                c = max(c, 0.01)  # 防止负价格
+                # 最高价 > max(o,c), 最低价 < min(o,c)
+                spread = abs(c - o) * 0.3 + 0.05
+                h = round(max(o, c) * (1 + _rand.uniform(0, spread)), 2)
+                l = round(min(o, c) * (1 - _rand.uniform(0, spread)), 2)
+                v = int(_rand.gauss(vol_base, vol_base * 0.3))
+                v = max(v, 100)
+                rows.append((o, h, l, c, v))
+                p = c
+            return rows
+
         kline_seed = {
-            "WULIU": [
-                (10.0, 10.5, 9.8, 10.2, 5000),
-                (10.2, 11.0, 10.0, 10.8, 6500),
-                (10.8, 11.2, 10.3, 10.5, 4200),
-                (10.5, 11.5, 10.4, 11.3, 7800),
-                (11.3, 11.8, 10.8, 11.6, 5500),
-            ],
-            "JXIAO": [
-                (15.0, 15.8, 14.5, 15.5, 8000),
-                (15.5, 16.2, 14.8, 15.0, 7200),
-                (15.0, 15.5, 13.5, 14.0, 9500),
-                (14.0, 14.8, 13.2, 14.5, 6100),
-                (14.5, 15.8, 14.2, 15.6, 8800),
-            ],
-            "JGONG": [
-                (20.0, 21.0, 19.5, 20.8, 10000),
-                (20.8, 22.5, 20.5, 22.2, 12000),
-                (22.2, 23.0, 21.0, 21.5, 9000),
-                (21.5, 22.8, 20.8, 22.5, 11000),
-                (22.5, 24.0, 22.0, 23.8, 14000),
-            ],
-            "YLIAO": [
-                (25.0, 26.5, 24.0, 26.0, 15000),
-                (26.0, 28.0, 25.5, 27.5, 18000),
-                (27.5, 29.0, 25.0, 25.8, 22000),
-                (25.8, 26.5, 23.0, 23.5, 16000),
-                (23.5, 25.0, 22.0, 24.2, 20000),
-            ],
+            "WULIU": _gen_kline(10.0, trend=1.08, vol_base=5000),   # 缓步上涨
+            "JXIAO": _gen_kline(15.0, trend=1.02, vol_base=7000),   # 横盘震荡偏多
+            "JGONG": _gen_kline(20.0, trend=1.15, vol_base=10000),  # 强势上涨
+            "YLIAO": _gen_kline(25.0, trend=0.92, vol_base=15000),  # 震荡下行
         }
         for s in conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall():
             sym = s["symbol"]
@@ -1228,73 +1228,76 @@ def page_kline():
         name="", showlegend=False,
     ), row=2, col=1)
 
-    # ── MA5 / MA10 ──
-    if len(df_k) >= 5:
-        ma5 = df_k["close_price"].rolling(5).mean()
-        fig.add_trace(go.Scatter(x=x_values, y=ma5, mode="lines",
-            line=dict(color="#f59e0b", width=1.5), name="MA5"), row=1, col=1)
-    if len(df_k) >= 10:
-        ma10 = df_k["close_price"].rolling(10).mean()
-        fig.add_trace(go.Scatter(x=x_values, y=ma10, mode="lines",
-            line=dict(color="#a78bfa", width=1.5), name="MA10"), row=1, col=1)
+    # ── MA5 / MA10 / MA20 均线 ──
+    for period, color, name in [
+        (5, "#f59e0b", "MA5"),
+        (10, "#a78bfa", "MA10"),
+        (20, "#60a5fa", "MA20"),
+    ]:
+        if len(df_k) >= period:
+            ma = df_k["close_price"].rolling(period).mean()
+            fig.add_trace(go.Scatter(x=x_values, y=ma, mode="lines",
+                line=dict(color=color, width=1.2), name=name), row=1, col=1)
 
-    # ── 布局：同花顺/东方财富风格 ──
+    # ── 布局：同花顺/东方财富专业风格 ──
     fig.update_layout(
-        height=540,
-        margin=dict(t=12, b=12, l=0, r=16),
+        height=560,
+        margin=dict(t=8, b=8, l=0, r=20),
         plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis_rangeslider_visible=False,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                    bgcolor="rgba(255,255,255,0.9)", bordercolor="#e0e0e0", borderwidth=1),
+                    bgcolor="rgba(255,255,255,0.85)", bordercolor="#d0d5dd", borderwidth=0.5),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#1e293b", font_size=12, font_color="#ffffff",
+        hoverlabel=dict(bgcolor="#1e293b", font_size=11, font_color="#ffffff",
                         bordercolor="#334155"),
-        font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
-                  size=11, color="#555555"),
-        # 十字光标
+        font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+                  size=11, color="#475569"),
+        # 十字光标（同花顺风格：实线细十字）
         xaxis=dict(type="category", categoryorder="array", categoryarray=list(x_values),
-                   showspikes=True, spikemode="across", spikethickness=1,
+                   showspikes=True, spikemode="across", spikethickness=0.8,
                    spikecolor="#94a3b8", spikedash="solid"),
-        yaxis=dict(showspikes=True, spikethickness=1,
+        yaxis=dict(showspikes=True, spikethickness=0.8,
                    spikecolor="#94a3b8", spikedash="solid"),
-        bargap=0.25,
+        bargap=0.1,  # 蜡烛紧凑，更接近专业密度
+        dragmode="zoom",
     )
 
-    # 主图 Y 轴：自动适配 + 8% 边距，价格标签在右侧
+    # 主图 Y 轴：右侧价格标签，浅灰虚线网格
     y_min = low_price
     y_max = high_price
-    pad = (y_max - y_min) * 0.08 if y_max > y_min else 10
+    pad = (y_max - y_min) * 0.06 if y_max > y_min else 10
     fig.update_yaxes(
         range=[y_min - pad, y_max + pad],
-        showgrid=True, gridcolor="#e8ecf1", gridwidth=1, griddash="dot",
-        tickformat=",.2f", tickfont=dict(size=11, color="#64748b"),
+        showgrid=True, gridcolor="#e8ecf1", gridwidth=0.8, griddash="dot",
+        tickformat=",.2f", tickfont=dict(size=11, color="#64748b", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
+        title_text="价格", title_font=dict(size=10, color="#94a3b8"),
     )
     fig.update_xaxes(showgrid=False, row=1, col=1)
 
     # 成交量副图
     fig.update_yaxes(
-        showgrid=True, gridcolor="#e8ecf1", gridwidth=1, griddash="dot",
-        tickfont=dict(size=10, color="#94a3b8"), side="right", row=2, col=1,
+        showgrid=True, gridcolor="#e8ecf1", gridwidth=0.8, griddash="dot",
+        tickfont=dict(size=9, color="#94a3b8"), side="right", row=2, col=1,
         zeroline=False,
     )
     fig.update_xaxes(
         showgrid=False, type="category",
-        tickvals=x_values.iloc[::max(1, len(df_k)//8)],
-        ticktext=df_k["x_label"].iloc[::max(1, len(df_k)//8)],
+        tickvals=x_values.iloc[::max(1, len(df_k)//6)],
+        ticktext=df_k["x_label"].iloc[::max(1, len(df_k)//6)],
         tickfont=dict(size=10, color="#94a3b8"),
         row=2, col=1,
     )
 
-    # 工具栏：只保留下载和缩放
+    # 工具栏：极简，只保留基础功能
     config = {
         "displayModeBar": True,
         "modeBarButtonsToRemove": ["lasso2d", "select2d", "sendDataToCloud",
                                      "autoScale2d", "toggleSpikelines",
-                                     "zoomIn2d", "zoomOut2d", "pan2d"],
-        "modeBarButtonsToAdd": ["drawline", "eraseshape"],
+                                     "zoomIn2d", "zoomOut2d"],
+        "modeBarButtonsToAdd": [],
         "displaylogo": False,
         "scrollZoom": True,
         "responsive": True,
