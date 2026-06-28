@@ -987,33 +987,31 @@ SIDEBAR_CSS = """
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
 
-    .sb-brand { padding: 22px 22px 14px 22px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 24px !important; font-weight: 800 !important; color: #e2e8f0 !important; margin: 0 !important; letter-spacing: 2px !important; }
-    .sb-brand .sub p { color: #3a4a5e !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
+    .sb-brand { padding: 20px 22px 12px 22px; border-bottom: 1px solid #1a2332; }
+    .sb-brand .name p { font-size: 24px !important; font-weight: 800 !important; color: #f1f5f9 !important; margin: 0 !important; letter-spacing: 2px !important; }
+    .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
     .sb-user { padding: 12px 22px 10px 22px; border-bottom: 1px solid #1a2332; }
-    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #e2e8f0 !important; margin: 0 !important; }
-    .sb-user .urole p { font-size: 12px !important; color: #3a4a5e !important; margin: 0 !important; }
+    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
+    .sb-user .urole p { font-size: 12px !important; color: #475569 !important; margin: 0 !important; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #089981; margin-right: 4px; vertical-align: middle; }
-    .menu-group-label { padding: 16px 22px 4px 22px; }
-    .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #3a4a5e !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
+    .menu-group-label { padding: 14px 22px 4px 22px; }
+    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    /* 导航 - 大间距+高对比 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 2px 8px !important; gap: 2px !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 2px 8px !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         padding: 10px 14px !important;
         font-size: 14px !important; font-weight: 500 !important;
-        color: #5a6a7e !important;
+        color: #94a3b8 !important;
         background: transparent !important;
         border: none !important;
         border-radius: 6px !important;
         cursor: pointer !important;
-        transition: all .1s ease !important;
         letter-spacing: .3px !important;
         position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
         background: rgba(255,255,255,.04) !important;
-        color: #94a3b8 !important;
+        color: #e2e8f0 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
         background: rgba(242,54,69,.08) !important;
@@ -1021,11 +1019,8 @@ SIDEBAR_CSS = """
         font-weight: 600 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
-        content: '' !important;
-        position: absolute !important;
-        left: -1px !important;
-        top: 20% !important;
-        bottom: 20% !important;
+        content: '' !important; position: absolute !important;
+        left: -1px !important; top: 20% !important; bottom: 20% !important;
         width: 3px !important;
         background: #f23645 !important;
         border-radius: 0 2px 2px 0 !important;
@@ -1034,11 +1029,7 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important; font-size: 14px !important; color: inherit !important;
     }
-
-    /* 退出按钮 */
-    section[data-testid="stSidebar"] button:last-of-type {
-        margin: 4px 12px !important; width: calc(100% - 24px) !important;
-    }
+    section[data-testid="stSidebar"] button:last-of-type { margin: 4px 12px !important; width: calc(100% - 24px) !important; }
 </style>
 """
 
@@ -2239,8 +2230,8 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        # 纯文字导航（无图标，专业简洁）
         picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_radio", label_visibility="collapsed")
+        picked = picked.strip()
         if picked != sel:
             st.session_state.nav_current = picked
             st.rerun()
