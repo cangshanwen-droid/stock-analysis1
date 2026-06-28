@@ -840,75 +840,139 @@ def page_kline():
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">K 线展板</div>""", unsafe_allow_html=True)
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
-    sym = opts[sel]["symbol"]; s = opts[sel]
+    sym = opts[sel]["symbol"]
     data = get_kline_data(sym)
 
     if not data:
-        st.info("暂无K线数据，请管理员开市并闭市后生成")
+        st.info("暂无行情K线数据")
         return
 
+    # ── OHLC 校验 + 数据清洗 ──
+    cleaned = []
+    dirty = 0
+    for d in data:
+        o, h, l, c = d.get("open_price",0), d.get("high_price",0), d.get("low_price",0), d.get("close_price",0)
+        if any(v is None or v < 0 for v in [o,h,l,c]) or h < max(o,c) or l > min(o,c):
+            dirty += 1; continue
+        d["round"] = d.get("round", len(cleaned)+1)
+        cleaned.append(d)
+    if dirty:
+        st.warning(f"已过滤 {dirty} 条异常数据")
+    if not cleaned:
+        st.info("暂无合规K线数据"); return
+
     # 轮次筛选
-    max_round = max(d["round"] for d in data)
+    max_round = max(d["round"] for d in cleaned)
     round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
     round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
     if round_sel != "全部":
         target_r = int(round_sel.replace("第","").replace("轮",""))
-        data = [d for d in data if d["round"] == target_r]
+        cleaned = [d for d in cleaned if d["round"] == target_r]
+        if not cleaned: st.info("该轮次无数据"); return
 
-    df_k = pd.DataFrame(data)
-    if df_k.empty: return
+    df_k = pd.DataFrame(cleaned)
+    # X轴用轮次序号（时间升序）
+    df_k = df_k.sort_values("round").reset_index(drop=True)
+    df_k["x_label"] = df_k["round"].apply(lambda r: f"第{r}轮")
 
-    colors = [GREEN if r["close_price"] >= r["open_price"] else RED for _, r in df_k.iterrows()]
-    vol_c = ["rgba(34,197,94,0.5)" if r["close_price"] >= r["open_price"] else "rgba(239,68,68,0.5)" for _, r in df_k.iterrows()]
+    # ── A股标准色：红涨绿跌 ──
+    RED_UP   = "#ef5350"   # 阳线红
+    GREEN_DN = "#26a69a"   # 阴线绿
+    up   = df_k["close_price"] >= df_k["open_price"]
+    vol_color    = ["rgba(239,83,80,0.5)" if u else "rgba(38,166,154,0.5)" for u in up]
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.03, row_heights=[.7, .3])
+    # ── 主图蜡烛 + 成交量副图 ──
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        vertical_spacing=0.02, row_heights=[0.72, 0.28])
 
     fig.add_trace(go.Candlestick(
         x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
         low=df_k["low_price"], close=df_k["close_price"],
-        increasing_line_color=GREEN, decreasing_line_color=RED,
+        increasing_line_color=RED_UP, decreasing_line_color=GREEN_DN,
         name="", showlegend=False,
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
-        x=df_k.index, y=df_k["volume"], marker_color=vol_c,
+        x=df_k.index, y=df_k["volume"], marker_color=vol_color,
         name="", showlegend=False,
     ), row=2, col=1)
 
+    # ── MA5 / MA10 ──
     if len(df_k) >= 5:
         ma5 = df_k["close_price"].rolling(5).mean()
         fig.add_trace(go.Scatter(x=df_k.index, y=ma5, mode="lines",
-            line=dict(color="#f59e0b", width=1.2), name="MA5"), row=1, col=1)
+            line=dict(color="#f59e0b", width=1), name="MA5"), row=1, col=1)
     if len(df_k) >= 10:
         ma10 = df_k["close_price"].rolling(10).mean()
         fig.add_trace(go.Scatter(x=df_k.index, y=ma10, mode="lines",
-            line=dict(color="#3b82f6", width=1.2), name="MA10"), row=1, col=1)
+            line=dict(color="#6366f1", width=1), name="MA10"), row=1, col=1)
 
+    # ── 布局：专业极简金融风 ──
     fig.update_layout(
-        height=440, margin=dict(t=30, b=0, l=10, r=10),
-        plot_bgcolor="#fafbfc", paper_bgcolor="#fafbfc",
+        height=460,
+        margin=dict(t=10, b=0, l=0, r=10),
+        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis_rangeslider_visible=False,
-        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
+                    bgcolor="rgba(255,255,255,0.8)"),
         hovermode="x unified",
+        hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_color="#333333",
+                        bordercolor="#e0e0e0"),
+        font=dict(family="-apple-system, BlinkMacSystemFont, sans-serif", size=11, color="#555555"),
+        # 十字光标
+        xaxis=dict(showspikes=True, spikemode="across", spikethickness=1,
+                   spikecolor="#cccccc", spikedash="dot"),
+        yaxis=dict(showspikes=True, spikethickness=1,
+                   spikecolor="#cccccc", spikedash="dot"),
     )
-    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb", row=1, col=1)
-    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb", title_text="轮次", row=2, col=1)
-    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", tickformat=",.0f", row=1, col=1)
-    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", tickformat=",.0f", row=2, col=1)
 
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    # 主图 Y 轴：自动适配 + 8% 边距
+    y_min = df_k["low_price"].min()
+    y_max = df_k["high_price"].max()
+    pad = (y_max - y_min) * 0.08 if y_max > y_min else 10
+    fig.update_yaxes(
+        range=[y_min - pad, y_max + pad],
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, griddash="dot",
+        tickformat=",.2f", tickfont=dict(size=11, color="#666666"),
+        side="right", row=1, col=1,
+    )
+    fig.update_xaxes(showgrid=False, row=1, col=1)
 
-    if data:
-        st.divider()
-        st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
-        disp = pd.DataFrame(data).tail(30).copy()
-        disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
-        disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
-        disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
-        st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
+    # 成交量副图
+    fig.update_yaxes(
+        showgrid=True, gridcolor="#f0f0f0", gridwidth=1, griddash="dot",
+        tickfont=dict(size=10, color="#999999"), side="right", row=2, col=1,
+    )
+    fig.update_xaxes(
+        showgrid=False, tickvals=df_k.index[::max(1,len(df_k)//10)],
+        ticktext=df_k["x_label"].iloc[::max(1,len(df_k)//10)],
+        tickfont=dict(size=10, color="#888888"),
+        row=2, col=1,
+    )
+
+    # 工具栏：只保留下载
+    config = {
+        "displayModeBar": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d", "sendDataToCloud",
+                                     "autoScale2d", "toggleSpikelines"],
+        "modeBarButtonsToAdd": [],
+        "displaylogo": False,
+        "scrollZoom": True,
+    }
+    st.plotly_chart(fig, use_container_width=True, config=config)
+
+    # 数据明细表
+    st.divider()
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
+    disp = pd.DataFrame(cleaned).tail(30).copy()
+    disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
+    disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
+    disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
+    disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
+    disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
+    disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
+    st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
 
 def page_admin_stock_summary():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
