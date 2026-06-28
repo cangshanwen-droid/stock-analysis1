@@ -1081,9 +1081,9 @@ def page_kline():
 
     # ── A股标准色：红涨绿跌 ──
     RED_UP   = "#ef5350"   # 阳线红
-    GREEN_DN = "#26a69a"   # 阴线绿
+    GREEN_DN = "#2ecc71"   # 阴线绿
     up   = df_k["close_price"] >= df_k["open_price"]
-    vol_color    = ["rgba(239,83,80,0.5)" if u else "rgba(38,166,154,0.5)" for u in up]
+    vol_color    = ["rgba(239,83,80,0.5)" if u else "rgba(46,204,113,0.5)" for u in up]
 
     # ── 主图蜡烛 + 成交量副图 ──
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
