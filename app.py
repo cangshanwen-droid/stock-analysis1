@@ -110,11 +110,6 @@ def init_db():
                         total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (sym, name, price, price, price * 10000 * 20 / 10000, ts_, rev, ipe, cp, icm, pr))
-            # 隐藏多余的旧股票
-            existing = [r[0] for r in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
-            for sym in existing:
-                if sym not in [s[0] for s in stock_defs]:
-                    conn.execute("UPDATE stocks SET is_deleted=1 WHERE symbol=?", (sym,))
             # 仅当K线表为空时才重新生成（不覆盖交易产生的K线）
             has_kline = conn.execute("SELECT 1 FROM kline LIMIT 1").fetchone()
             if not has_kline:
