@@ -987,7 +987,7 @@ def page_admin_settle():
     with c1:
         if not st.session_state.cf_close:
             if st.button("一键闭市", type="primary", use_container_width=True, disabled=not market_open):
-                st.session_state.cf_close = True; st.session_state.cf_open = False; st.session_state.cf_undo = False; st.rerun()
+                st.session_state.cf_close = True; st.session_state.cf_open = False; st.session_state.cf_undo = False; st.session_state.cf_r1 = False; st.rerun()
         else:
             st.warning("确认闭市？所有选手将无法交易")
             cc1, cc2 = st.columns(2)
@@ -1001,7 +1001,7 @@ def page_admin_settle():
     with c2:
         if not st.session_state.cf_open:
             if st.button("一键开市", use_container_width=True, disabled=market_open):
-                st.session_state.cf_open = True; st.session_state.cf_close = False; st.session_state.cf_undo = False; st.rerun()
+                st.session_state.cf_open = True; st.session_state.cf_close = False; st.session_state.cf_undo = False; st.session_state.cf_r1 = False; st.rerun()
         else:
             st.info("确认开市？将进入新一轮交易")
             cc1, cc2 = st.columns(2)
@@ -1015,7 +1015,7 @@ def page_admin_settle():
     with c3:
         if not st.session_state.cf_undo:
             if st.button("撤销上一轮", use_container_width=True, disabled=current_round <= 1):
-                st.session_state.cf_undo = True; st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
+                st.session_state.cf_undo = True; st.session_state.cf_close = False; st.session_state.cf_open = False; st.session_state.cf_r1 = False; st.rerun()
         else:
             st.warning(f"确认回退到第 {current_round - 1} 轮？将删除最新K线")
             cc1, cc2 = st.columns(2)
@@ -1029,13 +1029,14 @@ def page_admin_settle():
     with c4:
         if not st.session_state.cf_r1:
             if st.button("回到第一轮", use_container_width=True, disabled=current_round <= 1):
-                st.session_state.cf_r1 = True; st.rerun()
+                st.session_state.cf_r1 = True; st.session_state.cf_close = False; st.session_state.cf_open = False; st.session_state.cf_undo = False; st.rerun()
         else:
             st.warning("确认回到第1轮？将清空所有K线历史")
             cc1, cc2 = st.columns(2)
             with cc1:
                 if st.button("确认重置", type="primary", use_container_width=True):
-                    reset_to_round1(); st.session_state.cf_r1 = False; st.rerun()
+                    reset_to_round1(); st.session_state.cf_r1 = False
+                    st.success("已回到第 1 轮"); st.rerun()
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_r1 = False; st.rerun()
