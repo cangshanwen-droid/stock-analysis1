@@ -59,9 +59,16 @@ def _seed(conn):
         cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime(),'active',1000000)", (i, u, hash_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
-        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym,))
+        cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (sym,))
     trades = [("player1", "TSLA", "buy", 200.0, 100, 1), ("player1", "AAPL", "buy", 150.0, 50, 1), ("player1", "TSLA", "sell", 240.0, 80, 1), ("player2", "NVDA", "buy", 400.0, 30, 1), ("player2", "AAPL", "sell", 160.0, 40, 1), ("player3", "TSLA", "buy", 210.0, 50, 1), ("player3", "NVDA", "buy", 420.0, 20, 1)]
     for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", args)
+    # 为种子交易生成首轮K线
+    for sym, price in [("TSLA", 250.0), ("AAPL", 175.0), ("NVDA", 450.0)]:
+        bt = sum(t[4] * t[5] for t in trades if t[1] == sym and t[2] == "buy")
+        st_amt = sum(t[4] * t[5] for t in trades if t[1] == sym and t[2] == "sell")
+        tv = sum(t[5] for t in trades if t[1] == sym)
+        np_ = compute_price({"previous_close": price, "current_price": price, "premium_rate": 50, "carbon_price": 50, "industry_carbon_mean": 50, "buy_total": bt, "sell_total": st_amt})
+        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,1,?,?,?,?,?,?,?,?)", (sym, price, max(np_, price), min(np_, price), np_, tv, bt, st_amt, round((np_ - price) / price * 100, 2)))
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
