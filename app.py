@@ -143,6 +143,7 @@ def init_db():
             # 同步最新价格到 stocks 表
             last_c = klines[-1][3]
             conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (last_c, klines[-2][3] if len(klines) > 1 else klines[0][0], sym))
+        conn.commit()
         # 设置市场轮次 = 最大K线轮次 + 1（供交易使用）
         max_round = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
         next_round = max_round + 1
