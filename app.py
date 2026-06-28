@@ -44,7 +44,7 @@ def make_pwd(plain):
 
 def init_db():
     conn = get_db(); cur = conn.cursor()
-    cur.execute("""
+    cur.executescript("""
         CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
         CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
