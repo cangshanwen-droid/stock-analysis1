@@ -250,6 +250,17 @@ def undo_market():
     conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
     conn.commit(); conn.close()
 
+def reset_to_round1():
+    """回到第一轮：清空所有K线和轮次，价格保持不变，轮次重置为1"""
+    conn = get_db()
+    stocks = conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()
+    for s in stocks:
+        conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+        conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+        conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
+    conn.execute("UPDATE market_state SET state='open', round=1 WHERE id=1")
+    conn.commit(); conn.close()
+
 def get_user_portfolio(username):
     conn = get_db()
     buys = conn.execute("SELECT stock_symbol,SUM(shares) s,SUM(price*shares) c FROM transactions WHERE username=? AND trade_type='buy' GROUP BY stock_symbol", (username,)).fetchall()
@@ -637,7 +648,22 @@ def page_overview():
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
             yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # 每轮数据明细表
+    st.divider()
+    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
+    if data:
+        disp = pd.DataFrame(data).tail(30).copy()
+        disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
+        disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
+        st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
+    else:
+        st.info("暂无K线数据")
     else:
         st.info("暂无持仓数据")
 
@@ -948,7 +974,7 @@ def page_admin_settle():
     color = "#16a34a" if market_open else "#ef4444"
 
     # 初始化确认状态
-    for k in ["cf_close", "cf_open", "cf_undo"]:
+    for k in ["cf_close", "cf_open", "cf_undo", "cf_r1"]:
         if k not in st.session_state: st.session_state[k] = False
 
     st.markdown(f"""
@@ -959,7 +985,7 @@ def page_admin_settle():
     </div>""", unsafe_allow_html=True)
 
     # 开关按钮 + 防误触确认
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         if not st.session_state.cf_close:
             if st.button("一键闭市", type="primary", use_container_width=True, disabled=not market_open):
@@ -1001,6 +1027,20 @@ def page_admin_settle():
             with cc2:
                 if st.button("取消", use_container_width=True):
                     st.session_state.cf_undo = False; st.rerun()
+
+    with c4:
+        if not st.session_state.cf_r1:
+            if st.button("回到第一轮", use_container_width=True, disabled=current_round <= 1):
+                st.session_state.cf_r1 = True; st.rerun()
+        else:
+            st.warning("确认回到第1轮？将清空所有K线历史")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if st.button("确认重置", type="primary", use_container_width=True):
+                    reset_to_round1(); st.session_state.cf_r1 = False; st.rerun()
+            with cc2:
+                if st.button("取消", use_container_width=True):
+                    st.session_state.cf_r1 = False; st.rerun()
 
     st.divider()
 
