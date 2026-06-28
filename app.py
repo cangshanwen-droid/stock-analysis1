@@ -52,7 +52,7 @@ def make_pwd(plain):
 
 def get_admin_password():
     """从环境变量或 Streamlit secrets 读取管理员密码"""
-    pw = get_admin_password()
+    pw = os.environ.get("ADMIN_PASSWORD")
     if pw:
         return pw
     try:
