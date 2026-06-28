@@ -783,23 +783,7 @@ def page_overview():
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
             yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
     )
-    orig = conn.cursor
-    def pg_cursor():
-        return orig(cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.cursor = pg_cursor
-    # 自动转换 SQLite ? → PostgreSQL %s
-    orig_exec = conn.execute
-    def pg_execute(sql, params=None):
-        cur = pg_cursor()
-        s = sql.replace("?", "%s")
-        if params is not None:
-            cur.execute(s, list(params) if isinstance(params, tuple) else params)
-        else:
-            cur.execute(s)
-        return cur
-    conn.execute = pg_execute
-    conn.executescript = lambda sql: pg_cursor().execute(sql.replace("?", "%s"))
-    return conn
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
