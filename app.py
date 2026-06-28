@@ -258,12 +258,9 @@ html, body, [class*="css"] {
 }
 
 /* ===== 隐藏 Streamlit 默认 UI ===== */
-#MainMenu { display: none !important; }
-.stDeployButton { display: none !important; }
-footer { display: none !important; }
-.stStatusWidget { display: none !important; }
-[data-testid="stStatusWidget"] { display: none !important; }
-[data-testid="stDecoration"] { display: none !important; }
+#MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
+[data-testid="stDecoration"], [data-testid="stToolbar"],
+[data-testid="manage-app-button"], .st-emotion-cache-1r6slb0 { display: none !important; }
 
 /* ===== 颜色系统 ===== */
 :root {
@@ -392,7 +389,11 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] > div:first-child { background-color: #0d1117 !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    .stDeployButton, footer { display: none !important; }
+    .stDeployButton, footer, #MainMenu { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="manage-app-button"] { display: none !important; }
+    .st-emotion-cache-1r6slb0 { display: none !important; }
 
     /* 全部白字，仅副标题微调 */
     section[data-testid="stSidebar"] * { color: #ffffff !important; }
