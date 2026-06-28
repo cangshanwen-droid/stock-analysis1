@@ -382,230 +382,133 @@ def get_platform_stats():
 # ──────────────────────────────────────────────
 CUSTOM_CSS = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', -apple-system, sans-serif; }
-    * { transition: all .25s cubic-bezier(.4,0,.2,1); }
 
-    /* ====== 登录页 — 深层 AI 主题 ====== */
-    .ai-login-wrap {
+    /* ====== 登录页 — Fintech 高端设计 ====== */
+    .login-bg {
         position: fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
-        background: #050810;
-        overflow: hidden;
+        background: #F1F5F9;
     }
-    /* 6 层光晕 */
-    .ai-orbs { position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1; pointer-events:none; }
-    .ai-orb {
-        position:absolute; border-radius:50%; filter: blur(100px);
-        animation: orbDrift 18s ease-in-out infinite;
+    .login-wrap {
+        position: fixed; top:0; left:0; right:0; bottom:0; z-index:0;
+        display:flex; align-items:center; justify-content:center;
     }
-    .ai-orb:nth-child(1) {
-        width:700px; height:700px; top:-200px; right:-150px;
-        background: rgba(99,102,241,.12);
-        animation-delay:0s;
-    }
-    .ai-orb:nth-child(2) {
-        width:500px; height:500px; bottom:-150px; left:-100px;
-        background: rgba(6,182,212,.1);
-        animation-delay:-5s; animation-duration:22s;
-    }
-    .ai-orb:nth-child(3) {
-        width:350px; height:350px; top:40%; left:50%;
-        background: rgba(236,72,153,.08);
-        animation-delay:-10s; animation-duration:20s;
-    }
-    .ai-orb:nth-child(4) {
-        width:450px; height:450px; top:20%; left:-120px;
-        background: rgba(59,130,246,.06);
-        animation-delay:-15s; animation-duration:24s;
-    }
-    @keyframes orbDrift {
-        0%,100% { transform: translate(0,0) scale(1); }
-        25% { transform: translate(60px,-40px) scale(1.15); }
-        50% { transform: translate(-30px,50px) scale(.9); }
-        75% { transform: translate(-50px,-20px) scale(1.1); }
-    }
-    /* 网格矩阵 */
-    .ai-grid {
-        position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1;
-        background-image:
-            repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 80px),
-            repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 80px);
-        mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
-        -webkit-mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 80%);
-    }
-    /* 飞线粒子 */
-    .ai-particles { position:fixed; top:0; left:0; right:0; bottom:0; z-index:-1; pointer-events:none; }
-    .particle {
-        position:absolute; width:2px; height:2px;
-        background:rgba(129,140,248,.6); border-radius:50%;
-        box-shadow: 0 0 8px rgba(129,140,248,.4), 0 0 20px rgba(129,140,248,.2);
-        animation: rise 18s linear infinite;
-    }
-    .particle:nth-child(1) { left:5%; animation-duration:16s; }
-    .particle:nth-child(2) { left:15%; animation-duration:19s; animation-delay:2s; width:3px; height:3px; background:rgba(6,182,212,.5); }
-    .particle:nth-child(3) { left:25%; animation-duration:21s; animation-delay:4s; }
-    .particle:nth-child(4) { left:38%; animation-duration:15s; animation-delay:6s; width:4px; height:4px; background:rgba(236,72,153,.4); }
-    .particle:nth-child(5) { left:50%; animation-duration:23s; animation-delay:8s; }
-    .particle:nth-child(6) { left:62%; animation-duration:17s; animation-delay:3s; width:3px; }
-    .particle:nth-child(7) { left:75%; animation-duration:20s; animation-delay:10s; }
-    .particle:nth-child(8) { left:88%; animation-duration:18s; animation-delay:7s; width:3px; height:3px; background:rgba(99,102,241,.5); }
-    .particle:nth-child(9) { left:32%; animation-duration:22s; animation-delay:12s; }
-    .particle:nth-child(10) { left:55%; animation-duration:19s; animation-delay:14s; width:2px; }
-    @keyframes rise {
-        0% { top:115%; opacity:0; transform: scale(.5) translateX(0); }
-        5% { opacity:1; }
-        15% { transform: scale(1) translateX(30px); }
-        35% { transform: scale(.8) translateX(-20px); }
-        55% { transform: scale(1.2) translateX(15px); }
-        75% { transform: scale(.6) translateX(-30px); }
-        90% { opacity:.5; }
-        100% { top:-5%; opacity:0; transform: scale(1) translateX(0); }
+    .login-card {
+        display:flex; width:900px; min-height:580px;
+        border-radius:24px; background:#fff;
+        box-shadow:0 24px 80px rgba(0,0,0,.12);
+        overflow:hidden;
     }
 
-    /* 登录卡片 — 玻璃拟态 + 旋转渐变边框 */
-    .ai-login-card {
-        background: rgba(15,18,30,.7); backdrop-filter: blur(40px);
-        -webkit-backdrop-filter: blur(40px);
-        border-radius: 28px; padding: 3rem 2.8rem;
-        position:relative; overflow:visible;
-        border: 1px solid rgba(255,255,255,.06);
-        box-shadow:
-            0 0 80px rgba(99,102,241,.08),
-            0 25px 80px rgba(0,0,0,.5),
-            inset 0 1px 0 rgba(255,255,255,.04);
-        animation: cardFadeIn .8s ease-out forwards;
+    /* 左侧品牌区 */
+    .brand-side {
+        flex:0 0 42%; position:relative; overflow:hidden;
+        background: linear-gradient(135deg, #0F172A 0%, #1E293B 60%, #0F172A 100%);
+        display:flex; flex-direction:column; justify-content:space-between;
+        padding:40px 36px;
     }
-    @keyframes cardFadeIn {
-        from { opacity:0; transform: translateY(30px) scale(.97); }
-        to { opacity:1; transform: translateY(0) scale(1); }
+    .brand-version {
+        position:absolute; top:24px; right:28px;
+        font-size:12px; color:#64748B; font-weight:500; letter-spacing:1px;
     }
-    /* 旋转渐变色条 */
-    .ai-card-border {
-        position:absolute; top:-2px; left:-2px; right:-2px; bottom:-2px;
-        border-radius: 30px; z-index:-1;
-        background: conic-gradient(from 0deg, transparent, #6366f1, #06b6d4, #ec4899, transparent);
-        animation: rotateBorder 6s linear infinite;
-        opacity:.3;
+    .brand-mid { position:relative; z-index:1; }
+    .brand-title {
+        font-size:40px; font-weight:700; color:#fff; letter-spacing:2px; line-height:1.15;
     }
-    @keyframes rotateBorder {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+    .brand-line {
+        width:40px; height:3px; background:#3B82F6; margin:18px 0;
     }
-    .ai-login-card:hover .ai-card-border { opacity:.6; }
-    /* 内部光线条 */
-    .ai-login-card::before {
-        content:''; position:absolute; top:0; left:10%; right:10%; height:1px;
-        background: linear-gradient(90deg, transparent, rgba(99,102,241,.4), rgba(6,182,212,.4), transparent);
-        border-radius: 100%;
+    .brand-sub {
+        font-size:16px; color:#94A3B8; letter-spacing:1px; font-weight:400;
+    }
+    .brand-orbs { position:absolute; bottom:-100px; right:-120px; }
+    .brand-orb {
+        position:absolute; border-radius:50%; border:2px solid rgba(255,255,255,.06);
+    }
+    .brand-orb:nth-child(1) { width:320px; height:320px; bottom:0; right:0; }
+    .brand-orb:nth-child(2) { width:240px; height:240px; bottom:20px; right:40px; border-color:rgba(255,255,255,.03); }
+    .brand-orb:nth-child(3) { width:160px; height:160px; bottom:40px; right:80px; border-color:rgba(255,255,255,.02); }
+    .brand-footer {
+        position:relative; z-index:1;
+        font-size:12px; color:#475569; font-weight:500;
     }
 
-    /* LOGO 区 */
-    .ai-logo { text-align:center; margin-bottom:2.2rem; }
-    .ai-logo .icon {
-        font-size:3.5rem; display:inline-block; margin-bottom:8px;
-        animation: iconPulse 3s ease-in-out infinite;
-        filter: drop-shadow(0 0 20px rgba(99,102,241,.5));
+    /* 右侧表单区 */
+    .form-side {
+        flex:1; padding:48px 44px;
+        display:flex; flex-direction:column; justify-content:center;
     }
-    @keyframes iconPulse {
-        0%,100% { transform: scale(1); }
-        50% { transform: scale(1.08); }
+    .welcome-text { font-size:22px; font-weight:600; color:#0F172A; margin:0; }
+    .welcome-sub { font-size:14px; color:#94A3B8; margin:4px 0 24px 0; }
+
+    /* Tab 按钮区域 */
+    .tab-row {
+        display:flex; gap:32px; margin-bottom:28px;
+        padding-bottom:10px; border-bottom:1px solid #E2E8F0;
     }
-    .ai-logo h1 {
-        font-size:1.75rem; font-weight:900; color:#fff; margin:0;
-        letter-spacing:-.5px;
-        background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 50%, #a78bfa 100%);
-        background-size: 200% 200%;
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text;
-        animation: shimmer 3s ease-in-out infinite;
+    .tab-btn {
+        font-size:16px; font-weight:500; color:#94A3B8;
+        background:none; border:none; cursor:pointer; padding:4px 0;
+        border-bottom:2px solid transparent; margin-bottom:-12px;
     }
-    @keyframes shimmer {
-        0%,100% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
+    .tab-btn.active { color:#0F172A; border-bottom-color:#3B82F6; }
+
+    /* 输入框风格覆盖 */
+    .form-side .stTextInput input {
+        height:46px !important; border:1.5px solid #E2E8F0 !important;
+        border-radius:10px !important; font-size:14px !important;
+        padding:0 16px !important; color:#0F172A !important;
+        background:#fff !important; outline:none !important;
     }
-    .ai-logo p {
-        font-size:.82rem; color:rgba(255,255,255,.35); margin:6px 0 0 0;
-        letter-spacing:2.5px; text-transform:uppercase; font-weight:600;
-        animation: fadeInUp .8s .2s ease-out both;
+    .form-side .stTextInput input:focus {
+        border-color:#3B82F6 !important;
+        box-shadow:0 0 0 3px rgba(59,130,246,.12) !important;
     }
-    .ai-logo .tagline {
-        font-size:.7rem; color:rgba(255,255,255,.2); margin-top:10px;
-        letter-spacing:4px; text-transform:uppercase;
-        animation: fadeInUp .8s .35s ease-out both;
+    .form-side .stTextInput input::placeholder { color:#94A3B8 !important; }
+    .form-side label { color:#0F172A !important; font-size:13px !important; font-weight:500 !important; margin-bottom:4px !important; }
+
+    .form-side .stButton button[kind="primary"] {
+        width:100% !important; height:48px !important;
+        background:linear-gradient(135deg, #3B82F6, #6366F1) !important;
+        color:#fff !important; border:none !important; border-radius:10px !important;
+        font-size:16px !important; font-weight:600 !important;
+        margin-top:4px !important;
     }
-    @keyframes fadeInUp {
-        from { opacity:0; transform:translateY(10px); }
-        to { opacity:1; transform:translateY(0); }
+    .form-side .stButton button[kind="primary"]:hover {
+        transform:scale(1.01); box-shadow:0 8px 24px rgba(59,130,246,.3) !important;
     }
 
-    /* 输入框 */
-    .ai-login-card .stTextInput input {
-        background: rgba(255,255,255,.04) !important;
-        border: 1px solid rgba(255,255,255,.08) !important;
-        border-radius: 14px !important; color: #e0e0e0 !important;
-        padding: 14px 18px !important; font-size:.92rem !important;
-        transition: all .3s cubic-bezier(.4,0,.2,1) !important;
+    /* 注册/错误/成功消息 */
+    .reg-msg { font-size:13px; padding:8px 0; }
+    .reg-msg.success { color:#10B981; }
+    .reg-msg.error { color:#EF4444; }
+    .divider-line {
+        display:flex; align-items:center; gap:12px; margin:20px 0 14px;
+        color:#94A3B8; font-size:12px;
     }
-    .ai-login-card .stTextInput input:hover {
-        border-color: rgba(129,140,248,.3) !important;
-        background: rgba(255,255,255,.06) !important;
+    .divider-line::before, .divider-line::after {
+        content:''; flex:1; height:1px; background:#E2E8F0;
     }
-    .ai-login-card .stTextInput input:focus {
-        border-color: #6366f1 !important;
-        box-shadow: 0 0 30px rgba(99,102,241,.2), 0 0 0 3px rgba(99,102,241,.06) !important;
-        background: rgba(255,255,255,.08) !important;
+    .guest-link {
+        text-align:center; font-size:14px; color:#3B82F6; cursor:pointer;
+        background:none; border:1.5px solid #E2E8F0; border-radius:10px;
+        height:44px; line-height:44px; width:100%; display:block;
     }
-    .ai-login-card .stTextInput input::placeholder { color: rgba(255,255,255,.2) !important; }
-    .ai-login-card label { color: rgba(255,255,255,.4) !important; font-size:.72rem !important; font-weight:600; text-transform:uppercase; letter-spacing:1px; }
+    .guest-link:hover { border-color:#3B82F6; }
 
-    /* 按钮 */
-    .ai-login-card .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
-        border: none !important; border-radius: 14px !important;
-        padding: 14px !important; font-weight:800 !important;
-        font-size:1rem !important; letter-spacing:1px;
-        transition: all .3s cubic-bezier(.4,0,.2,1) !important;
-        position:relative; overflow:hidden;
-        box-shadow: 0 4px 25px rgba(99,102,241,.3) !important;
-    }
-    .ai-login-card .stButton button[kind="primary"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 40px rgba(99,102,241,.45) !important;
-        background: linear-gradient(135deg, #818cf8, #a78bfa) !important;
-    }
-    .ai-login-card .stButton button[kind="primary"]:active {
-        transform: scale(.97);
-    }
-    .ai-login-card .stButton button[kind="primary"]::after {
-        content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent);
-        animation: btnShine 2s ease-in-out infinite;
-    }
-    @keyframes btnShine {
-        0% { left: -100%; }
-        50%,100% { left: 100%; }
-    }
+    .login-page .stTabs { display:none; }
+    .form-side .stForm { margin:0; padding:0; border:none; }
+    .form-side .stForm > div:first-child { padding-top:0; }
 
-    /* Tab */
-    .ai-login-card .stTabs button {
-        color: rgba(255,255,255,.3) !important; font-weight:700 !important;
-        letter-spacing:1px; font-size:.82rem !important;
-        padding: 8px 24px !important; border-radius: 10px !important;
-    }
-    .ai-login-card .stTabs button:hover { color: rgba(255,255,255,.7) !important; background: rgba(255,255,255,.04) !important; }
-    .ai-login-card .stTabs button[aria-selected="true"] { color: #a78bfa !important; }
-    .ai-login-card .stTabs [data-baseweb="tab-highlight"] { background: linear-gradient(90deg, #6366f1, #06b6d4) !important; height:3px !important; border-radius:3px; }
+    /* 卡牌列布局：消除间隙 + 统一外观 */
+    .login-page [data-testid="stHorizontalBlock"] { gap:0 !important; }
+    .login-page [data-testid="column"]:first-child { border-radius:24px 0 0 24px; overflow:hidden; }
+    .login-page [data-testid="column"]:nth-child(2) { border-radius:0 24px 24px 0; }
+    .login-page [data-testid="column"] > div { height:100%; }
+    .login-page .stButton button { border-radius:10px !important; }
 
-    /* Alert */
-    .ai-login-card .stAlert { border-radius:14px; font-size:.8rem; }
-    .ai-login-card .stAlert [data-testid="stAlertContainer"] { border-radius:14px; }
-
-    .ai-footer {
-        text-align:center; margin-top:1.8rem;
-        color:rgba(255,255,255,.12); font-size:.68rem; letter-spacing:2px;
-    }
-
-    /* ====== 主应用样式 ====== */
+    /* == 主应用样式 == */
     .stApp { background: #f0f4f8; }
     .main-header {
         background: linear-gradient(135deg, #0f1729 0%, #1a2a5e 50%, #0f1729 100%);
@@ -736,95 +639,150 @@ def metric_card(title, value, delta=None, delta_color="normal"):
 # ──────────────────────────────────────────────
 
 def page_login():
-    # AI 主题背景
-    st.markdown("""
-    <div class="ai-login-wrap"></div>
-    <div class="ai-orbs">
-        <div class="ai-orb"></div><div class="ai-orb"></div><div class="ai-orb"></div><div class="ai-orb"></div>
-    </div>
-    <div class="ai-grid"></div>
-    <div class="ai-particles">
-        <div class="particle"></div><div class="particle"></div><div class="particle"></div>
-        <div class="particle"></div><div class="particle"></div><div class="particle"></div>
-        <div class="particle"></div><div class="particle"></div><div class="particle"></div>
-        <div class="particle"></div>
-    </div>
-    """, unsafe_allow_html=True)
+    if "login_tab" not in st.session_state:
+        st.session_state.login_tab = "login"
 
-    _, mid, _ = st.columns([1, 2.4, 1])
-    with mid:
-        st.markdown("<div style='height:10vh'></div>", unsafe_allow_html=True)
-        st.markdown("""
-        <div class="ai-login-card">
-            <div class="ai-card-border"></div>
-            <div class="ai-logo">
-                <span class="icon">🧠</span>
-                <h1>AI 股票交易系统</h1>
-                <p>AI-Powered Stock Trading Simulator</p>
-                <div class="tagline">✦ 商业竞赛 · 多用户仿真平台 ✦</div>
+    # 满屏浅灰背景
+    st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
+
+    # 垂直居中留白
+    st.markdown("<div style='height:5vh'></div>", unsafe_allow_html=True)
+
+    # 卡片区域：左右分栏
+    _, card_col, _ = st.columns([0.08, 0.84, 0.08])
+    with card_col:
+        brand, form = st.columns([0.42, 0.58])
+
+        # ━━━ 左侧品牌区 ━━━
+        with brand:
+            st.markdown("""
+            <div style="
+                background:linear-gradient(135deg,#0F172A 0%,#1E293B 60%,#0F172A 100%);
+                min-height:560px;display:flex;flex-direction:column;justify-content:space-between;
+                padding:40px 36px;position:relative;overflow:hidden;
+            ">
+                <div style="position:absolute;top:24px;right:28px;font-size:12px;color:#64748B;font-weight:500;letter-spacing:1px;">v2.0</div>
+                <div style="position:relative;z-index:1;margin-top:60px;">
+                    <div style="font-size:40px;font-weight:700;color:#fff;letter-spacing:2px;line-height:1.15;">洞察先机</div>
+                    <div style="width:40px;height:3px;background:#3B82F6;margin:18px 0;"></div>
+                    <div style="font-size:16px;color:#94A3B8;letter-spacing:1px;">智能投资分析系统</div>
+                </div>
+                <div style="position:absolute;bottom:-100px;right:-120px;">
+                    <div style="position:absolute;width:320px;height:320px;border-radius:50%;border:2px solid rgba(255,255,255,.06);bottom:0;right:0;"></div>
+                    <div style="position:absolute;width:240px;height:240px;border-radius:50%;border:2px solid rgba(255,255,255,.03);bottom:20px;right:40px;"></div>
+                    <div style="position:absolute;width:160px;height:160px;border-radius:50%;border:2px solid rgba(255,255,255,.02);bottom:40px;right:80px;"></div>
+                </div>
+                <div style="position:relative;z-index:1;font-size:12px;color:#475569;font-weight:500;">(c) 2026</div>
             </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-        tab1, tab2 = st.tabs(["🔐 登录", "📝 注册"])
+        # ━━━ 右侧表单区 ━━━
+        with form:
+            st.markdown("<div style='padding:48px 44px;min-height:560px;display:flex;flex-direction:column;'>", unsafe_allow_html=True)
 
-        # ── 表单外显示注册结果 ──
-        if st.session_state.get("reg_ok"):
-            st.success(f"✅ {st.session_state.reg_ok}")
-            st.balloons()
-            st.info("💡 已自动填入账号，请切换到「登录」页点击进入系统")
-            st.session_state.reg_ok = ""
-        if st.session_state.get("reg_err"):
-            st.error(st.session_state.reg_err)
-            st.session_state.reg_err = ""
+            # 欢迎文字
+            if st.session_state.login_tab == "login":
+                st.markdown('<p style="font-size:22px;font-weight:600;color:#0F172A;margin:0;">欢迎回来</p>', unsafe_allow_html=True)
+                st.markdown('<p style="font-size:14px;color:#94A3B8;margin:4px 0 24px 0;">登录您的账户以继续</p>', unsafe_allow_html=True)
+            else:
+                st.markdown('<p style="font-size:22px;font-weight:600;color:#0F172A;margin:0;">创建账户</p>', unsafe_allow_html=True)
+                st.markdown('<p style="font-size:14px;color:#94A3B8;margin:4px 0 24px 0;">加入智能投资分析平台</p>', unsafe_allow_html=True)
 
-        with tab1:
-            with st.form("login"):
-                u_val = st.session_state.get("reg_username", "")
-                u = st.text_input("", value=u_val, placeholder="👤 用户名", label_visibility="collapsed")
-                p = st.text_input("", type="password", placeholder="🔑 密码", label_visibility="collapsed")
-                if st.form_submit_button("⚡ 进入系统", type="primary", use_container_width=True):
-                    if not u or not p:
-                        st.error("请填写用户名和密码")
-                    else:
-                        ok, role = auth_user(u, p)
-                        if ok:
-                            st.session_state.logged_in = True
-                            st.session_state.username = u
-                            st.session_state.role = role
-                            st.session_state.reg_username = ""
-                            st.rerun()
+            # Tab 切换
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("登录", key="lt",
+                             type="primary" if st.session_state.login_tab == "login" else "secondary",
+                             use_container_width=True):
+                    st.session_state.login_tab = "login"; st.rerun()
+            with c2:
+                if st.button("注册", key="rt",
+                             type="primary" if st.session_state.login_tab == "register" else "secondary",
+                             use_container_width=True):
+                    st.session_state.login_tab = "register"; st.rerun()
+
+            # 消息区
+            if st.session_state.get("reg_ok"):
+                st.markdown(f'<p style="color:#10B981;font-size:13px;margin:12px 0 0 0;">{st.session_state.reg_ok}</p>', unsafe_allow_html=True)
+                st.balloons()
+                st.session_state.reg_ok = ""
+            if st.session_state.get("reg_err"):
+                st.markdown(f'<p style="color:#EF4444;font-size:13px;margin:12px 0 0 0;">{st.session_state.reg_err}</p>', unsafe_allow_html=True)
+                st.session_state.reg_err = ""
+
+            # ── 登录表单 ──
+            if st.session_state.login_tab == "login":
+                with st.form("login_form", clear_on_submit=False):
+                    v = st.session_state.get("reg_username", "")
+                    st.text_input("用户名", value=v, placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
+                    st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
+                    ck1, ck2 = st.columns([1, 1])
+                    with ck1: st.checkbox("记住我")
+                    with ck2: st.markdown('<p style="text-align:right;font-size:13px;color:#3B82F6;cursor:pointer;margin-top:10px;">忘记密码？</p>', unsafe_allow_html=True)
+                    if st.form_submit_button("登录", type="primary", use_container_width=True):
+                        u = st.session_state.get("login_u", "")
+                        p = st.session_state.get("login_p", "")
+                        if not u or not p:
+                            st.session_state.reg_err = "请填写用户名和密码"
                         else:
-                            st.error("用户名或密码错误")
-
-        with tab2:
-            with st.form("register"):
-                st.markdown("<p style='color:rgba(255,255,255,.4);font-size:.8rem;margin:0 0 8px 0'>创建新账户后即可开始模拟交易</p>", unsafe_allow_html=True)
-                u2 = st.text_input(" ", placeholder="👤 用户名（至少3位）", label_visibility="collapsed", key="ru")
-                p2 = st.text_input("  ", type="password", placeholder="🔑 密码（至少4位）", label_visibility="collapsed", key="rp")
-                p3 = st.text_input("   ", type="password", placeholder="🔑 确认密码", label_visibility="collapsed", key="rp2")
-                if st.form_submit_button("📝 注册", type="primary", use_container_width=True):
-                    if not u2 or not p2:
-                        st.session_state.reg_err = "请填写完整"
-                    elif len(u2) < 3:
-                        st.session_state.reg_err = "用户名至少3位"
-                    elif len(p2) < 4:
-                        st.session_state.reg_err = "密码至少4位"
-                    elif p2 != p3:
-                        st.session_state.reg_err = "两次密码不一致"
-                    else:
-                        ok, m = register_user(u2, p2)
-                        if ok:
-                            st.session_state.reg_ok = m
-                            st.session_state.reg_username = u2
-                        else:
-                            st.session_state.reg_err = m
-                    if st.session_state.get("reg_ok") or st.session_state.get("reg_err"):
+                            ok, role = auth_user(u, p)
+                            if ok:
+                                st.session_state.logged_in = True
+                                st.session_state.username = u
+                                st.session_state.role = role
+                                st.session_state.reg_username = ""
+                                st.rerun()
+                            else:
+                                st.session_state.reg_err = "用户名或密码错误"
                         st.rerun()
 
-        st.markdown("""
-            <div class="ai-footer">AI Trading System v2.0 · Powered by Intelligent Algorithms</div>
-        </div>
-        """, unsafe_allow_html=True)
+            # ── 注册表单 ──
+            else:
+                with st.form("register_form", clear_on_submit=False):
+                    st.text_input("用户名", placeholder="用户名（至少3位）", label_visibility="collapsed", key="reg_u")
+                    st.text_input("密码", type="password", placeholder="密码（至少4位）", label_visibility="collapsed", key="reg_p")
+                    st.text_input("确认密码", type="password", placeholder="再次输入密码", label_visibility="collapsed", key="reg_p2")
+                    if st.form_submit_button("注册", type="primary", use_container_width=True):
+                        u2 = st.session_state.get("reg_u", "")
+                        p2 = st.session_state.get("reg_p", "")
+                        p3 = st.session_state.get("reg_p2", "")
+                        if not u2 or not p2:
+                            st.session_state.reg_err = "请填写完整"
+                        elif len(u2) < 3:
+                            st.session_state.reg_err = "用户名至少3位"
+                        elif len(p2) < 4:
+                            st.session_state.reg_err = "密码至少4位"
+                        elif p2 != p3:
+                            st.session_state.reg_err = "两次密码不一致"
+                        else:
+                            ok, m = register_user(u2, p2)
+                            if ok:
+                                st.session_state.reg_ok = "注册成功，请登录"
+                                st.session_state.login_tab = "login"
+                                st.session_state.reg_username = u2
+                            else:
+                                st.session_state.reg_err = m
+                        st.rerun()
+
+            # 分割线 + 访客
+            st.markdown("""
+            <div style="display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:#94A3B8;font-size:12px;">
+                <div style="flex:1;height:1px;background:#E2E8F0;"></div>
+                或
+                <div style="flex:1;height:1px;background:#E2E8F0;"></div>
+            </div>
+            <div style="text-align:center;font-size:14px;color:#3B82F6;border:1.5px solid #E2E8F0;border-radius:10px;height:44px;line-height:44px;cursor:pointer;">继续以访客身份浏览</div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # 卡片阴影
+    st.markdown("""
+    <style>
+        .stHorizontalBlock { gap:0 !important; }
+        .stApp > div:first-child > div > div > div > div[data-testid="stHorizontalBlock"] { gap:0 !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 def page_overview():
     render_header()
