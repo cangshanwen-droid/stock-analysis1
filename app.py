@@ -1423,7 +1423,10 @@ def page_admin_user_mgmt():
             elif len(apwd) < 4: st.warning("密码至少4位")
             else:
                 ok, msg = register_user(aname, apwd, role="admin")
-                st.success(msg) if ok else st.error(msg)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
                 if ok: st.rerun()
 
     st.divider()
