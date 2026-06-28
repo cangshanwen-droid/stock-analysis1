@@ -867,7 +867,7 @@ def page_kline():
     if df_k.empty: return
 
     colors = ["#ef4444" if r["close_price"] < r["open_price"] else "#22c55e" for _, r in df_k.iterrows()]
-    vol_colors = ["#ef444466" if r["close_price"] < r["open_price"] else "#22c55e66" for _, r in df_k.iterrows()]
+    vol_colors = ["rgba(239,68,68,0.4)" if r["close_price"] < r["open_price"] else "rgba(34,197,94,0.4)" for _, r in df_k.iterrows()]
 
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=.02, row_heights=[.7, .3],
@@ -877,8 +877,7 @@ def page_kline():
     fig.add_trace(go.Candlestick(
         x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
         low=df_k["low_price"], close=df_k["close_price"],
-        increasing=dict(line=dict(color="#22c55e", width=1), fillcolor="#22c55e"),
-        decreasing=dict(line=dict(color="#ef4444", width=1), fillcolor="#ef4444"),
+        increasing_line_color="#22c55e", decreasing_line_color="#ef4444",
         name="", showlegend=False,
     ), row=1, col=1)
 
