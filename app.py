@@ -876,16 +876,16 @@ def page_admin_settle():
     if not stocks: st.info("无股票"); return
 
     # 一键操作（带确认）
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        confirm_close = st.checkbox("确认一键闭市", key="confirm_close")
+        confirm_close = st.checkbox("确认", key="cf_close")
         if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
             for s in stocks:
                 conn = get_db(); r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
                 if r: settle_round(s["symbol"])
             st.success("全部已闭市"); st.rerun()
     with c2:
-        confirm_open = st.checkbox("确认一键开市", key="confirm_open")
+        confirm_open = st.checkbox("确认", key="cf_open")
         if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
             conn = get_db()
             for s in stocks:
@@ -896,7 +896,7 @@ def page_admin_settle():
             conn.commit(); conn.close()
             st.success("全部已开市"); st.rerun()
     with c3:
-        confirm_undo = st.checkbox("确认撤销上一轮", key="confirm_undo")
+        confirm_undo = st.checkbox("确认", key="cf_undo")
         if st.button("撤销上一轮", use_container_width=True, key="undo_all", disabled=not confirm_undo):
             conn = get_db()
             for s in stocks:
@@ -904,12 +904,24 @@ def page_admin_settle():
                 if max_r and max_r > 1:
                     conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
                     conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
-                    prev_r = max_r - 1
-                    prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_r)).fetchone()
+                    prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r-1)).fetchone()
                     prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
                     conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
             conn.commit(); conn.close()
             st.success("已撤销上一轮"); st.rerun()
+    with c4:
+        confirm_r1 = st.checkbox("确认", key="cf_r1")
+        if st.button("回到第一轮", type="secondary", use_container_width=True, key="reset_all", disabled=not confirm_r1):
+            conn = get_db()
+            for s in stocks:
+                first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
+                init_p = first_k["open_price"] if first_k else s["current_price"]
+                conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+                conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
+                conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_p, init_p, s["symbol"]))
+                conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
+            conn.commit(); conn.close()
+            st.success("全部已回到第一轮"); st.rerun()
     st.divider()
 
     for s in stocks:
@@ -957,9 +969,12 @@ def page_admin_settle():
                             conn = get_db()
                             first_k = conn.execute("SELECT open_price FROM kline WHERE stock_symbol=? ORDER BY round LIMIT 1", (s["symbol"],)).fetchone()
                             init_price = first_k["open_price"] if first_k else s["current_price"]
+                            conn.execute("DELETE FROM kline WHERE stock_symbol=?", (s["symbol"],))
+                            conn.execute("DELETE FROM rounds WHERE stock_symbol=?", (s["symbol"],))
                             conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_price, init_price, s["symbol"]))
+                            conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (s["symbol"],))
                             conn.commit(); conn.close()
-                            st.success(f"{s['name']} 价格已重置到 {fmt_money(init_price)}"); st.rerun()
+                            st.success(f"{s['name']} 回到第1轮 {fmt_money(init_price)}"); st.rerun()
         st.divider()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
