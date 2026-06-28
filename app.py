@@ -1358,6 +1358,19 @@ def page_admin_user_mgmt():
             delete_user(target3)
             st.success(f"{target3} 已删除"); st.rerun()
 
+    st.divider()
+    st.markdown("**批量创建选手**")
+    BATCH_USERS = [
+        "陈思成", "陈佳欣", "陈泽方", "陈彦霓", "陈钰珊", "周泽辉",
+        "冼芷如", "冼芷均", "覃炽华", "覃炜婷", "赵紫涵", "康泰铭",
+    ]
+    if st.button(f"批量创建 {len(BATCH_USERS)} 个选手（密码 123456）", use_container_width=True):
+        created = 0
+        for u in BATCH_USERS:
+            ok, _ = register_user(u, "123456")
+            if ok: created += 1
+        st.success(f"成功创建 {created} 人"); st.rerun()
+
     logs = get_audit_logs()
     if logs:
         st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
