@@ -16,8 +16,16 @@ import psycopg2.extras
 DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
 
 def get_db():
-    """兼容 sqlite3 API 的 PostgreSQL 连接"""
-    conn = psycopg2.connect(DB_URL)
+    """兼容 sqlite3 API 的 Supabase PostgreSQL 连接"""
+    conn = psycopg2.connect(
+        host="db.lurvltdqdwhiijopjfyd.supabase.co",
+        port=6543,
+        user="postgres",
+        password="tIjekchigXqFbhFq",
+        dbname="postgres",
+        sslmode="require",
+        connect_timeout=10,
+    )
     orig = conn.cursor
     def pg_cursor():
         return orig(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -796,7 +804,11 @@ def page_overview():
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
             yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
-        )
+    )
+    orig = conn.cursor
+    def pg_cursor():
+        return orig(cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.cursor = pg_cursor
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_portfolio():
