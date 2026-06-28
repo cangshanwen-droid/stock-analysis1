@@ -34,7 +34,10 @@ def init_db():
     # 迁移：添加用户状态列
     try: cur.execute("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'")
     except: pass
+    try: cur.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 1000000")
+    except: pass
     cur.execute("UPDATE users SET status='active' WHERE status IS NULL")
+    cur.execute("UPDATE users SET balance=1000000 WHERE balance IS NULL OR balance=0")
     if cur.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0: _seed(conn)
     for s in cur.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall():
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (s["symbol"],))
@@ -42,9 +45,9 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime(),'active')", (hash_pwd("admin123"),))
+    cur.execute("INSERT INTO users VALUES(1,'admin',?,'admin',datetime(),'active',1000000)", (hash_pwd("admin123"),))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime(),'active')", (i, u, hash_pwd(u)))
+        cur.execute("INSERT INTO users VALUES(?,?,?,'player',datetime(),'active',1000000)", (i, u, hash_pwd(u)))
     for sym, name, price, funds in [("TSLA", "特斯拉", 250.0, 5000), ("AAPL", "苹果", 175.0, 3500), ("NVDA", "英伟达", 450.0, 9000)]:
         cur.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds) VALUES(?,?,?,?,?)", (sym, name, price, price, funds))
         cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym,))
@@ -118,7 +121,7 @@ def toggle_user(username):
 def register_user(u, p, role="player"):
     conn = get_db()
     try:
-        conn.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", (u, hash_pwd(p), role))
+        conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, hash_pwd(p), role))
         conn.commit(); return True, "注册成功"
     except sqlite3.IntegrityError: return False, "用户名已存在"
     finally: conn.close()
@@ -157,10 +160,23 @@ def delete_stock(sid):
 
 def add_trade(username, symbol, tt, price, shares):
     conn = get_db()
+    cost = price * shares
+    # 买入时检查余额
+    if tt == "buy":
+        bal = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
+        if not bal or bal["balance"] < cost: conn.close(); return False, "余额不足"
+        conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+    else:
+        conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
     r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 1
     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
     conn.commit(); conn.close()
+    return True, "交易成功"
+
+def get_user_balance(username):
+    conn = get_db(); r = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone(); conn.close()
+    return r["balance"] if r else 0
 
 def get_user_portfolio(username):
     conn = get_db()
@@ -384,6 +400,7 @@ SIDEBAR_CSS = """
     .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; }
     .sb-user .urole { font-size: 11px; color: #8899aa; margin-top: 2px; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #2D6AFF; margin-right: 6px; }
+    .sb-user .bal { font-size: 12px; color: #8899aa; margin-top: 4px; }
     .menu-group-label { font-size: 9px; font-weight: 700; color: #778899; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important; align-items: center !important; padding: 10px 16px !important;
@@ -533,13 +550,14 @@ def page_overview():
         <span class="topbar-right"><span>{st.session_state.username}</span><span>更新 {datetime.now().strftime('%H:%M')}</span></span>
     </div>""", unsafe_allow_html=True)
 
+    bal = get_user_balance(st.session_state.username)
     st.markdown(f"""
     <div class="kpi-grid">
-        {kpi_card("总资产", fmt_money(data["total_assets"]))}
+        {kpi_card("总资产", fmt_money(data["total_assets"] + bal))}
+        {kpi_card("可用余额", fmt_money(bal))}
         {kpi_card("今日盈亏", fmt_money(data["total_pnl"]),
         fmt_pct(data["pnl_ratio"]), data["total_pnl"] >= 0)}
-        {kpi_card("收益率", fmt_pct(data["pnl_ratio"]), None, data["pnl_ratio"] >= 0)}
-        {kpi_card("持仓数", fmt_num(data["stock_count"]))}
+        {kpi_card("收益率", fmt_pct(data["pnl_ratio"]))}
     </div>""", unsafe_allow_html=True)
 
     if data["stock_pnl"]:
@@ -636,8 +654,9 @@ def page_trade_hall():
             shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
         if st.form_submit_button("确认交易", type="primary", use_container_width=True):
             tt = "buy" if direction == "买入" else "sell"
-            add_trade(st.session_state.username, s["symbol"], tt, price, shares)
-            st.success("交易成功")
+            ok, msg = add_trade(st.session_state.username, s["symbol"], tt, price, shares)
+            if ok: st.success(msg)
+            else: st.error(msg)
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -873,9 +892,10 @@ def main():
     if not st.session_state.logged_in: page_login(); return
     with st.sidebar:
         role_text = "管理员" if st.session_state.role == "admin" else "选手"
+        bal = get_user_balance(st.session_state.username)
         st.markdown(f"""
         <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
-        <div class="sb-user"><div class="uname">{st.session_state.username}</div><div class="urole"><span class="dot"></span>{role_text}</div></div>
+        <div class="sb-user"><div class="uname">{st.session_state.username}</div><div class="urole"><span class="dot"></span>{role_text} | {fmt_money(bal)}</div></div>
         """, unsafe_allow_html=True)
         nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
