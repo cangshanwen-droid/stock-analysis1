@@ -921,6 +921,8 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
+div[data-testid="stVerticalBlock"] { gap: 4px !important; }
+.row-widget.stRadio { padding: 0 !important; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #2a3a4e; }
@@ -1044,7 +1046,6 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] {
         background: #0a0f1a !important;
         border-right: 1px solid #1a2332 !important;
-        width: 240px !important;
     }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
@@ -1053,72 +1054,49 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
 
-    .sb-brand { padding: 20px 20px 14px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 24px !important; font-weight: 800 !important; color: #f1f5f9 !important; margin: 0 !important; letter-spacing: 2px !important; }
+    .sb-brand { padding: 18px 20px 12px 20px; border-bottom: 1px solid #1a2332; }
+    .sb-brand .name p { font-size: 22px !important; font-weight: 800 !important; color: #f1f5f9 !important; margin: 0 !important; letter-spacing: 2px !important; }
     .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
-    .sb-user { padding: 10px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
-    .sb-user .urole p { font-size: 12px !important; color: #475569 !important; margin: 0 !important; }
+    .sb-user { padding: 8px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
+    .sb-user .uname p { font-size: 13px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
+    .sb-user .urole p { font-size: 11px !important; color: #475569 !important; margin: 0 !important; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #089981; margin-right: 4px; vertical-align: middle; }
-    .menu-group-label { padding: 14px 20px 4px 20px; }
-    .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
+    .menu-group-label { padding: 12px 20px 2px 20px; }
+    .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    /* === 导航菜单 — 完全隐藏 radio 圆点 === */
     section[data-testid="stSidebar"] div[role="radiogroup"] {
-        padding: 4px 10px !important; border: none !important; background: transparent !important;
+        padding: 2px 8px !important; gap: 0 !important; border: none !important; background: transparent !important;
     }
-    /* 隐藏 input radio 圆点 */
     section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
         appearance: none !important; -webkit-appearance: none !important;
-        width: 0 !important; height: 0 !important;
-        position: absolute !important; opacity: 0 !important;
-        margin: 0 !important; padding: 0 !important;
+        width: 0 !important; height: 0 !important; position: absolute !important;
+        opacity: 0 !important; margin: 0 !important; padding: 0 !important; pointer-events: none !important;
     }
-    /* label = 菜单项 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important;
-        align-items: center !important;
-        padding: 10px 14px !important;
-        margin: 2px 0 !important;
-        border-radius: 6px !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
-        color: #64748b !important;
-        background: transparent !important;
-        border: none !important;
-        cursor: pointer !important;
-        transition: all .08s ease !important;
-        position: relative !important;
-        gap: 0 !important;
-        min-height: 0 !important;
-        line-height: 1.4 !important;
+        display: flex !important; align-items: center !important;
+        padding: 8px 12px !important; margin: 0 0 2px 0 !important;
+        border-radius: 6px !important; font-size: 14px !important;
+        font-weight: 500 !important; color: #64748b !important;
+        background: transparent !important; border: none !important;
+        cursor: pointer !important; position: relative !important;
+        gap: 0 !important; min-height: 0 !important; line-height: 1.3 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.04) !important;
-        color: #94a3b8 !important;
+        background: rgba(255,255,255,.04) !important; color: #94a3b8 !important;
     }
-    /* 选中项 — 红色底+白字+左边框 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
-        background: rgba(242,54,69,.08) !important;
-        color: #f23645 !important;
-        font-weight: 600 !important;
+        background: rgba(242,54,69,.08) !important; color: #f23645 !important; font-weight: 600 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
-        content: '' !important;
-        position: absolute !important;
-        left: -1px !important;
-        top: 8px !important; bottom: 8px !important;
-        width: 3px !important;
-        background: #f23645 !important;
+        content: '' !important; position: absolute !important;
+        left: -1px !important; top: 6px !important; bottom: 6px !important;
+        width: 3px !important; background: #f23645 !important;
         border-radius: 0 2px 2px 0 !important;
         pointer-events: none !important;
     }
-    /* 菜单项中的文字 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important; font-size: 14px !important; color: inherit !important;
     }
-
-    /* 退出按钮 */
     section[data-testid="stSidebar"] button:last-of-type {
         margin: 4px 12px !important; width: calc(100% - 24px) !important;
     }
