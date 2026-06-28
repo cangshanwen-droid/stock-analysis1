@@ -537,7 +537,12 @@ def page_overview():
     # 顶栏：品牌左 / 用户名+更新时间右
     c1, c2 = st.columns([7, 2])
     with c1: st.markdown('<span style="font-size:24px;font-weight:700;color:#111827;">双镜</span>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{st.session_state.username} | 更新 {datetime.now().strftime("%H:%M")}</p>', unsafe_allow_html=True)
+    with c2: st.markdown(f'<p style="text-align:right;color:#666;font-size:14px;">{st.session_state.username} | <span id="live-clock">{datetime.now().strftime("%H:%M:%S")}</span></p>', unsafe_allow_html=True)
+    st.markdown("""
+    <script>
+        setInterval(function(){var d=new Date();var e=document.getElementById('live-clock');if(e)e.textContent=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');},1000);
+    </script>
+    """, unsafe_allow_html=True)
 
     # 4 KPI卡片
     c1, c2, c3, c4 = st.columns(4)
@@ -857,23 +862,32 @@ def page_admin_user_mgmt():
 
 def page_admin_settle():
     st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{st.session_state.username}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#1A1A2E;margin-bottom:12px">交易管理</div>""", unsafe_allow_html=True)
+    st.markdown("""<div style="font-size:20px;font-weight:500;color:#111827;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
+    st.caption("结算当前轮次 → 撮合买卖订单 → 生成K线 → 开启新一轮交易")
     stocks = get_stocks()
-    if not stocks: st.info("无"); return
+    if not stocks: st.info("无股票"); return
     for s in stocks:
         conn = get_db(); r = conn.execute("SELECT MAX(round),is_settled FROM rounds WHERE stock_symbol=?", (s["symbol"],)).fetchone(); conn.close()
         cr = r[0] if r and r[0] else 1; settled = r[1] if r else 1
         conn = get_db(); txns = conn.execute("SELECT COUNT(*) cnt, SUM(shares) vol FROM transactions WHERE stock_symbol=? AND round=?", (s["symbol"], cr)).fetchone(); conn.close()
-        st.markdown(f"""
-        <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;border:1px solid #E8E8F0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:120px;"><div style="font-size:14px;font-weight:600;color:#1A1A2E;">{s['name']}</div><div style="font-size:11px;color:#8A8AAA;">{s['symbol']} | {fmt_money(s['current_price'])} | 第{cr}轮</div></div>
-            <div style="font-size:12px;color:#4A4A6A;">委托 {txns['cnt'] or 0}笔 / {txns['vol'] or 0}股</div>
-            <div style="font-size:12px;color:{"#00C853" if settled else "#8A8AAA"};">{"已结算" if settled else "待结算"}</div>
-        </div>""", unsafe_allow_html=True)
-        if not settled and st.button("结算此轮", key=f"settle_{s['id']}", type="primary"):
-            np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
-            st.success(f"结算完成 | 新价格: {fmt_money(np_)} | 溢价因子: {pf} | 碳因子: {cf}" + (f" | 撮合价: {fmt_money(mp)}" if matched else " | 未撮合"))
-            st.rerun()
+        status = "交易中" if not settled else "已闭市"
+        status_color = "#16a34a" if not settled else "#8b949e"
+        with st.container():
+            c1, c2, c3, c4 = st.columns([2.5, 1, 1, 1.5])
+            with c1:
+                st.markdown(f"**{s['name']}** ({s['symbol']}) · {fmt_money(s['current_price'])} · 第{cr}轮", unsafe_allow_html=True)
+            with c2:
+                st.metric("委托笔数", txns["cnt"] or 0)
+            with c3:
+                st.metric("委托量", f"{txns['vol'] or 0}股")
+            with c4:
+                st.markdown(f"<span style='color:{status_color};font-weight:600;'>{status}</span>", unsafe_allow_html=True)
+                if not settled:
+                    if st.button("闭市结算", key=f"settle_{s['id']}", type="primary"):
+                        np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
+                        st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)} | 溢价因子 {pf} | 碳因子 {cf}" + (f" | 撮合 {fmt_money(mp)}" if matched else ""))
+                        st.rerun()
+        st.divider()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 导航 + main
@@ -881,12 +895,12 @@ def page_admin_settle():
 NAV = {
     "总览": page_overview, "交易大厅": page_trade_hall,
     "我的持仓": page_portfolio, "我的做市": page_market_making,
-    "K线展板": page_kline, "交易管理": page_admin_settle,
+    "K线展板": page_kline,     "市场控制": page_admin_settle,
     "股票汇总": page_admin_stock_summary,
     "股票管理": page_admin_stock_mgmt, "用户管理": page_admin_user_mgmt,
 }
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
-ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "交易管理", "股票汇总", "股票管理", "用户管理"]
+ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "市场控制", "股票汇总", "股票管理", "用户管理"]
 
 st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
