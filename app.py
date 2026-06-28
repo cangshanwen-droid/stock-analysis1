@@ -393,26 +393,25 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
     .sb-brand .name { font-size: 20px; font-weight: 700; color: #fff; letter-spacing: 2px; }
-    .sb-brand .sub { font-size: 10px; color: #64748B; letter-spacing: 2px; margin-top: 2px; }
-    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-brand .sub { font-size: 10px; color: #667788; letter-spacing: 2px; margin-top: 2px; }
+    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
     .sb-user .uname { font-size: 14px; font-weight: 700; color: #fff; }
-    .sb-user .urole { font-size: 11px; color: #8899aa; margin-top: 2px; }
+    .sb-user .urole { font-size: 11px; color: #aab8c4; margin-top: 2px; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #2D6AFF; margin-right: 6px; }
-    .sb-user .bal { font-size: 12px; color: #8899aa; margin-top: 4px; }
-    .menu-group-label { font-size: 9px; font-weight: 700; color: #778899; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
+    .menu-group-label { font-size: 9px; font-weight: 700; color: #8899aa; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
         display: flex !important; align-items: center !important; padding: 10px 16px !important;
-        margin: 1px 8px !important; border-radius: 8px !important; color: #c0c8d4 !important;
+        margin: 1px 8px !important; border-radius: 8px !important; color: #d8dfe6 !important;
         font-size: 13px !important; font-weight: 500 !important; transition: all .15s !important;
         min-height: auto !important; position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.08) !important; color: #fff !important;
+        background: rgba(255,255,255,.08) !important; color: #ffffff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: rgba(45,106,255,.18) !important; color: #6db3ff !important;
+        background: rgba(45,106,255,.18) !important; color: #ffffff !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
@@ -675,7 +674,6 @@ def page_trade_hall():
     c2.metric("溢价率", f"{fs['premium_rate']:.0f}%", delta=f"因子 {prem_f}")
     c3.metric("碳价", f"{fs['carbon_price']:.0f}", delta=f"均值 {cm:.0f}")
     c4.metric("碳因子", f"{carb_f}")
-    st.caption(f"公式: 理论价 = {fmt_money(prev)} x 买/卖 x {prem_f} x {carb_f} (涨跌停 {fmt_money(prev*0.9)} ~ {fmt_money(prev*1.1)})")
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 移动端底部交易栏 + 持仓列表
