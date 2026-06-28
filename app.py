@@ -480,8 +480,8 @@ html, body, [class*="css"] {
     --text:     #111827;
     --text-2nd: #666;
     --primary:  #2D6AFF;
-    --green:    #ef4444;
-    --red:      #16a34a;
+    --green:    #16a34a;
+    --red:      #ef4444;
     --border:   #e5e7eb;
 }
 
@@ -753,11 +753,10 @@ def fmt_pct(v, s=True):
 def fmt_num(v):     return f"{v:,}"
 
 GREEN = "#16a34a"; RED = "#ef4444"
-PNL_UP = RED; PNL_DN = GREEN  # 利润红涨绿跌
 K_UP   = "#ef5350"; K_DN = "#26a69a"  # K线红涨绿跌
 
 def pnl_class(v): return "up" if v >= 0 else "down"
-def pnl_color(v): return PNL_UP if v >= 0 else PNL_DN
+def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 盈亏红涨绿跌
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 页面：总览
