@@ -79,6 +79,7 @@ def settle_round(symbol):
     stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
     r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
     cr = r[0] if r and r[0] else 0
+    if cr == 0: conn.close(); return None, False, 0, 0, 0, 0, 0
     txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
     buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
     sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
@@ -879,10 +880,13 @@ def page_admin_settle():
     with c1:
         confirm_close = st.checkbox("确认", key="cf_close")
         if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
+            settled_count = 0
             for s in stocks:
-                conn = get_db(); r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
-                if r: settle_round(s["symbol"])
-            st.success("全部已闭市"); st.rerun()
+                try:
+                    settle_round(s["symbol"])
+                    settled_count += 1
+                except: pass
+            st.success(f"已闭市 {settled_count}/{len(stocks)} 只股票"); st.rerun()
     with c2:
         confirm_open = st.checkbox("确认", key="cf_open")
         if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
