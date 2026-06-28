@@ -19,13 +19,7 @@ def get_db():
     """连接数据库，优先 Supabase，失败则回退 SQLite"""
     try:
         conn = psycopg2.connect(
-            host="db.lurvltdqdwhiijopjfyd.supabase.co",
-            port=6543,
-            user="postgres",
-            password="tIjekchigXqFbhFq",
-            dbname="postgres",
-            sslmode="require",
-            connect_timeout=10,
+            "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres?sslmode=require&connect_timeout=10"
         )
     except Exception:
         import sqlite3
