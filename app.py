@@ -16,16 +16,25 @@ import psycopg2.extras
 DB_URL = "postgresql://postgres:tIjekchigXqFbhFq@db.lurvltdqdwhiijopjfyd.supabase.co:6543/postgres"
 
 def get_db():
-    """兼容 sqlite3 API 的 Supabase PostgreSQL 连接"""
-    conn = psycopg2.connect(
-        host="db.lurvltdqdwhiijopjfyd.supabase.co",
-        port=6543,
-        user="postgres",
-        password="tIjekchigXqFbhFq",
-        dbname="postgres",
-        sslmode="require",
-        connect_timeout=10,
-    )
+    """连接数据库，优先 Supabase，失败则回退 SQLite"""
+    try:
+        conn = psycopg2.connect(
+            host="db.lurvltdqdwhiijopjfyd.supabase.co",
+            port=6543,
+            user="postgres",
+            password="tIjekchigXqFbhFq",
+            dbname="postgres",
+            sslmode="require",
+            connect_timeout=10,
+        )
+    except Exception:
+        import sqlite3
+        DB_PATH = os.path.join(tempfile.gettempdir(), "stock_analysis.db")
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.is_sqlite = True
+        return conn
     orig = conn.cursor
     def pg_cursor():
         return orig(cursor_factory=psycopg2.extras.RealDictCursor)
