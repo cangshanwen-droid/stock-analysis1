@@ -1393,96 +1393,85 @@ def page_public_dashboard():
 def page_login():
     st.markdown("""
     <style>
-        .stApp { background: linear-gradient(160deg, #060b1a, #0c1630) !important; }
+        .stApp {
+            background: linear-gradient(135deg, #060b1a 0%, #0d1a3a 50%, #060b1a 100%) !important;
+            position: relative;
+        }
+        .stApp::before {
+            content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                radial-gradient(ellipse at 20% 50%, rgba(212,168,83,.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(37,99,235,.04) 0%, transparent 50%);
+            pointer-events: none; z-index: 0;
+        }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
+        section.main > div.block-container { padding: 0 !important; max-width: 100% !important; }
 
-        /* === 输入框 — 高强度覆盖 === */
-        section[data-testid="stForm"] input,
-        div[data-testid="stTextInput"] input,
         input[type="text"], input[type="password"],
-        div[data-baseweb="input"] input,
-        div[data-baseweb="input"] input:placeholder-shown,
-        .stTextInput input {
-            background: rgba(15,25,50,.9) !important;
-            border: 1.5px solid rgba(6,182,212,.35) !important;
-            color: #ffffff !important;
-            caret-color: #06b6d4 !important;
+        div[data-testid="stTextInput"] input,
+        div[data-baseweb="input"] input {
+            background: rgba(10,18,40,.8) !important;
+            border: 1px solid rgba(255,255,255,.08) !important;
+            color: #e8edf5 !important;
             border-radius: 10px !important;
-            padding: 14px 16px !important;
-            font-size: 16px !important;
-            font-weight: 500 !important;
-            letter-spacing: .5px !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,.2) !important;
+            padding: 16px 18px !important;
+            font-size: 15px !important;
+            transition: all .25s ease !important;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,.2) !important;
         }
-        input::placeholder, div[data-baseweb="input"] input::placeholder {
-            color: rgba(255,255,255,.35) !important;
-            font-weight: 400 !important;
+        input::placeholder { color: rgba(255,255,255,.2) !important; }
+        input:focus {
+            border-color: rgba(212,168,83,.3) !important;
+            background: rgba(15,28,55,.95) !important;
+            box-shadow: 0 0 30px rgba(212,168,83,.06), inset 0 2px 4px rgba(0,0,0,.3) !important;
         }
-        section[data-testid="stForm"] input:focus,
-        div[data-testid="stTextInput"] input:focus,
-        input[type="text"]:focus, input[type="password"]:focus {
-            border-color: #06b6d4 !important;
-            box-shadow: 0 0 24px rgba(6,182,212,.2), inset 0 0 24px rgba(6,182,212,.05) !important;
-            background: rgba(20,35,70,.95) !important;
-        }
-        /* 密码输入特殊处理 */
-        input[type="password"] {
-            font-size: 20px !important;
-            letter-spacing: 4px !important;
-        }
-        /* 输入框容器背景 */
-        div[data-testid="stTextInput"] > div, .stTextInput > div {
-            background: transparent !important;
-        }
+        div[data-testid="stTextInput"] > div { background: transparent !important; }
 
         div[data-testid="stButton"] button {
-            border-radius: 10px !important;
-            padding: 14px !important;
-            font-size: 16px !important;
-            font-weight: 600 !important;
-            transition: all .2s !important;
+            border-radius: 10px !important; padding: 14px !important;
+            font-size: 15px !important; font-weight: 600 !important;
+            transition: all .25s !important; letter-spacing: 1px !important;
         }
         div[data-testid="stButton"] button[kind="primary"] {
-            background: linear-gradient(135deg, #2563eb, #06b6d4) !important;
-            border: none !important;
-            color: #fff !important;
-            box-shadow: 0 4px 20px rgba(6,182,212,.3) !important;
+            background: linear-gradient(135deg, #d4a853, #f0e6d3) !important;
+            color: #0a0e1a !important; border: none !important;
+            box-shadow: 0 4px 20px rgba(212,168,83,.25) !important;
         }
         div[data-testid="stButton"] button[kind="primary"]:hover {
             transform: translateY(-1px);
-            box-shadow: 0 6px 28px rgba(6,182,212,.4) !important;
+            box-shadow: 0 6px 28px rgba(212,168,83,.35) !important;
         }
         div[data-testid="stButton"] button[kind="secondary"] {
             background: transparent !important;
-            border: 1px solid rgba(255,255,255,.15) !important;
-            color: rgba(255,255,255,.5) !important;
+            border: 1px solid rgba(255,255,255,.08) !important;
+            color: rgba(255,255,255,.35) !important;
         }
         div[data-testid="stButton"] button[kind="secondary"]:hover {
-            border-color: rgba(255,255,255,.3) !important;
-            color: rgba(255,255,255,.8) !important;
+            border-color: rgba(255,255,255,.2) !important;
+            color: rgba(255,255,255,.6) !important;
         }
-        section.main > div.block-container { padding: 0 !important; }
-        .stAlert { background: rgba(255,255,255,.05) !important; border: 1px solid rgba(255,255,255,.1) !important; color: #e2e8f0 !important; }
+        .stAlert {
+            background: rgba(255,255,255,.03) !important;
+            border: 1px solid rgba(255,255,255,.06) !important;
+            color: rgba(255,255,255,.6) !important;
+            border-radius: 8px !important; font-size: 13px !important;
+        }
     </style>""", unsafe_allow_html=True)
 
-    # 初始化 tab
-    if "login_tab" not in st.session_state:
-        st.session_state.login_tab = "login"
-
-    left, center, right = st.columns([1, 4, 1])
+    left, center, right = st.columns([1, 3, 1])
     with center:
-        st.markdown("<div style='height:6vh'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:10vh'></div>", unsafe_allow_html=True)
 
-        # 品牌头部
         st.markdown("""
-        <div style="background:linear-gradient(135deg,#0a0e1a,#1a2240);padding:40px 20px;border-radius:16px 16px 0 0;text-align:center;">
-            <h1 style="font-size:44px;font-weight:800;letter-spacing:6px;margin:0;background:linear-gradient(135deg,#f0e6d3,#d4a853);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</h1>
-            <div style="width:50px;height:2px;background:linear-gradient(90deg,transparent,#d4a853,transparent);margin:14px auto;border-radius:2px;"></div>
-            <p style="font-size:14px;color:rgba(255,255,255,.45);margin:8px 0 0 0;letter-spacing:4px;text-transform:uppercase;">智能投资分析系统</p>
+        <div style="text-align:center;padding:0 0 32px 0;">
+            <div style="font-size:54px;font-weight:800;letter-spacing:10px;margin:0;
+                background:linear-gradient(135deg,#f0e6d3,#d4a853,#f0e6d3);
+                -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</div>
+            <div style="width:32px;height:1.5px;background:linear-gradient(90deg,transparent,rgba(212,168,83,.4),transparent);margin:16px auto;"></div>
+            <p style="font-size:11px;color:rgba(255,255,255,.25);letter-spacing:6px;text-transform:uppercase;margin:0;">智能投资分析系统</p>
         </div>""", unsafe_allow_html=True)
 
-        # 消息显示
         if st.session_state.get("login_error"):
             st.error(st.session_state.login_error)
             st.session_state.login_error = ""
@@ -1491,53 +1480,37 @@ def page_login():
             st.balloons()
             st.session_state.login_ok = ""
 
-        # 卡片体 — 磨砂玻璃
-        st.markdown('<div style="background:rgba(12,22,48,.85);backdrop-filter:blur(20px);padding:28px 32px;border-radius:0 0 16px 16px;border:1px solid rgba(6,182,212,.15);border-top:none;box-shadow:0 8px 40px rgba(0,0,0,.3);">', unsafe_allow_html=True)
+        st.markdown('<div style="background:rgba(10,18,40,.7);backdrop-filter:blur(24px);padding:40px 36px;border-radius:16px;border:1px solid rgba(255,255,255,.06);box-shadow:0 16px 48px rgba(0,0,0,.3);">', unsafe_allow_html=True)
 
-        # Tab 行
-        c_t, c_r = st.columns(2)
-        with c_t:
-            t = "primary" if st.session_state.login_tab == "login" else "secondary"
-            if st.button("登录", key="tab_l", type=t, use_container_width=True):
-                st.session_state.login_tab = "login"; st.session_state.show_login = True; st.rerun()
-        with c_r:
-            if st.button("返回行情", key="tab_r", type="secondary", use_container_width=True):
-                st.session_state.show_login = False; st.rerun()
+        st.markdown('<p style="font-size:14px;font-weight:500;color:rgba(255,255,255,.6);text-align:center;margin:0 0 28px 0;letter-spacing:2px;">账 户 登 录</p>', unsafe_allow_html=True)
 
-        # 表单
-        if st.session_state.login_tab == "login":
-            with st.form("login_form"):
-                st.text_input("用户名", placeholder="请输入用户名", label_visibility="collapsed", key="login_u")
-                st.text_input("密码", type="password", placeholder="请输入密码", label_visibility="collapsed", key="login_p")
-                if st.form_submit_button("登录", type="primary", use_container_width=True):
-                    u = st.session_state.get("login_u", ""); p = st.session_state.get("login_p", "")
-                    if not u or not p: st.session_state.login_error = "请输入用户名和密码"
+        with st.form("login_form"):
+            st.text_input("", placeholder="用户名", label_visibility="collapsed", key="login_u")
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+            st.text_input("", type="password", placeholder="密码", label_visibility="collapsed", key="login_p")
+            st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+            if st.form_submit_button("登 录", type="primary", use_container_width=True):
+                u = st.session_state.get("login_u", ""); p = st.session_state.get("login_p", "")
+                if not u or not p: st.session_state.login_error = "请输入用户名和密码"
+                else:
+                    ok, role = auth_user(u, p)
+                    if ok:
+                        st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                        log_action(u, "login", "auth", "success")
                     else:
-                        ok, role = auth_user(u, p)
-                        if ok:
-                            st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
-                            log_action(u, "login", "auth", "success")
-                        else:
-                            with get_db_cm() as conn:
-                                cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
-                            if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
-                            else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
-                    st.rerun()
-        else:
-            st.info("公开注册已关闭。比赛账号由管理员统一创建。")
+                        with get_db_cm() as conn:
+                            cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
+                        if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
+                        else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
+                st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
         if st.button("← 返回行情看板", key="back_to_dash"):
             st.session_state.show_login = False
             st.rerun()
-        st.markdown('<p style="text-align:center;color:#a0aec0;font-size:12px;margin-top:16px;">(c) 2026</p>', unsafe_allow_html=True)
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 通用组件
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def kpi_card(label, value, delta=None, up=True):
-    d = f'<div class="delta {"up" if up else "down"}">{delta}</div>' if delta else ""
-    return f'<div class="kpi-card"><div class="label">{label}</div><div class="value">{value}</div>{d}</div>'
+        st.markdown('<p style="text-align:center;color:rgba(255,255,255,.12);font-size:10px;letter-spacing:3px;margin-top:24px;">双镜 · 智能投资分析系统</p>', unsafe_allow_html=True)
 
 def fmt_money(v):   return f"¥{v:,.0f}"
 def fmt_pnl(v):     return f"¥{v:,.2f}"
