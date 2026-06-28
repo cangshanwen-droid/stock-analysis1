@@ -782,8 +782,8 @@ def page_overview():
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, tickfont=dict(color="#666")),
             yaxis=dict(showgrid=False, tickfont=dict(color="#666"), zeroline=False),
-    )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
