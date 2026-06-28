@@ -1304,21 +1304,88 @@ def page_admin_user_mgmt():
 # 导航
 # ──────────────────────────────────────────────
 NAV = {
-    "📊 总览": page_overview,
-    "🏛️ 交易大厅": page_trade_hall,
-    "💼 我的持仓": page_portfolio,
-    "📈 我的做市": page_market_making,
-    "📉 K线展板": page_kline,
-    "⚙️ 交易管理": page_admin_settle,
-    "📋 股票汇总": page_admin_stock_summary,
-    "🔧 股票管理": page_admin_stock_mgmt,
-    "👥 用户管理": page_admin_user_mgmt,
+    "总览":       page_overview,
+    "交易大厅":   page_trade_hall,
+    "我的持仓":   page_portfolio,
+    "我的做市":   page_market_making,
+    "K线展板":    page_kline,
+    "交易管理":   page_admin_settle,
+    "股票汇总":   page_admin_stock_summary,
+    "股票管理":   page_admin_stock_mgmt,
+    "用户管理":   page_admin_user_mgmt,
 }
-PLAYER_NAV = ["📊 总览","🏛️ 交易大厅","💼 我的持仓","📈 我的做市","📉 K线展板"]
-ADMIN_NAV = list(NAV.keys())
+PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
+ADMIN_NAV  = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板",
+              "交易管理", "股票汇总", "股票管理", "用户管理"]
+
+SIDEBAR_CSS = """
+<style>
+    [data-testid="stSidebar"] { background: #0F172A !important; padding: 0 !important; border-right: none !important; }
+    [data-testid="stSidebar"] > div:first-child { background: #0F172A; padding: 0 0 100px 0 !important; }
+    [data-testid="stSidebarNav"] { display: none !important; }
+
+    .sb-brand { padding: 28px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-brand .name { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 2px; }
+    .sb-brand .sub { font-size: 10px; color: #475569; letter-spacing: 2px; margin-top: 2px; }
+    .sb-user { padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-user .uname { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+    .sb-user .urole { font-size: 11px; color: #64748b; margin-top: 1px; }
+    .menu-group-label {
+        font-size: 9px; font-weight: 700; color: #475569; text-transform: uppercase;
+        letter-spacing: 1.5px; padding: 18px 20px 6px 20px;
+    }
+
+    /* Radio 美化 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        display: flex !important; align-items: center !important;
+        padding: 10px 16px !important; margin: 1px 8px !important;
+        border-radius: 8px !important; color: #94a3b8 !important;
+        font-size: 13px !important; font-weight: 500 !important;
+        transition: all .15s !important; position: relative !important;
+        min-height: auto !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background: rgba(255,255,255,.06) !important; color: #e2e8f0 !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
+        background: rgba(37,99,235,.15) !important; color: #60a5fa !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
+        content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+        width: 3px; height: 20px; background: #3B82F6; border-radius: 0 4px 4px 0;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label input {
+        display: none !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+        margin-left: 0;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
+        margin: 0; font-size: 13px; font-weight: 500;
+    }
+
+    /* 组间间距（通过 nth-child 匹配不同组的第一个item）*/
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(3) { margin-top: 8px !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(6) { margin-top: 16px !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:nth-child(9) { margin-top: 16px !important; }
+
+    /* 退出按钮 */
+    .sb-exit-btn { padding: 20px 12px 16px 12px; }
+    .sb-exit-btn button {
+        width: 100% !important; background: transparent !important;
+        border: 1px solid rgba(239,68,68,.2) !important; color: #ef4444 !important;
+        border-radius: 8px !important; font-size: 13px !important; font-weight: 600 !important;
+        height: 40px !important; transition: all .15s !important;
+    }
+    .sb-exit-btn button:hover {
+        background: rgba(239,68,68,.08) !important; color: #f87171 !important;
+        border-color: rgba(239,68,68,.4) !important;
+    }
+</style>
+"""
 
 st.set_page_config(page_title="股票交易系统", page_icon="📊", layout="wide")
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.markdown(CUSTOM_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
 if "logged_in" not in st.session_state:
@@ -1327,16 +1394,49 @@ if "logged_in" not in st.session_state:
 def main():
     if not st.session_state.logged_in: page_login(); return
     with st.sidebar:
-        st.markdown("<h3 style='color:#fff;font-weight:700;margin:0'>📊 股票交易</h3>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color:rgba(255,255,255,.7);font-size:.85rem'>👤 {st.session_state.username} · {'🛡️ 管理员' if st.session_state.role=='admin' else '🎯 选手'}</p>", unsafe_allow_html=True)
-        st.divider()
-        nav = ADMIN_NAV if st.session_state.role=="admin" else PLAYER_NAV
-        sel = st.radio("菜单", nav, key="nav", label_visibility="collapsed")
-        st.divider()
-        if st.button("🚪 退出", use_container_width=True):
-            st.session_state.logged_in=False; st.rerun()
-    for n in nav:
-        if n==sel: NAV[n](); break
+        # 品牌 Logo
+        st.markdown("""
+        <div class="sb-brand">
+            <div class="name">双 镜</div>
+            <div class="sub">INSIGHT+</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 用户信息
+        role_text = "管理员" if st.session_state.role == "admin" else "选手"
+        st.markdown(f"""
+        <div class="sb-user">
+            <div class="uname">{st.session_state.username}</div>
+            <div class="urole">{role_text}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
+
+        # 分组标签（出现在 radio 上方）
+        st.markdown('<div class="menu-group-label">导 航</div>', unsafe_allow_html=True)
+        if any(x in nav for x in ["我的持仓", "我的做市", "K线展板"]):
+            st.markdown('<div class="menu-group-label">投 资</div>', unsafe_allow_html=True)
+        if any(x in nav for x in ["交易管理", "股票汇总", "股票管理"]):
+            st.markdown('<div class="menu-group-label">管 理</div>', unsafe_allow_html=True)
+        if any(x in nav for x in ["用户管理"]):
+            st.markdown('<div class="menu-group-label">系 统</div>', unsafe_allow_html=True)
+
+        sel = st.radio("", nav, key="nav_main", label_visibility="collapsed")
+
+        # 退出按钮
+        st.markdown('<div class="sb-exit-btn">', unsafe_allow_html=True)
+        if st.button("退出登录", use_container_width=True, key="sb_exit"):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if sel in NAV:
+        NAV[sel]()
+    else:
+        page_overview()
 
 if __name__ == "__main__":
     main()
