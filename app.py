@@ -875,16 +875,18 @@ def page_admin_settle():
     stocks = get_stocks()
     if not stocks: st.info("无股票"); return
 
-    # 一键操作
-    c1, c2 = st.columns(2)
+    # 一键操作（带确认）
+    c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("一键闭市", type="primary", use_container_width=True, key="close_all"):
+        confirm_close = st.checkbox("确认一键闭市", key="confirm_close")
+        if st.button("一键闭市", type="primary", use_container_width=True, key="close_all", disabled=not confirm_close):
             for s in stocks:
                 conn = get_db(); r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone(); conn.close()
                 if r: settle_round(s["symbol"])
             st.success("全部已闭市"); st.rerun()
     with c2:
-        if st.button("一键开市", use_container_width=True, key="open_all"):
+        confirm_open = st.checkbox("确认一键开市", key="confirm_open")
+        if st.button("一键开市", use_container_width=True, key="open_all", disabled=not confirm_open):
             conn = get_db()
             for s in stocks:
                 r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
@@ -893,6 +895,21 @@ def page_admin_settle():
                     conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], max_r+1))
             conn.commit(); conn.close()
             st.success("全部已开市"); st.rerun()
+    with c3:
+        confirm_undo = st.checkbox("确认撤销上一轮", key="confirm_undo")
+        if st.button("撤销上一轮", use_container_width=True, key="undo_all", disabled=not confirm_undo):
+            conn = get_db()
+            for s in stocks:
+                max_r = conn.execute("SELECT MAX(round) FROM rounds WHERE stock_symbol=? AND is_settled=1", (s["symbol"],)).fetchone()[0]
+                if max_r and max_r > 1:
+                    conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                    conn.execute("DELETE FROM rounds WHERE stock_symbol=? AND round=?", (s["symbol"], max_r))
+                    prev_r = max_r - 1
+                    prev_k = conn.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?", (s["symbol"], prev_r)).fetchone()
+                    prev_price = prev_k["close_price"] if prev_k else conn.execute("SELECT current_price FROM stocks WHERE symbol=?", (s["symbol"],)).fetchone()["current_price"]
+                    conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (prev_price, prev_price, s["symbol"]))
+            conn.commit(); conn.close()
+            st.success("已撤销上一轮"); st.rerun()
     st.divider()
 
     for s in stocks:
@@ -912,10 +929,14 @@ def page_admin_settle():
             with c4:
                 st.markdown(f"<span style='color:{status_color};font-weight:600;'>{status}</span>", unsafe_allow_html=True)
                 if not settled:
-                    if st.button("闭市结算", key=f"settle_{s['id']}", type="primary"):
-                        np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
-                        st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)} | 溢价因子 {pf} | 碳因子 {cf}" + (f" | 撮合 {fmt_money(mp)}" if matched else ""))
-                        st.rerun()
+                    c4_1, c4_2 = st.columns(2)
+                    with c4_1:
+                        confirm_single = st.checkbox("确认", key=f"cf_{s['id']}", label_visibility="collapsed")
+                    with c4_2:
+                        if st.button("闭市", key=f"settle_{s['id']}", type="primary", disabled=not confirm_single):
+                            np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
+                            st.success(f"第{cr}轮结算完成 | 新价格 {fmt_money(np_)} | 溢价因子 {pf} | 碳因子 {cf}" + (f" | 撮合 {fmt_money(mp)}" if matched else ""))
+                            st.rerun()
         st.divider()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
