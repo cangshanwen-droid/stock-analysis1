@@ -1044,64 +1044,80 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] {
         background: #0a0f1a !important;
         border-right: 1px solid #1a2332 !important;
+        width: 240px !important;
     }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
-
-    /* 侧边栏滚动条 */
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
 
     .sb-brand { padding: 20px 20px 14px 20px; border-bottom: 1px solid #1a2332; }
     .sb-brand .name p { font-size: 24px !important; font-weight: 800 !important; color: #f1f5f9 !important; margin: 0 !important; letter-spacing: 2px !important; }
     .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
-    .sb-user { padding: 12px 20px 10px 20px; border-bottom: 1px solid #1a2332; }
+    .sb-user { padding: 10px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
     .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
     .sb-user .urole p { font-size: 12px !important; color: #475569 !important; margin: 0 !important; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #089981; margin-right: 4px; vertical-align: middle; }
     .menu-group-label { padding: 14px 20px 4px 20px; }
     .menu-group-label p { font-size: 10px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    /* 导航 radio — 压掉小圆点，纯文字 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 2px 8px !important; }
+    /* === 导航菜单 — 完全隐藏 radio 圆点 === */
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        padding: 4px 10px !important; border: none !important; background: transparent !important;
+    }
+    /* 隐藏 input radio 圆点 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
+        appearance: none !important; -webkit-appearance: none !important;
+        width: 0 !important; height: 0 !important;
+        position: absolute !important; opacity: 0 !important;
+        margin: 0 !important; padding: 0 !important;
+    }
+    /* label = 菜单项 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 9px 14px !important;
-        font-size: 14px !important; font-weight: 500 !important;
-        color: #5a6a7e !important;
+        display: flex !important;
+        align-items: center !important;
+        padding: 10px 14px !important;
+        margin: 2px 0 !important;
+        border-radius: 6px !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        color: #64748b !important;
         background: transparent !important;
         border: none !important;
-        border-radius: 6px !important;
         cursor: pointer !important;
+        transition: all .08s ease !important;
         position: relative !important;
-        transition: background .1s !important;
         gap: 0 !important;
+        min-height: 0 !important;
+        line-height: 1.4 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
         background: rgba(255,255,255,.04) !important;
         color: #94a3b8 !important;
     }
+    /* 选中项 — 红色底+白字+左边框 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
-        background: rgba(242,54,69,.06) !important;
+        background: rgba(242,54,69,.08) !important;
         color: #f23645 !important;
         font-weight: 600 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
-        content: '' !important; position: absolute !important;
-        left: -1px !important; top: 25% !important; bottom: 25% !important;
+        content: '' !important;
+        position: absolute !important;
+        left: -1px !important;
+        top: 8px !important; bottom: 8px !important;
         width: 3px !important;
         background: #f23645 !important;
         border-radius: 0 2px 2px 0 !important;
         pointer-events: none !important;
     }
-    /* 隐藏 radio 小圆点 */
-    section[data-testid="stSidebar"] div[role="radiogroup"] label input {
-        display: none !important;
-    }
+    /* 菜单项中的文字 */
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important; font-size: 14px !important; color: inherit !important;
     }
+
     /* 退出按钮 */
     section[data-testid="stSidebar"] button:last-of-type {
         margin: 4px 12px !important; width: calc(100% - 24px) !important;
@@ -2337,7 +2353,7 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        # 唯一的导航 radio（桌面+移动共用侧边栏）
+        # 使用 st.radio 做导航，CSS 完全隐藏圆点，label 呈现为菜单项
         picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_main", label_visibility="collapsed")
         picked = picked.strip()
         if picked != sel:
@@ -2350,6 +2366,9 @@ def main():
             st.session_state.role = ""
             st.rerun()
     sel = st.session_state.nav_current
+    # 移动端底部导航占位
+    if sel in PLAYER_NAV:
+        st.markdown('<div class="mob-nav-spacer"></div>', unsafe_allow_html=True)
     if sel in NAV: NAV[sel]()
     else: page_overview()
 
