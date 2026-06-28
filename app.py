@@ -1039,20 +1039,24 @@ section.main > div.block-container {
     .st-emotion-cache-1aej4i3 summary, details summary {
         font-weight: 600 !important; padding: 12px 16px !important; color: var(--text) !important;
     }
-    /* 输入框深色 */
-    input, select, textarea,
+    /* 输入框深色 — 高强度覆盖 */
+    input, input[type="text"], input[type="password"], input[type="number"],
+    select, textarea,
     div[data-baseweb="input"] input,
     div[data-baseweb="select"] > div,
     div[data-baseweb="textarea"] textarea {
-        background: rgba(255,255,255,.06) !important;
-        border: 1px solid rgba(6,182,212,.2) !important;
-        color: #e2e8f0 !important;
+        background: rgba(15,25,50,.9) !important;
+        border: 1.5px solid rgba(6,182,212,.25) !important;
+        color: #ffffff !important;
         border-radius: 8px !important;
+        padding: 10px 14px !important;
+        font-weight: 500 !important;
         transition: all .2s !important;
     }
-    input:focus, div[data-baseweb="input"] input:focus {
+    input:focus, input[type="text"]:focus, input[type="password"]:focus,
+    div[data-baseweb="input"] input:focus {
         border-color: #06b6d4 !important;
-        box-shadow: 0 0 16px rgba(6,182,212,.1) !important;
+        box-shadow: 0 0 20px rgba(6,182,212,.15) !important;
     }
     div[data-testid="stMarkdown"] { color: var(--text) !important; }
 }
@@ -1392,23 +1396,46 @@ def page_login():
         .stApp { background: linear-gradient(160deg, #060b1a, #0c1630) !important; }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
-        input, div[data-baseweb="input"] input {
-            background: rgba(255,255,255,.08) !important;
-            border: 1px solid rgba(6,182,212,.25) !important;
-            color: #e2e8f0 !important;
+
+        /* === 输入框 — 高强度覆盖 === */
+        section[data-testid="stForm"] input,
+        div[data-testid="stTextInput"] input,
+        input[type="text"], input[type="password"],
+        div[data-baseweb="input"] input,
+        div[data-baseweb="input"] input:placeholder-shown,
+        .stTextInput input {
+            background: rgba(15,25,50,.9) !important;
+            border: 1.5px solid rgba(6,182,212,.35) !important;
+            color: #ffffff !important;
+            caret-color: #06b6d4 !important;
             border-radius: 10px !important;
             padding: 14px 16px !important;
             font-size: 16px !important;
-            transition: all .2s !important;
+            font-weight: 500 !important;
+            letter-spacing: .5px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,.2) !important;
         }
-        input:focus, div[data-baseweb="input"] input:focus {
+        input::placeholder, div[data-baseweb="input"] input::placeholder {
+            color: rgba(255,255,255,.35) !important;
+            font-weight: 400 !important;
+        }
+        section[data-testid="stForm"] input:focus,
+        div[data-testid="stTextInput"] input:focus,
+        input[type="text"]:focus, input[type="password"]:focus {
             border-color: #06b6d4 !important;
-            box-shadow: 0 0 20px rgba(6,182,212,.15) !important;
+            box-shadow: 0 0 24px rgba(6,182,212,.2), inset 0 0 24px rgba(6,182,212,.05) !important;
+            background: rgba(20,35,70,.95) !important;
         }
-        div[data-testid="stTextInput"] label, div[data-testid="stForm"] label {
-            color: rgba(255,255,255,.5) !important;
-            font-size: 13px !important;
+        /* 密码输入特殊处理 */
+        input[type="password"] {
+            font-size: 20px !important;
+            letter-spacing: 4px !important;
         }
+        /* 输入框容器背景 */
+        div[data-testid="stTextInput"] > div, .stTextInput > div {
+            background: transparent !important;
+        }
+
         div[data-testid="stButton"] button {
             border-radius: 10px !important;
             padding: 14px !important;
@@ -1435,7 +1462,6 @@ def page_login():
             border-color: rgba(255,255,255,.3) !important;
             color: rgba(255,255,255,.8) !important;
         }
-        /* 调整列宽使输入框更舒适 */
         section.main > div.block-container { padding: 0 !important; }
         .stAlert { background: rgba(255,255,255,.05) !important; border: 1px solid rgba(255,255,255,.1) !important; color: #e2e8f0 !important; }
     </style>""", unsafe_allow_html=True)
