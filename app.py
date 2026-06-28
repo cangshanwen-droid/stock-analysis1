@@ -103,7 +103,9 @@ def settle_round(symbol):
 def auth_user(u, p):
     conn = get_db(); r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone(); conn.close()
     if not r or r["password"] != hash_pwd(p): return False, ""
-    if r.get("status") == "disabled": return False, ""
+    try:
+        if r["status"] == "disabled": return False, ""
+    except: pass
     return True, r["role"]
 
 def toggle_user(username):
