@@ -50,6 +50,16 @@ def make_pwd(plain):
     salt = secrets.token_hex(8)
     return f"{salt}:{hash_pwd(plain, salt)}"
 
+def get_admin_password():
+    """从环境变量或 Streamlit secrets 读取管理员密码"""
+    pw = get_admin_password()
+    if pw:
+        return pw
+    try:
+        return st.secrets.get("ADMIN_PASSWORD", "")
+    except Exception:
+        return ""
+
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
     with get_db_cm() as conn:
@@ -76,7 +86,7 @@ def init_db():
             _seed(conn)
         else:
             # 仅在显式配置 ADMIN_PASSWORD 时同步管理员密码，避免重启覆盖后台改密。
-            admin_pw = os.environ.get("ADMIN_PASSWORD")
+            admin_pw = get_admin_password()
             if admin_pw:
                 conn.execute("UPDATE users SET password=? WHERE username='admin'", (make_pwd(admin_pw),))
             # 每次启动同步股票数据（覆盖更新）
@@ -190,7 +200,7 @@ def init_db():
 
 def _seed(conn):
     cur = conn.cursor()
-    admin_pw = os.environ.get("ADMIN_PASSWORD") or "admin123"
+    admin_pw = get_admin_password() or "admin123"
     cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
