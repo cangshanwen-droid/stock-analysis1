@@ -390,47 +390,34 @@ section.main > div.block-container {
 
 SIDEBAR_CSS = """
 <style>
-    [data-testid="stSidebar"] { background-color: #121828 !important; }
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label { color: #ffffff !important; }
+    section[data-testid="stSidebar"] { background-color: #121828 !important; }
+    section[data-testid="stSidebar"] > div:first-child { background-color: #121828 !important; padding: 0 !important; }
+    [data-testid="stSidebarNav"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    .stDeployButton, footer { display: none !important; }
 
-    .sb-brand { padding: 24px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .sb-brand { padding: 28px 20px 16px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
     .sb-brand .name { font-size: 24px; font-weight: 700; color: #ffffff; }
     .sb-brand .sub { font-size: 13px; color: #b0b8d0; margin-top: 4px; }
-    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
-    .sb-user .uname { font-size: 14px; font-weight: 600; color: #ffffff; }
-    .sb-user .urole { font-size: 15px; color: #d0d8f0; margin-top: 4px; }
-    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-right: 6px; }
-    .menu-group-label { font-size: 9px; font-weight: 700; color: #c5cde0; text-transform: uppercase; letter-spacing: 1.5px; padding: 16px 20px 6px 20px; }
+    .sb-user { padding: 14px 20px 18px 20px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .sb-user .uname { font-size: 15px; font-weight: 600; color: #ffffff; margin-bottom: 2px; }
+    .sb-user .urole { font-size: 13px; color: #d0d8f0; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-right: 6px; vertical-align: middle; }
+    .menu-group-label { font-size: 10px; font-weight: 700; color: #b0b8d0; letter-spacing: 1.2px; padding: 18px 20px 6px 20px; }
+
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex !important; align-items: center !important; padding: 12px 10px !important;
-        margin: 6px 8px !important; border-radius: 8px !important; color: #ffffff !important;
-        font-size: 17px !important; font-weight: 500 !important; transition: all .15s !important;
+        padding: 12px 12px !important; margin: 3px 10px !important; border-radius: 8px !important;
+        color: #e0e4ec !important; font-size: 15px !important; font-weight: 500 !important;
         min-height: auto !important; position: relative !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: #222a42 !important;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] {
-        background: #222a42 !important; color: #ffffff !important;
-    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover { background: #222a42 !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"] { background: #222a42 !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] [data-checked="true"]::before {
         content: ' '; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
         width: 3px; height: 20px; background: #ef4444; border-radius: 0 4px 4px 0;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0; font-size: 17px; font-weight: 500;
-    }
-    section[data-testid="stSidebar"] hr { border-color: #2a3248 !important; }
-    .sb-exit-btn { padding: 20px 12px 16px 12px; }
-    .sb-exit-btn button {
-        width: 100% !important; background: #ffffff !important;
-        border: none !important; color: #121828 !important; border-radius: 10px !important;
-        font-size: 17px !important; font-weight: 500 !important; height: 40px !important;
-    }
-    .sb-exit-btn button:hover { background: #e0e0e0 !important; }
-    [data-testid="stStatusWidget"] { display: none !important; }
-    .stDeployButton, footer { display: none !important; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p { margin: 0; font-size: 15px; font-weight: 500; }
 </style>
 """
 
@@ -923,11 +910,12 @@ def main():
         nav = ADMIN_NAV if st.session_state.role == "admin" else PLAYER_NAV
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.radio("", nav, key="nav_main", label_visibility="collapsed")
-        st.markdown('<div class="sb-exit-btn">', unsafe_allow_html=True)
-        if st.button("退出登录", use_container_width=True, key="sb_exit"):
-            st.session_state.logged_in = False; st.session_state.username = ""; st.session_state.role = ""
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        if st.button("退出登录", type="primary", use_container_width=True, key="sb_exit"):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
     if sel in NAV: NAV[sel]()
     else: page_overview()
 
