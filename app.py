@@ -1261,18 +1261,32 @@ def page_admin_stock_summary():
 
 def page_admin_stock_mgmt():
     render_header()
+    # ── 表单外显示结果 ──
+    if st.session_state.get("stock_add_ok"):
+        st.success(f"✅ {st.session_state.stock_add_ok}")
+        st.session_state.stock_add_ok = ""
+    if st.session_state.get("stock_add_err"):
+        st.error(st.session_state.stock_add_err)
+        st.session_state.stock_add_err = ""
+
     with st.expander("➕ 添加新股票", expanded=False):
-        with st.form("add_stock"):
+        with st.form("add_stock_form"):
             c1,c2,c3 = st.columns(3)
-            with c1: sym = st.text_input("代码", max_chars=10).strip().upper()
-            with c2: name = st.text_input("名称").strip()
-            with c3: price = st.number_input("初始价", min_value=0.01, step=0.5, format="%.2f")
+            with c1: sym = st.text_input("代码", max_chars=10, key="add_sym")
+            with c2: name = st.text_input("名称", key="add_name")
+            with c3: price = st.number_input("初始价", min_value=0.01, step=0.5, format="%.2f", key="add_price")
             if st.form_submit_button("添加", type="primary", use_container_width=True):
-                if sym and name:
-                    ok, m = add_stock(sym, name, price)
-                    st.success(m) if ok else st.error(m)
-                    if ok: st.rerun()
-                else: st.warning("请完整填写")
+                sym = sym.strip().upper()
+                name = name.strip()
+                if sym and name and price > 0:
+                    ok, msg = add_stock(sym, name, price)
+                    if ok:
+                        st.session_state.stock_add_ok = msg
+                    else:
+                        st.session_state.stock_add_err = msg
+                else:
+                    st.session_state.stock_add_err = "请完整填写代码、名称和价格"
+                st.rerun()
 
     st.divider()
     stocks = get_stocks()
