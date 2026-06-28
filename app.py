@@ -821,7 +821,7 @@ def page_overview():
         df = pd.DataFrame(data["stock_pnl"])
         fig = go.Figure(go.Bar(
             x=df["name"], y=df["pnl"],
-            marker_color="#16c757", text=[fmt_pnl(v) for v in df["pnl"]],
+            marker_color=[pnl_color(v) for v in df["pnl"]], text=[fmt_pnl(v) for v in df["pnl"]],
             textposition="outside", marker_line_width=0,
         ))
         fig.update_layout(
