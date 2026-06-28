@@ -852,11 +852,43 @@ def page_kline():
     if df_k.empty: return
 
     colors = [GREEN if r["close_price"] >= r["open_price"] else RED for _, r in df_k.iterrows()]
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.05, row_heights=[.75, .25])
-    fig.add_trace(go.Candlestick(x=df_k.index, open=df_k["open_price"], high=df_k["high_price"], low=df_k["low_price"], close=df_k["close_price"], increasing_line_color=GREEN, decreasing_line_color=RED, name=""), row=1, col=1)
-    fig.add_trace(go.Bar(x=df_k.index, y=df_k["volume"], marker_color=colors, name="", showlegend=False), row=2, col=1)
-    fig.update_layout(height=400, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", xaxis_rangeslider_visible=False, showlegend=False)
-    fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
+    vol_c = ["rgba(34,197,94,0.5)" if r["close_price"] >= r["open_price"] else "rgba(239,68,68,0.5)" for _, r in df_k.iterrows()]
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.03, row_heights=[.7, .3])
+
+    fig.add_trace(go.Candlestick(
+        x=df_k.index, open=df_k["open_price"], high=df_k["high_price"],
+        low=df_k["low_price"], close=df_k["close_price"],
+        increasing_line_color=GREEN, decreasing_line_color=RED,
+        name="", showlegend=False,
+    ), row=1, col=1)
+
+    fig.add_trace(go.Bar(
+        x=df_k.index, y=df_k["volume"], marker_color=vol_c,
+        name="", showlegend=False,
+    ), row=2, col=1)
+
+    if len(df_k) >= 5:
+        ma5 = df_k["close_price"].rolling(5).mean()
+        fig.add_trace(go.Scatter(x=df_k.index, y=ma5, mode="lines",
+            line=dict(color="#f59e0b", width=1.2), name="MA5"), row=1, col=1)
+    if len(df_k) >= 10:
+        ma10 = df_k["close_price"].rolling(10).mean()
+        fig.add_trace(go.Scatter(x=df_k.index, y=ma10, mode="lines",
+            line=dict(color="#3b82f6", width=1.2), name="MA10"), row=1, col=1)
+
+    fig.update_layout(
+        height=440, margin=dict(t=30, b=0, l=10, r=10),
+        plot_bgcolor="#fafbfc", paper_bgcolor="#fafbfc",
+        xaxis_rangeslider_visible=False,
+        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        hovermode="x unified",
+    )
+    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb", row=1, col=1)
+    fig.update_xaxes(showgrid=True, gridcolor="#e5e7eb", title_text="轮次", row=2, col=1)
+    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", tickformat=",.0f", row=1, col=1)
+    fig.update_yaxes(showgrid=True, gridcolor="#e5e7eb", tickformat=",.0f", row=2, col=1)
+
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     if data:
