@@ -138,27 +138,45 @@ def compute_price(stock):
 # 结算引擎
 # ──────────────────────────────────────────────
 def settle_round(symbol):
-    """结算当前轮次：计算价格 → 生成K线 → 开启新一轮"""
+    """结算当前轮次：撮合订单 → 公式定价 → 生成K线 → 开启新一轮"""
     conn = get_db(); cur = conn.cursor()
     stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
     row = cur.execute("SELECT MAX(round) as r FROM rounds WHERE stock_symbol=?", (symbol,)).fetchone()
     current_round = row["r"] if row and row["r"] else 0
 
-    # 获取本轮交易数据
     txns = cur.execute(
         "SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?",
         (symbol, current_round)
     ).fetchall()
 
+    # ── Excel公式1：订单撮合 ──
+    buy_orders = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
+    sell_orders = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
+    highest_buy = max(o[0] for o in buy_orders) if buy_orders else 0
+    lowest_sell = min(o[0] for o in sell_orders) if sell_orders else 0
+    is_matched = highest_buy >= lowest_sell if buy_orders and sell_orders else False
+    match_price = round((highest_buy + lowest_sell) / 2, 2) if is_matched else 0
+    buy_qty = sum(o[1] for o in buy_orders)
+    sell_qty = sum(o[1] for o in sell_orders)
+    match_volume = min(buy_qty, sell_qty) if is_matched else 0
+
+    # ── Excel公式2：买卖总额 ──
     buy_total = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
     sell_total = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
     total_volume = sum(t["shares"] for t in txns)
 
-    # 计算新价格
+    # ── Excel公式3：溢价因子 & 碳因子 ──
+    prem_f = round(1 + 0.2 * (stock.get("premium_rate", 50) - 50) / 50, 4)
+    c_mean = max(stock.get("industry_carbon_mean", 50), 1)
+    carb_f = round(1 - 0.5 * (stock.get("carbon_price", 50) - c_mean) / c_mean, 4)
+
+    # ── Excel公式4：理论价 = 昨收×买/卖×溢价×碳 ──
     price_params = dict(stock, buy_total=buy_total, sell_total=sell_total)
     new_price = compute_price(price_params)
+    raw_theoretical = round(stock["previous_close"] or stock["current_price"], 2) * \
+                      (buy_total / max(sell_total, 1)) * prem_f * carb_f
 
-    # 生成K线
+    # ── Excel公式6：K线 ──
     prev_close = stock["previous_close"] or stock["current_price"]
     change_pct = round((new_price - prev_close) / prev_close * 100, 2) if prev_close else 0
     high = max(new_price, prev_close)
@@ -169,7 +187,6 @@ def settle_round(symbol):
                 (symbol, current_round, prev_close, high, low, new_price,
                  total_volume, buy_total, sell_total, change_pct))
 
-    # 更新股票价格
     new_round = current_round + 1
     cur.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?",
                 (new_price, new_price, symbol))
@@ -178,7 +195,7 @@ def settle_round(symbol):
     cur.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES (?,?,0)",
                 (symbol, new_round))
     conn.commit(); conn.close()
-    return new_price
+    return new_price, is_matched, match_price, match_volume, prem_f, carb_f, round(raw_theoretical, 2)
 
 # ──────────────────────────────────────────────
 # 用户操作
@@ -872,17 +889,96 @@ def page_trade_hall():
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 价格参数展示
+        # 定价因子面板
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### 📐 定价参数")
-        sel_sym = st.selectbox("查看参数", [f"{s['name']}({s['symbol']})" for s in stocks], key="param_sel")
+        st.markdown("### 📐 定价因子面板")
+        sel_sym = st.selectbox("选择股票", [f"{s['name']}({s['symbol']})" for s in stocks], key="param_sel")
         sym = sel_sym.split("(")[1].rstrip(")")
-        s = next(s for s in stocks if s["symbol"]==sym)
-        c1,c2 = st.columns(2)
-        c1.metric("昨收价", f"¥{s['previous_close']:.2f}")
-        c2.metric("当前价", f"¥{s['current_price']:.2f}")
-        c1.metric("溢价率", f"{s['premium_rate']}%")
-        c2.metric("碳价", f"¥{s['carbon_price']}")
+        s = next(x for x in stocks if x["symbol"]==sym)
+
+        # 计算因子
+        prev = s["previous_close"] or s["current_price"]
+        prem_f = round(1 + 0.2 * (s["premium_rate"] - 50) / 50, 4)
+        c_mean = max(s["industry_carbon_mean"], 1)
+        carb_f = round(1 - 0.5 * (s["carbon_price"] - c_mean) / c_mean, 4)
+
+        # 获取本轮买卖总额做实时演示
+        conn2 = get_db()
+        row_r = conn2.execute("SELECT MAX(round) as r FROM rounds WHERE stock_symbol=? AND is_settled=0", (sym,)).fetchone()
+        cr = row_r["r"] if row_r and row_r["r"] else 1
+        txns_demo = conn2.execute(
+            "SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?",
+            (sym, cr)).fetchall()
+        conn2.close()
+        b_total = sum(t["price"]*t["shares"] for t in txns_demo if t["trade_type"]=="buy")
+        s_total = sum(t["price"]*t["shares"] for t in txns_demo if t["trade_type"]=="sell")
+        demand_ratio = (b_total / max(s_total, 1))
+
+        # ===== 幸福度(溢价率) =====
+        st.markdown("#### 🟣 幸福度（溢价率）对价格的影响")
+        c1, c2, c3 = st.columns([1, 2, 1.5])
+        with c1:
+            st.metric("当前溢价率", f"{s['premium_rate']:.0f}%")
+        with c2:
+            bar = "█" * int(s["premium_rate"] / 5) + "░" * (20 - int(s["premium_rate"] / 5))
+            color = "#00c853" if prem_f >= 1 else "#ff1744"
+            st.markdown(f"""
+            <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
+                <span style="color:#a78bfa;font-size:.75rem;font-weight:700">溢价因子</span>
+                <span style="color:{color};font-size:1.3rem;font-weight:800;float:right">{prem_f}</span><br>
+                <div style="background:#333;border-radius:5px;height:10px;margin-top:6px">
+                  <div style="background:linear-gradient(90deg,#6366f1,#a78bfa);width:{s['premium_rate']}%;height:100%;border-radius:5px"></div>
+                </div>
+                <span style="color:#aaa;font-size:.65rem">{bar}</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with c3:
+            arrow = "📈 推高" if prem_f > 1 else ("📉 压低" if prem_f < 1 else "➖ 中性")
+            effect = f"{abs(prem_f-1)*100:.1f}%"
+            st.metric("对理论价", arrow, delta=effect,
+                      delta_color="normal" if prem_f > 1 else "inverse")
+
+        # ===== 碳排放(碳价) =====
+        st.markdown("#### 🟢 碳排放（碳价）对价格的影响")
+        c1, c2, c3 = st.columns([1, 2, 1.5])
+        with c1:
+            st.metric("当前碳价", f"¥{s['carbon_price']:.0f}",
+                      delta=f"行业均值 ¥{c_mean:.0f}",
+                      delta_color="off")
+        with c2:
+            eco_pct = max(0, min(100, (s["carbon_price"] / max(c_mean*2, 1)) * 100))
+            color2 = "#00c853" if carb_f >= 1 else "#ff1744"
+            st.markdown(f"""
+            <div style="background:#1a1a2e;border-radius:10px;padding:12px 16px;margin-top:8px">
+                <span style="color:#06b6d4;font-size:.75rem;font-weight:700">碳因子</span>
+                <span style="color:{color2};font-size:1.3rem;font-weight:800;float:right">{carb_f}</span><br>
+                <div style="background:#333;border-radius:5px;height:10px;margin-top:6px">
+                  <div style="background:linear-gradient(90deg,#06b6d4,#10b981);width:{eco_pct:.0f}%;height:100%;border-radius:5px"></div>
+                </div>
+                <span style="color:#aaa;font-size:.65rem">碳价越高 → 碳因子越低(←抑制价格)</span>
+            </div>
+            """, unsafe_allow_html=True)
+        with c3:
+            arrow2 = "📈 推高" if carb_f > 1 else ("📉 压低" if carb_f < 1 else "➖ 中性")
+            effect2 = f"{abs(carb_f-1)*100:.1f}%"
+            st.metric("对理论价", arrow2, delta=effect2,
+                      delta_color="normal" if carb_f > 1 else "inverse")
+
+        # ===== 供需比 & 价格演示 =====
+        st.divider()
+        st.markdown("#### ⚖️ 供需比 & 最终定价演示")
+        show_price = round(prev * demand_ratio * prem_f * carb_f, 2)
+        clamped = max(prev * 0.9, min(prev * 1.1, show_price))
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("昨收价", f"¥{prev:,.2f}")
+        c2.metric("买/卖比", f"{demand_ratio:.2f}x",
+                  delta="买方强势" if demand_ratio > 1.5 else ("均衡" if demand_ratio > 0.67 else "卖方强势"))
+        c3.metric("理论价", f"¥{show_price:,.2f}",
+                  delta=f"{'涨停' if clamped == prev*1.1 else ('跌停' if clamped == prev*0.9 else '正常')}")
+        c4.metric("最终价", f"¥{clamped:,.2f}",
+                  delta=f"{'+' if clamped >= prev else ''}{round((clamped/prev-1)*100,2)}%")
+
+        st.caption(f"💰 公式: 最终价 = clamp( 昨收×{demand_ratio:.2f}×{prem_f}×{carb_f} , 昨收×0.9 , 昨收×1.1 )")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_right:
@@ -1073,8 +1169,10 @@ def page_admin_settle():
 
             if not settled:
                 if c5.button("⚡ 结算此轮", key=f"settle_{s['id']}", type="primary"):
-                    new_p = settle_round(s["symbol"])
-                    st.success(f"✅ {s['name']} 第{cur_round}轮结算完成！新价格: ¥{new_p:.2f}")
+                    np_, matched, mp, mv, pf, cf, raw = settle_round(s["symbol"])
+                    match_info = f" | 撮合价: ¥{mp:.2f}" if matched else " | ⚠️ 未撮合(最高买<最低卖)"
+                    st.success(f"""✅ {s['name']} 第{cur_round}轮结算完成！
+                    最终价: ¥{np_:.2f} | 溢价因子: {pf} | 碳因子: {cf}{match_info}""")
                     st.rerun()
             else:
                 c5.markdown("---")
