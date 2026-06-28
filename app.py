@@ -1140,10 +1140,11 @@ DASHBOARD_CSS = """
     [data-testid="stDecoration"], [data-testid="stToolbar"], header { display: none !important; }
 
     .dash-top { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px 0; }
-    .dash-brand { font-size: 28px; font-weight: 800; letter-spacing: 5px;
+    .dash-brand { font-size: 22px; font-weight: 800; letter-spacing: 4px;
         background: linear-gradient(135deg, #f0e6d3, #d4a853);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .dash-sub { font-size: 11px; color: rgba(255,255,255,.3); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        white-space: nowrap; }
+    .dash-sub { font-size: 10px; color: rgba(255,255,255,.25); letter-spacing: 3px; text-transform: uppercase; white-space: nowrap; }
     .dash-clock { font-size: 13px; color: rgba(255,255,255,.35); font-family: monospace; letter-spacing: 1px; }
 
     .mkt-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
@@ -1215,9 +1216,9 @@ def page_public_dashboard():
     mkt_text = "交易中" if mkt_open else "已闭市"
 
     # 顶栏（实时时钟用 JS 走浏览器时间）
-    c1, c2, c3 = st.columns([3, 2, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
-        st.markdown(f'<div class="dash-brand">双镜</div><div class="dash-sub">智能投资分析系统</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;"><span class="dash-brand">双镜</span><span class="dash-sub">智能投资分析系统</span></div>', unsafe_allow_html=True)
     with c2:
         st.markdown(f'<div class="dash-clock" style="text-align:center;" id="liveClock"></div>', unsafe_allow_html=True)
     with c3:
