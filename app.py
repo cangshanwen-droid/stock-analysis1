@@ -869,7 +869,8 @@ html, body, .stApp {
 
 /* 全局 — 深色交易终端 */
 .stApp { background: #070b13 !important; }
-section.main > div.block-container { padding: 6px 16px !important; }
+.stApp > header { height: 0 !important; min-height: 0 !important; overflow: hidden !important; }
+section.main > div.block-container { padding: 4px 14px 80px !important; }
 
 /* 所有 Streamlit 原生控件压暗 */
 div[data-testid="stVerticalBlock"] { gap: 6px !important; }
@@ -986,6 +987,7 @@ hr { border-color: #1a2332 !important; margin: 10px 0 !important; }
     .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 6px; }
     .desktop-table { background: #0f1724; border-radius: 6px; padding: 0 12px 8px 12px; border: 1px solid #1e2a3a; }
     [data-testid="stDataFrame"] { border: none !important; }
+    [data-testid="stDataFrame"] [data-testid="stDataFrameToolbar"] { display: none !important; }
     [data-testid="stDataFrame"] th {
         background: transparent !important; font-size: 10px !important;
         color: #5a6a7e !important; font-weight: 600 !important;
@@ -1541,13 +1543,39 @@ def page_market_making():
         """, (st.session_state.username,)).fetchall()
     if not rows:
         st.info("暂无交易记录"); return
+
+    # 移动端：交易卡片
+    st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+    for r in rows[:50]:
+        tp = "买入" if r["trade_type"]=="buy" else "卖出"
+        cls = "up" if r["trade_type"]=="buy" else "down"
+        amt = r["price"] * r["shares"]
+        st.markdown(f"""
+        <div class="stock-card" style="padding:10px 12px;">
+            <div class="sc-header">
+                <span class="sc-name" style="font-size:13px;">{esc(r['nm'])}</span>
+                <span class="sc-pct {cls}" style="font-size:12px;">{tp}</span>
+            </div>
+            <div class="sc-detail" style="grid-template-columns:1fr 1fr 1fr;">
+                <div>价格 <span class="val">¥{r['price']:.2f}</span></div>
+                <div>数量 <span class="val">{r['shares']:,}股</span></div>
+                <div>金额 <span class="val">¥{amt:,.0f}</span></div>
+                <div>轮次 <span class="val">第{r['round']}轮</span></div>
+                <div style="grid-column:span 2;">时间 <span class="val">{str(r['trade_date'])[:19] if r['trade_date'] else '-'}</span></div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 桌面端：表格
+    st.markdown('<div class="desktop-only">', unsafe_allow_html=True)
     df = pd.DataFrame([{
         "股票": r["nm"], "类型": "买入" if r["trade_type"]=="buy" else "卖出",
         "价格": f"¥{r['price']:.2f}", "数量": f"{r['shares']:,}股",
-        "金额": f"¥{r['price']*r['shares']:,.2f}", "轮次": f"第{r['round']}轮",
+        "金额": f"¥{r['price']*r['shares']:,.0f}", "轮次": f"第{r['round']}轮",
         "时间": str(r["trade_date"])[:19] if r["trade_date"] else "-",
     } for r in rows])
     st.dataframe(df, use_container_width=True, hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def page_trade_hall():
     stocks = get_stocks()
@@ -1558,7 +1586,12 @@ def page_trade_hall():
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
 
     if not mkt_open:
-        st.warning("市场已闭市，无法交易。等待管理员开市。")
+        st.markdown(f"""
+        <div style="background:#0f1724;border:1px solid #1e2a3a;border-radius:6px;padding:20px;text-align:center;">
+            <div style="color:#f23645;font-size:16px;font-weight:600;margin-bottom:6px;">市场已闭市</div>
+            <div style="color:#5a6a7e;font-size:13px;">当前第 {mkt_round} 轮已结束，无法提交交易</div>
+            <div style="color:#5a6a7e;font-size:12px;margin-top:4px;">请联系管理员开市后继续操作</div>
+        </div>""", unsafe_allow_html=True)
         return
 
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
@@ -2304,7 +2337,8 @@ def main():
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_radio", label_visibility="collapsed")
+        # 唯一的导航 radio（桌面+移动共用侧边栏）
+        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_main", label_visibility="collapsed")
         picked = picked.strip()
         if picked != sel:
             st.session_state.nav_current = picked
@@ -2315,12 +2349,6 @@ def main():
             st.session_state.username = ""
             st.session_state.role = ""
             st.rerun()
-    st.markdown('<div class="mobile-only mobile-nav">', unsafe_allow_html=True)
-    mob_pick = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_mobile", label_visibility="collapsed", horizontal=True)
-    mob_new = mob_pick.split(" ", 1)[1] if " " in mob_pick else mob_pick
-    if mob_new != st.session_state.nav_current:
-        st.session_state.nav_current = mob_new
-    st.markdown('</div>', unsafe_allow_html=True)
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
