@@ -986,35 +986,58 @@ SIDEBAR_CSS = """
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar { width: 2px; background: transparent; }
-    section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 2px; }
 
-    .sb-brand { padding: 20px 20px 12px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 22px !important; font-weight: 800 !important; color: #e2e8f0 !important; margin: 0 !important; }
-    .sb-brand .sub p { color: #3a4a5e !important; font-size: 10px !important; letter-spacing: 3px !important; margin: 2px 0 0 0 !important; }
-    .sb-user { padding: 10px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-user .uname p { font-size: 13px !important; font-weight: 600 !important; color: #e2e8f0 !important; margin: 0 !important; }
-    .sb-user .urole p { font-size: 11px !important; color: #3a4a5e !important; margin: 0 !important; }
-    .sb-user .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #089981; }
-    .menu-group-label { padding: 12px 20px 2px 20px; }
+    .sb-brand { padding: 22px 22px 14px 22px; border-bottom: 1px solid #1a2332; }
+    .sb-brand .name p { font-size: 24px !important; font-weight: 800 !important; color: #e2e8f0 !important; margin: 0 !important; letter-spacing: 2px !important; }
+    .sb-brand .sub p { color: #3a4a5e !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
+    .sb-user { padding: 12px 22px 10px 22px; border-bottom: 1px solid #1a2332; }
+    .sb-user .uname p { font-size: 14px !important; font-weight: 600 !important; color: #e2e8f0 !important; margin: 0 !important; }
+    .sb-user .urole p { font-size: 12px !important; color: #3a4a5e !important; margin: 0 !important; }
+    .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #089981; margin-right: 4px; vertical-align: middle; }
+    .menu-group-label { padding: 16px 22px 4px 22px; }
     .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #3a4a5e !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
-    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 0 6px !important; }
+    /* 导航 - 大间距+高对比 */
+    section[data-testid="stSidebar"] div[role="radiogroup"] { padding: 2px 8px !important; gap: 2px !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 7px 10px !important; margin: 0 !important;
-        border-radius: 6px !important; font-size: 13px !important; font-weight: 500 !important;
-        color: #5a6a7e !important; background: transparent !important;
-        border: none !important; cursor: pointer !important;
+        padding: 10px 14px !important;
+        font-size: 14px !important; font-weight: 500 !important;
+        color: #5a6a7e !important;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        transition: all .1s ease !important;
+        letter-spacing: .3px !important;
+        position: relative !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background: rgba(255,255,255,.04) !important; color: #e2e8f0 !important;
+        background: rgba(255,255,255,.04) !important;
+        color: #94a3b8 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
-        background: rgba(255,255,255,.06) !important; color: #fff !important; font-weight: 600 !important;
+        background: rgba(242,54,69,.08) !important;
+        color: #f23645 !important;
+        font-weight: 600 !important;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"]::before {
+        content: '' !important;
+        position: absolute !important;
+        left: -1px !important;
+        top: 20% !important;
+        bottom: 20% !important;
+        width: 3px !important;
+        background: #f23645 !important;
+        border-radius: 0 2px 2px 0 !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label input { display: none !important; }
     section[data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {
-        margin: 0 !important; font-size: 13px !important; color: inherit !important;
+        margin: 0 !important; font-size: 14px !important; color: inherit !important;
+    }
+
+    /* 退出按钮 */
+    section[data-testid="stSidebar"] button:last-of-type {
+        margin: 4px 12px !important; width: calc(100% - 24px) !important;
     }
 </style>
 """
@@ -2214,17 +2237,12 @@ def main():
         <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
         <div class="sb-user"><div class="uname">{esc(st.session_state.username)}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
         """, unsafe_allow_html=True)
-        st.markdown('<div class="menu-group-label">导 航</div>', unsafe_allow_html=True)
-        icon_map = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "交易记录": "📜", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
+        st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
         sel = st.session_state.nav_current
-        # 用 st.radio 做导航（最稳定的 Streamlit 组件）
-        opts = [f"{icon_map.get(n,'•')}  {n}" for n in nav]
-        current = f"{icon_map.get(sel,'•')}  {sel}"
-        idx = opts.index(current) if current in opts else 0
-        picked = st.radio("", opts, index=idx, key="nav_radio", label_visibility="collapsed")
-        new_nav = picked.split("  ")[-1].strip() if "  " in picked else picked
-        if new_nav != sel:
-            st.session_state.nav_current = new_nav
+        # 纯文字导航（无图标，专业简洁）
+        picked = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_radio", label_visibility="collapsed")
+        if picked != sel:
+            st.session_state.nav_current = picked
             st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
@@ -2233,11 +2251,7 @@ def main():
             st.session_state.role = ""
             st.rerun()
     st.markdown('<div class="mobile-only mobile-nav">', unsafe_allow_html=True)
-    icon_map_m = {"总览": "📊", "交易大厅": "🏛️", "我的持仓": "💼", "交易记录": "📜", "K线展板": "📈", "市场控制": "⚙️", "股票汇总": "📋", "股票管理": "📝", "用户管理": "👥"}
-    mob_opts = [f"{icon_map_m.get(n,'•')} {n}" for n in nav]
-    mob_cur = f"{icon_map_m.get(st.session_state.nav_current,'•')} {st.session_state.nav_current}"
-    mob_idx = mob_opts.index(mob_cur) if mob_cur in mob_opts else 0
-    mob_pick = st.radio("", mob_opts, index=mob_idx, key="nav_mobile", label_visibility="collapsed", horizontal=True)
+    mob_pick = st.radio("", nav, index=nav.index(sel) if sel in nav else 0, key="nav_mobile", label_visibility="collapsed", horizontal=True)
     mob_new = mob_pick.split(" ", 1)[1] if " " in mob_pick else mob_pick
     if mob_new != st.session_state.nav_current:
         st.session_state.nav_current = mob_new
