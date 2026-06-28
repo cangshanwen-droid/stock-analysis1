@@ -1515,7 +1515,7 @@ def download_db_button():
 GREEN = "#16a34a"; RED = "#ef4444"
 
 def pnl_class(v): return "up" if v >= 0 else "down"
-def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 盈亏红涨绿跌
+def pnl_color(v): return "#16a34a" if v >= 0 else "#ef4444"  # 盈亏绿涨红跌
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 页面：总览
