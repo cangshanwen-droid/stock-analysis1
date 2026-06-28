@@ -355,15 +355,11 @@ def reset_pwd(u, np_):
         conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u))
         conn.commit()
 
-@st.cache_data(ttl=5, show_spinner=False)
-def get_stocks_cached():
-    """缓存5秒的股票行情数据，支撑几百人并发读取"""
+def get_stocks():
+    """直接读库，WAL模式+缓存已足够支撑高并发"""
     with get_db_cm() as conn:
         r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
     return [dict(x) for x in r]
-
-def get_stocks():
-    return get_stocks_cached()
 
 def get_stock(sid):
     with get_db_cm() as conn:
@@ -379,8 +375,6 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1)", (sym.upper(),))
             conn.commit()
-        try: st.cache_data.clear()
-        except: pass
         return True, f"添加成功，初始价={price}"
     except sqlite3.IntegrityError:
         return False, "代码已存在"
@@ -395,16 +389,10 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
-
 def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
-
 def add_trade(username, symbol, tt, price, shares):
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -426,8 +414,6 @@ def add_trade(username, symbol, tt, price, shares):
         conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)", (username, symbol, tt, price, shares, cr))
         log_action(username, f"trade_{tt}", symbol, f"round={cr}, price={price}, shares={shares}, amount={cost:.2f}", conn)
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
     return True, "交易成功"
 
 def get_user_balance(username):
@@ -469,9 +455,6 @@ def close_market():
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
-
 def open_market():
     with get_db_cm() as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -483,9 +466,6 @@ def open_market():
             conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], new_round))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
-
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
     with get_db_cm() as conn:
@@ -504,9 +484,6 @@ def undo_market():
                 conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
         conn.commit()
-    try: st.cache_data.clear()
-    except: pass
-
 def reset_to_round1():
     """回到第一轮：不清除K线历史，只重置轮次"""
     with get_db_cm() as conn:
@@ -550,7 +527,7 @@ def get_user_overview(username):
 
 def get_admin_summary():
     """单条SQL汇总所有选手持仓数据，替代原来O(n)循环"""
-    stocks = get_stocks_cached()
+    stocks = get_stocks()
     if not stocks: return pd.DataFrame()
     with get_db_cm() as conn:
         rows = conn.execute("""
@@ -598,7 +575,7 @@ def get_holder_detail(symbol):
             GROUP BY t.username
             HAVING net_shares > 0
         """, (symbol,)).fetchall()
-    stock_info = get_stocks_cached()
+    stock_info = get_stocks()
     sp = {s["symbol"]: s["current_price"] for s in stock_info}
     cp = sp.get(symbol, 0)
     r = []
@@ -611,9 +588,8 @@ def get_holder_detail(symbol):
                   "收益率": round(pnl / row["buy_cost"] * 100, 2) if row["buy_cost"] else 0})
     return pd.DataFrame(r)
 
-@st.cache_data(ttl=5, show_spinner=False)
-def get_kline_data_cached(symbol):
-    """缓存5秒的K线数据"""
+def get_kline_data(symbol):
+    """直接读库K线数据"""
     with get_db_cm() as conn:
         r = conn.execute("""
             SELECT k.*
@@ -627,9 +603,6 @@ def get_kline_data_cached(symbol):
             ORDER BY k.round
         """, (symbol,)).fetchall()
     return [dict(x) for x in r]
-
-def get_kline_data(symbol):
-    return get_kline_data_cached(symbol)
 
 def get_platform_stats():
     s = get_admin_summary()
@@ -1041,7 +1014,7 @@ def page_public_dashboard():
         pct = (chg / prev * 100) if prev else 0
         cls = "up" if chg >= 0 else "down"
         sign = "+" if chg >= 0 else ""
-        vol_data = get_kline_data_cached(s["symbol"])
+        vol_data = get_kline_data(s["symbol"])
         total_vol = int(sum(d.get("volume", 0) for d in vol_data[-5:])) if vol_data else 0
         cards += f"""
         <div class="s-card {cls}">
@@ -1067,7 +1040,7 @@ def page_public_dashboard():
 
     # K线图
     sym = st.session_state.dash_sym
-    data = get_kline_data_cached(sym)
+    data = get_kline_data(sym)
     if data:
         import pandas as pd
         df_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
@@ -1119,7 +1092,6 @@ def page_public_dashboard():
     col1, col2, col3 = st.columns([4, 1, 4])
     with col2:
         if st.button("🔄 刷新", use_container_width=True):
-            st.cache_data.clear()
             st.rerun()
     # 自动刷新（JS定时器 + 页面重载，保证可靠性）
     st.markdown("""
