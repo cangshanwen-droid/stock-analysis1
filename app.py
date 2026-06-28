@@ -817,8 +817,16 @@ def page_admin_stock_mgmt():
     sdf = pd.DataFrame(stocks)
     sdf["price"] = sdf["current_price"].apply(lambda x: f"¥{x:,.2f}")
     sdf["lu"] = sdf["last_update"].apply(lambda x: str(x)[:19] if x else "-")
+    # 市场状态
+    conn = get_db()
+    status_map = {}
+    for s in stocks:
+        r = conn.execute("SELECT 1 FROM rounds WHERE stock_symbol=? AND is_settled=0", (s["symbol"],)).fetchone()
+        status_map[s["symbol"]] = "交易中" if r else "已闭市"
+    conn.close()
+    sdf["status"] = sdf["symbol"].map(status_map)
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(sdf[["symbol", "name", "price", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
+    st.dataframe(sdf[["symbol", "name", "price", "status", "carbon_price", "premium_rate", "lu"]].rename(columns={"symbol": "代码", "name": "名称", "price": "当前价", "status": "状态", "carbon_price": "碳价", "premium_rate": "溢价率", "lu": "更新"}), use_container_width=True, hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
     for s in stocks:
         with st.expander(f"{s['name']} ({s['symbol']})"):
