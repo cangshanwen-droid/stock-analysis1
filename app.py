@@ -871,37 +871,28 @@ html, body, [class*="css"] {
 
 /* ===== 科技感深色主题 ===== */
 :root {
-    --bg:       #0a0e17;
-    --bg-card:  rgba(18,25,45,.85);
+    --bg:       #060b1a;
+    --bg-card:  rgba(10,20,42,.75);
     --text:     #e2e8f0;
-    --text-2nd: #8892a8;
-    --text-3rd: #5a6480;
-    --primary:  #2563eb;
-    --primary-light: #60a5fa;
-    --accent:   #06b6d4;
+    --text-2nd: #8896ac;
+    --text-3rd: #5a6f8a;
+    --primary:  #d4a853;
+    --accent:   #d4a853;
+    --profit:   #ef4455;
+    --loss:     #718096;
     --green:    #10b981;
-    --red:      #ef4444;
-    --border:   rgba(59,130,246,.15);
-    --glow:     0 0 20px rgba(6,182,212,.08);
-    --glow-lg:  0 0 40px rgba(6,182,212,.12);
+    --red:      #ef4455;
+    --border:   rgba(255,255,255,.04);
+    --radius:   12px;
     --shadow:   0 1px 3px rgba(0,0,0,.3);
-    --shadow-lg: 0 8px 32px rgba(0,0,0,.4);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
 }
 
-/* 背景 + 网格纹理 */
 .stApp {
-    background: linear-gradient(160deg, #080c1a 0%, #0d1528 50%, #0a0e17 100%) !important;
-}
-.stApp::before {
-    content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background-image:
-        linear-gradient(rgba(6,182,212,.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(6,182,212,.03) 1px, transparent 1px);
-    background-size: 40px 40px;
-    pointer-events: none; z-index: 0;
+    background: linear-gradient(160deg, #040a18 0%, #0a1628 50%, #060d1e 100%) !important;
 }
 section.main > div.block-container {
-    padding: 8px !important; max-width: 100% !important; position: relative; z-index: 1;
+    padding: 6px 14px !important; max-width: 100% !important;
 }
 
 /* 顶栏 */
@@ -918,147 +909,120 @@ section.main > div.block-container {
 
 /* 磨砂玻璃卡片通用 */
 .kpi-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px;
 }
 .kpi-card {
-    background: var(--bg-card); border-radius: 14px; padding: 20px 18px;
-    border: 1px solid var(--border); box-shadow: var(--glow);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    transition: all .25s ease;
+    background: var(--bg-card); border-radius: var(--radius); padding: 18px 20px;
+    border: 1px solid var(--border);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    transition: all .2s ease;
 }
-.kpi-card:hover {
-    box-shadow: var(--glow-lg); border-color: rgba(6,182,212,.3);
-    transform: translateY(-2px);
-}
-.kpi-card .label { font-size: 11px; color: var(--text-2nd); margin-bottom: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
+.kpi-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+.kpi-card .label { font-size: 10px; color: var(--text-3rd); margin-bottom: 4px; letter-spacing: 1.5px; text-transform: uppercase; }
 .kpi-card .value {
-    font-size: 26px; font-weight: 700; color: #f0f4ff;
+    font-size: 26px; font-weight: 700; color: #eef2ff;
     font-feature-settings: "tnum"; font-variant-numeric: tabular-nums;
 }
 .kpi-card .delta { font-size: 12px; margin-top: 2px; }
-.kpi-card .delta.up { color: var(--red); }
-.kpi-card .delta.down { color: var(--green); }
+.kpi-card .delta.up { color: var(--profit); }
+.kpi-card .delta.down { color: var(--loss); }
 
 /* 磨砂股票卡片 */
 .stock-card {
-    background: var(--bg-card); border-radius: 14px; padding: 16px;
-    margin-bottom: 10px; border: 1px solid var(--border);
+    background: var(--bg-card); border-radius: var(--radius); padding: 14px;
+    margin-bottom: 8px; border: 1px solid var(--border);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    transition: all .2s ease;
+    transition: all .15s ease;
 }
 .stock-card:active { transform: scale(.98); }
-.stock-card .sc-header {
-    display: flex; justify-content: space-between; align-items: center;
-}
-.stock-card .sc-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.stock-card .sc-header { display: flex; justify-content: space-between; align-items: center; }
+.stock-card .sc-name { font-size: 15px; font-weight: 600; color: #eef2ff; }
 .stock-card .sc-pct { font-size: 14px; font-weight: 600; }
-.stock-card .sc-pct.up { color: var(--red); }
-.stock-card .sc-pct.down { color: var(--green); }
+.stock-card .sc-pct.up { color: var(--profit); }
+.stock-card .sc-pct.down { color: var(--loss); }
 .stock-card .sc-detail {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 3px 16px;
-    margin: 8px 0; font-size: 12px; color: var(--text-2nd);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px;
+    margin: 6px 0; font-size: 12px; color: var(--text-2nd);
 }
-.stock-card .sc-detail .val { color: #f0f4ff; font-weight: 500; }
+.stock-card .sc-detail .val { color: #eef2ff; font-weight: 500; }
 
-.section-title {
-    font-size: 15px; font-weight: 700; color: #f0f4ff; margin-bottom: 12px; letter-spacing: .3px;
-}
-.chart-summary {
-    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0;
-}
+.section-title { font-size: 15px; font-weight: 700; color: #eef2ff; margin-bottom: 10px; }
+.chart-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
 .chart-metric {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
     padding: 10px 12px; backdrop-filter: blur(8px);
 }
-.chart-metric .label { font-size: 11px; color: var(--text-2nd); margin-bottom: 2px; }
-.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: #f0f4ff; }
-.chart-metric .value.up { color: var(--red); }
-.chart-metric .value.down { color: var(--green); }
+.chart-metric .label { font-size: 10px; color: var(--text-3rd); margin-bottom: 2px; }
+.chart-metric .value { font-size: 16px; line-height: 1.3; font-weight: 700; color: #eef2ff; }
+.chart-metric .value.up { color: var(--profit); }
+.chart-metric .value.down { color: var(--loss); }
 .chart-panel {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
-    padding: 8px 8px 2px 8px; backdrop-filter: blur(8px);
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 6px 0 6px; backdrop-filter: blur(8px);
 }
-.mobile-nav { margin: 0 0 12px 0; }
-
+.mobile-nav { margin: 0 0 10px 0; }
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
 /* ===== 桌面端 @media ===== */
 @media (min-width: 768px) {
-    section.main > div.block-container { padding: 24px 32px !important; max-width: 1400px !important; margin: 0 auto !important; }
-    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
-    .kpi-card { padding: 18px 22px; }
+    section.main > div.block-container { padding: 18px 28px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .kpi-card { padding: 16px 20px; }
     .kpi-card .label { font-size: 10px; }
     .kpi-card .value { font-size: 22px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
-    .trade-bar { display: none; }
-    .trade-bar-spacer { display: none; }
-    .chart-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .desktop-table {
-        background: var(--bg-card); border-radius: 14px; padding: 4px 16px 16px 16px;
+        background: var(--bg-card); border-radius: var(--radius); padding: 2px 14px 12px 14px;
         border: 1px solid var(--border); backdrop-filter: blur(12px);
     }
-    /* Streamlit 表格深色 */
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] th {
-        background: transparent !important; font-size: 11px !important;
-        color: var(--text-2nd) !important; font-weight: 600 !important;
-        text-transform: uppercase; letter-spacing: 1px;
-        border-bottom: 1px solid var(--border) !important;
+        background: transparent !important; font-size: 10px !important;
+        color: var(--text-3rd) !important; font-weight: 600 !important;
+        text-transform: uppercase; letter-spacing: .8px;
+        border-bottom: 1px solid rgba(255,255,255,.03) !important;
+        padding: 10px 8px !important;
     }
     [data-testid="stDataFrame"] td {
-        font-size: 14px !important; color: var(--text) !important;
-        border-bottom: 1px solid rgba(255,255,255,.04) !important;
+        font-size: 13px !important; color: #e2e8f0 !important;
+        border-bottom: 1px solid rgba(255,255,255,.02) !important;
+        padding: 8px !important;
     }
-    /* 按钮 — 科技感 */
     div[data-testid="stButton"] button {
-        border-radius: 8px !important; font-weight: 600 !important;
-        transition: all .2s !important; background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important; color: var(--text) !important;
+        border-radius: 8px !important; font-weight: 500 !important;
+        transition: all .15s !important; background: rgba(255,255,255,.03) !important;
+        border: 1px solid var(--border) !important; color: #c8d0e0 !important;
+        font-size: 13px !important;
     }
     div[data-testid="stButton"] button:hover {
-        border-color: rgba(6,182,212,.4) !important;
-        box-shadow: 0 0 16px rgba(6,182,212,.1) !important;
+        border-color: rgba(255,255,255,.1) !important; color: #fff !important;
     }
     div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb, #06b6d4) !important;
-        border: none !important; color: #fff !important;
-        box-shadow: 0 4px 16px rgba(6,182,212,.3) !important;
+        background: linear-gradient(135deg, #d4a853, #c49a3f) !important;
+        border: none !important; color: #0a0e1a !important; font-weight: 600 !important;
     }
     div[data-testid="stButton"] button[kind="primary"]:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 6px 24px rgba(6,182,212,.4) !important;
+        box-shadow: 0 4px 16px rgba(212,168,83,.25) !important;
     }
-    /* 扩展器深色 */
     .st-emotion-cache-1aej4i3, details {
         background: var(--bg-card) !important;
         border: 1px solid var(--border) !important;
-        border-radius: 10px !important; margin-bottom: 8px !important;
+        border-radius: 10px !important; margin-bottom: 6px !important;
     }
     .st-emotion-cache-1aej4i3 summary, details summary {
-        font-weight: 600 !important; padding: 12px 16px !important; color: var(--text) !important;
+        font-weight: 500 !important; padding: 10px 14px !important; color: #c8d0e0 !important;
     }
-    /* 输入框深色 — 高强度覆盖 */
-    input, input[type="text"], input[type="password"], input[type="number"],
-    select, textarea,
-    div[data-baseweb="input"] input,
-    div[data-baseweb="select"] > div,
-    div[data-baseweb="textarea"] textarea {
-        background: rgba(15,25,50,.9) !important;
-        border: 1.5px solid rgba(6,182,212,.25) !important;
-        color: #ffffff !important;
-        border-radius: 8px !important;
-        padding: 10px 14px !important;
-        font-weight: 500 !important;
-        transition: all .2s !important;
+    input, div[data-baseweb="input"] input {
+        background: rgba(10,18,35,.85) !important;
+        border: 1px solid rgba(255,255,255,.05) !important;
+        color: #e2e8f0 !important; border-radius: 8px !important;
+        padding: 10px 14px !important; font-size: 14px !important;
     }
-    input:focus, input[type="text"]:focus, input[type="password"]:focus,
-    div[data-baseweb="input"] input:focus {
-        border-color: #06b6d4 !important;
-        box-shadow: 0 0 20px rgba(6,182,212,.15) !important;
-    }
-    div[data-testid="stMarkdown"] { color: var(--text) !important; }
+    input:focus { border-color: rgba(212,168,83,.25) !important; }
+    div[data-testid="stMarkdown"] { color: #c8d0e0 !important; }
 }
 
 @media (min-width: 768px) {
@@ -1070,8 +1034,8 @@ section.main > div.block-container {
 SIDEBAR_CSS = """
 <style>
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #080e1e 0%, #0f1a35 100%) !important;
-        border-right: 1px solid rgba(255,255,255,.04) !important;
+        background: linear-gradient(180deg, #040814 0%, #0a1228 100%) !important;
+        border-right: 1px solid rgba(255,255,255,.03) !important;
     }
     section[data-testid="stSidebar"] > div:first-child { background: transparent !important; padding: 0 !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
@@ -1104,40 +1068,30 @@ SIDEBAR_CSS = """
 
     /* === 导航按钮 === */
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        border-radius: 10px !important;
-        padding: 14px 16px !important;
-        font-size: 15px !important;
-        font-weight: 500 !important;
-        margin: 2px 14px !important;
-        width: calc(100% - 28px) !important;
-        transition: all .15s ease !important;
-        text-align: left !important;
-        border: 1px solid transparent !important;
-        background: transparent !important;
-        color: rgba(255,255,255,.45) !important;
-        box-shadow: none !important;
+        border-radius: 8px !important; padding: 11px 16px !important;
+        font-size: 14px !important; font-weight: 500 !important;
+        margin: 1px 12px !important; width: calc(100% - 24px) !important;
+        transition: all .12s ease !important; text-align: left !important;
+        border: 1px solid transparent !important; background: transparent !important;
+        color: rgba(255,255,255,.35) !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-        background: rgba(255,255,255,.06) !important;
-        color: rgba(255,255,255,.85) !important;
+        background: rgba(255,255,255,.04) !important;
+        color: rgba(255,255,255,.7) !important;
     }
-    /* 选中（当前导航项用 primary） */
     section[data-testid="stSidebar"] button[kind="primary"] {
-        background: linear-gradient(135deg, rgba(212,168,83,.12), rgba(212,168,83,.04)) !important;
-        border-color: rgba(212,168,83,.2) !important;
-        color: #ffffff !important;
-        font-weight: 600 !important;
+        background: rgba(212,168,83,.08) !important;
+        border-color: rgba(212,168,83,.15) !important;
+        color: #ffffff !important; font-weight: 600 !important;
         position: relative !important;
     }
     section[data-testid="stSidebar"] button[kind="primary"]::before {
-        content: '' !important;
-        position: absolute !important;
-        left: -1px !important;
-        top: 7px !important; bottom: 7px !important;
-        width: 3px !important;
+        content: '' !important; position: absolute !important;
+        left: -1px !important; top: 5px !important; bottom: 5px !important;
+        width: 2px !important;
         background: linear-gradient(180deg, #d4a853, #b8942f) !important;
-        border-radius: 0 3px 3px 0 !important;
-        box-shadow: 0 0 12px rgba(212,168,83,.4) !important;
+        border-radius: 0 2px 2px 0 !important;
+        box-shadow: 0 0 8px rgba(212,168,83,.3) !important;
     }
 
     /* 退出按钮 */
@@ -1478,7 +1432,7 @@ def download_db_button():
 GREEN = "#16a34a"; RED = "#ef4444"
 
 def pnl_class(v): return "up" if v >= 0 else "down"
-def pnl_color(v): return "#ef4444" if v >= 0 else "#16a34a"  # 红涨绿跌（A股标准）
+def pnl_color(v): return "#ef4455" if v >= 0 else "#718096"  # 盈柔红/亏灰黑
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 页面：总览
