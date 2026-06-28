@@ -226,6 +226,17 @@ html, body, [class*="css"] {
     -webkit-font-smoothing: antialiased;
 }
 
+/* ===== 隐藏 Streamlit 默认 UI ===== */
+#MainMenu { display: none !important; }
+.stDeployButton { display: none !important; }
+footer { display: none !important; }
+header { display: none !important; }
+.stStatusWidget { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+[data-testid="stDecoration"] { display: none !important; }
+.stApp > header { height: 0 !important; overflow: hidden; }
+
 /* ===== 颜色系统 ===== */
 :root {
     --bg:       #F5F7FA;
@@ -793,7 +804,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板"]
 ADMIN_NAV = ["总览", "交易大厅", "我的持仓", "我的做市", "K线展板", "交易管理", "股票汇总", "股票管理", "用户管理"]
 
-st.set_page_config(page_title="股票交易系统", layout="wide")
+st.set_page_config(page_title="双镜 智能投资", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 init_db()
 
