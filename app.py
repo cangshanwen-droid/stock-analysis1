@@ -462,6 +462,7 @@ def add_trade(username, symbol, tt, price, shares):
                     continue
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, username))
                 conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, sell_order["username"]))
+                conn.execute("UPDATE stocks SET current_price=? WHERE symbol=?", (match_price, symbol))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "buy", match_price, match_shares, cr))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
@@ -492,6 +493,7 @@ def add_trade(username, symbol, tt, price, shares):
                 cost = price * remaining
                 if bal["balance"] >= cost:
                     conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+                    conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (price, price, symbol))
                     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                         (username, symbol, "buy", price, remaining, cr))
                     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -534,6 +536,7 @@ def add_trade(username, symbol, tt, price, shares):
                     continue
                 conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (match_cost, buy_order["username"]))
                 conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (match_cost, username))
+                conn.execute("UPDATE stocks SET current_price=? WHERE symbol=?", (match_price, symbol))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (buy_order["username"], symbol, "buy", match_price, match_shares, cr))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
@@ -563,6 +566,7 @@ def add_trade(username, symbol, tt, price, shares):
                 # 无匹配时直接成交（系统兜底）
                 cost = price * remaining
                 conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
+                conn.execute("UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (price, price, symbol))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?)",
                     (username, symbol, "sell", price, remaining, cr))
                 conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
