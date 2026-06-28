@@ -1097,7 +1097,7 @@ def page_public_dashboard():
     st.markdown("""
     <div style="text-align:center;color:rgba(255,255,255,.08);font-size:10px;font-family:monospace;">⏱ 每20秒自动刷新</div>
     <script>
-    setTimeout(function(){ window.location.reload(); }, 20000);
+    setTimeout(function(){ window.location.href = window.location.pathname + '?_=' + Date.now(); }, 20000);
     </script>
     """, unsafe_allow_html=True)
 
