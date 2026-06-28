@@ -84,10 +84,10 @@ def init_db():
             # 每次启动同步股票数据（覆盖更新）
             # 格式: (代码, 名称, 总股本, 净利润, 行业PE, 初始碳排, 碳排均值, 幸福度)
             stock_defs = [
-                ("WULIU", "物流1公司", 10000, 100, 20, 50, 50, 50),
-                ("JXIAO", "经销1公司", 10000, 150, 20, 50, 50, 50),
-                ("JGONG", "加工1公司", 10000, 200, 20, 50, 50, 50),
-                ("YLIAO", "原料1公司", 10000, 250, 20, 50, 50, 50),
+                ("WULIU", "物流1公司", 10000, 200, 20, 50, 50, 50),
+                ("JXIAO", "经销1公司", 10000, 300, 20, 50, 50, 50),
+                ("JGONG", "加工1公司", 10000, 400, 20, 50, 50, 50),
+                ("YLIAO", "原料1公司", 10000, 500, 20, 50, 50, 50),
             ]
             for sym, name, ts_, rev, ipe, cp, icm, pr in stock_defs:
                 price = calc_initial_price(rev, ts_, ipe)
@@ -173,10 +173,10 @@ def _seed(conn):
     for i, u in enumerate(["player1", "player2", "player3"], 2):
         cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(?,?,?,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, ts_, rev, ipe, cp, icm, pr, funds in [
-        ("WULIU", "物流1公司", 10000, 100, 20, 50, 50, 50, 2000),
-        ("JXIAO", "经销1公司", 10000, 150, 20, 50, 50, 50, 3000),
-        ("JGONG", "加工1公司", 10000, 200, 20, 50, 50, 50, 4000),
-        ("YLIAO", "原料1公司", 10000, 250, 20, 50, 50, 50, 5000),
+        ("WULIU", "物流1公司", 10000, 200, 20, 50, 50, 50, 2000),
+        ("JXIAO", "经销1公司", 10000, 300, 20, 50, 50, 50, 3000),
+        ("JGONG", "加工1公司", 10000, 400, 20, 50, 50, 50, 4000),
+        ("YLIAO", "原料1公司", 10000, 500, 20, 50, 50, 50, 5000),
     ]:
         price = calc_initial_price(rev, ts_, ipe)
         cur.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
