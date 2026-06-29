@@ -8,6 +8,7 @@ from datetime import datetime
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -2260,14 +2261,19 @@ def page_kline():
     total_volume = int(df_k["volume"].sum())
     high_price = float(df_k["high_price"].max())
     low_price = float(df_k["low_price"].min())
+    latest_open = float(latest["open_price"])
+    latest_high = float(latest["high_price"])
+    latest_low = float(latest["low_price"])
+    latest_volume = int(latest["volume"])
+    latest_round = int(latest["round"])
     latest_cls = "up" if latest_change >= 0 else "down"
     total_cls = "up" if total_change >= 0 else "down"
     st.markdown(f"""
     <div class="chart-summary">
-        <div class="chart-metric"><div class="label">最新收盘</div><div class="value {latest_cls}">{fmt_money(latest_close)}</div></div>
+        <div class="chart-metric"><div class="label">最新价 · 第{latest_round}轮</div><div class="value {latest_cls}">{fmt_money(latest_close)}</div></div>
         <div class="chart-metric"><div class="label">本轮涨跌</div><div class="value {latest_cls}">{latest_change:+.2f}%</div></div>
-        <div class="chart-metric"><div class="label">区间涨跌</div><div class="value {total_cls}">{total_change:+.2f}%</div></div>
-        <div class="chart-metric"><div class="label">区间成交量</div><div class="value">{fmt_num(total_volume)}</div></div>
+        <div class="chart-metric"><div class="label">开 / 高 / 低</div><div class="value">{latest_open:,.2f} / {latest_high:,.2f} / {latest_low:,.2f}</div></div>
+        <div class="chart-metric"><div class="label">本轮量 / 区间量</div><div class="value">{fmt_num(latest_volume)} / {fmt_num(total_volume)}</div></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2293,12 +2299,21 @@ def page_kline():
             fillcolor=GREEN_DN,
         ),
         whiskerwidth=0.5,
-        name="", showlegend=False,
+        name="K线", showlegend=False,
+        customdata=np.stack([df_k["round"], df_k["change_pct"], df_k["volume"]], axis=-1),
+        hovertemplate=(
+            "第%{customdata[0]}轮<br>"
+            "开盘 %{open:,.2f}<br>最高 %{high:,.2f}<br>"
+            "最低 %{low:,.2f}<br>收盘 %{close:,.2f}<br>"
+            "涨跌 %{customdata[1]:+.2f}%<br>成交量 %{customdata[2]:,.0f}<extra></extra>"
+        ),
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
         x=x_values, y=df_k["volume"], marker_color=vol_color,
-        name="", showlegend=False,
+        name="成交量", showlegend=False,
+        customdata=df_k["round"],
+        hovertemplate="第%{customdata}轮<br>成交量 %{y:,.0f}<extra></extra>",
     ), row=2, col=1)
 
     # ── MA5 / MA10 / MA20 均线 ──
@@ -2310,16 +2325,28 @@ def page_kline():
         if len(df_k) >= period:
             ma = df_k["close_price"].rolling(period).mean()
             fig.add_trace(go.Scatter(x=x_values, y=ma, mode="lines",
-                line=dict(color=color, width=1.2), name=name), row=1, col=1)
+                line=dict(color=color, width=1.35), name=name,
+                hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
+
+    high_idx = int(df_k["high_price"].idxmax())
+    low_idx = int(df_k["low_price"].idxmin())
+    fig.add_annotation(x=df_k.loc[high_idx, "x_label"], y=high_price, text=f"高 {high_price:,.2f}",
+                       showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
+                       arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
+                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
+    fig.add_annotation(x=df_k.loc[low_idx, "x_label"], y=low_price, text=f"低 {low_price:,.2f}",
+                       showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
+                       arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
+                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
 
     # ── 布局：同花顺/东方财富专业风格 ──
     fig.update_layout(
-        height=560,
-        margin=dict(t=8, b=8, l=0, r=20),
+        height=600,
+        margin=dict(t=24, b=8, l=0, r=56),
         plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
         xaxis_rangeslider_visible=False,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                     bgcolor="rgba(15,23,36,0.86)", bordercolor="#1e2a3a", borderwidth=0.5,
                     font=dict(color="#cbd5e1")),
         hovermode="x unified",
@@ -2336,6 +2363,9 @@ def page_kline():
         bargap=0.1,  # 蜡烛紧凑，更接近专业密度
         dragmode="zoom",
     )
+    fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
+                  annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
+                  annotation_font_color="#fbbf24", row=1, col=1)
 
     # 主图 Y 轴：右侧价格标签，浅灰虚线网格
     y_min = low_price
