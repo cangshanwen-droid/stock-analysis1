@@ -1086,8 +1086,8 @@ div[data-testid="stForm"] {
     background: #0b1220 !important; border-radius: 6px !important;
 }
 .chart-panel.pro-chart {
-    background: #ffffff;
-    border-color: #dfe5ec;
+    background: #0b1220;
+    border-color: #1e2a3a;
     padding: 0;
     overflow: hidden;
 }
@@ -1102,14 +1102,19 @@ div[data-testid="stForm"] {
     gap: 12px;
     align-items: center;
     flex-wrap: wrap;
-    background: #f7f9fc;
-    border: 1px solid #e6ebf1;
+    background: #0f1724;
+    border: 1px solid #1e2a3a;
     border-bottom: none;
-    color: #8a929d;
+    color: #94a3b8;
     font-size: 13px;
     padding: 7px 10px;
 }
-.boll-strip b { color: #475569; }
+.chart-panel.pro-chart .js-plotly-plot,
+.chart-panel.pro-chart .plot-container,
+.chart-panel.pro-chart .svg-container {
+    background: #0b1220 !important;
+}
+.boll-strip b { color: #e2e8f0; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -1741,27 +1746,27 @@ def page_public_dashboard():
                 <div class="name">{esc(selected_stock["name"])} · {esc(selected_stock["symbol"])}</div>
                 <div class="meta">BOLL [20,2] ｜ MID {latest_mid:,.2f} ｜ UPPER {latest_upper:,.2f} ｜ LOWER {latest_lower:,.2f}</div>
             </div>
-            <div class="meta">专业展示K线 · 红空心绿实心</div>
+            <div class="meta">真实轮次锚定 · 专业展示K线</div>
         </div>
         """, unsafe_allow_html=True)
 
         tick_step = max(1, len(df_k)//6)
         tick_vals = x_values.iloc[::tick_step]
         tick_text = df_k["x_label"].iloc[::tick_step]
-        fig.update_layout(height=540, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+        fig.update_layout(height=540, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
             margin=dict(t=8, b=8, l=44, r=48), xaxis_rangeslider_visible=False,
-            font=dict(color="#8a929d", size=10), hovermode="x unified",
-            hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_color="#1f2937", bordercolor="#d6dde7"),
-            xaxis=dict(type="linear", showspikes=True, spikemode="across", spikecolor="#aab2bd"),
-            yaxis=dict(showspikes=True, spikecolor="#aab2bd"),
+            font=dict(color="#94a3b8", size=10), hovermode="x unified",
+            hoverlabel=dict(bgcolor="#111827", font_size=12, font_color="#e5e7eb", bordercolor="#334155"),
+            xaxis=dict(type="linear", showspikes=True, spikemode="across", spikecolor="#64748b"),
+            yaxis=dict(showspikes=True, spikecolor="#64748b"),
             showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                font=dict(color="#68707d", size=10)),
+                font=dict(color="#94a3b8", size=10)),
             bargap=0.42)
-        fig.update_yaxes(showgrid=True, gridcolor="#edf1f5", griddash="solid",
-            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10, color="#8a929d"))
+        fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
+            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10, color="#94a3b8"))
         fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=1, col=1)
-        fig.update_yaxes(showgrid=True, gridcolor="#edf1f5", griddash="solid",
-            side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9, color="#8a929d"))
+        fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
+            side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9, color="#94a3b8"))
         fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=2, col=1)
 
         st.markdown('<div class="chart-panel pro-chart">', unsafe_allow_html=True)
@@ -2295,9 +2300,14 @@ def build_professional_kline_view(df_src, symbol, target=72):
         body_max = price_scale * 0.035
         close = open_ + np.clip(close - open_, -body_max, body_max)
         close[-1] = float(src.iloc[-1]["close_price"])
+        real_high = float(src["high_price"].max())
+        real_low = max(float(src["low_price"].min()), 0.01)
+        open_ = np.clip(open_, real_low, real_high)
+        close = np.clip(close, real_low, real_high)
         high = np.maximum(open_, close) + rng.uniform(price_scale * 0.004, price_scale * 0.022, target)
         low = np.minimum(open_, close) - rng.uniform(price_scale * 0.004, price_scale * 0.022, target)
-        low = np.maximum(low, 0.01)
+        high = np.minimum(high, real_high)
+        low = np.maximum(low, real_low)
         real_vol = max(float(src["volume"].mean()), 1.0)
         vol_wave = 0.75 + 0.35 * np.sin(np.linspace(0, 3.2 * np.pi, target) + 1.1)
         volume = np.maximum(real_vol * vol_wave * rng.uniform(0.72, 1.28, target), 1).astype(int)
@@ -2309,8 +2319,18 @@ def build_professional_kline_view(df_src, symbol, target=72):
             "close_price": close,
             "volume": volume,
         })
+        anchor_idx = np.rint(np.linspace(0, target - 1, len(src))).astype(int)
+        for idx_real, (_, real_row) in zip(anchor_idx, src.iterrows()):
+            out.loc[idx_real, "open_price"] = float(real_row["open_price"])
+            out.loc[idx_real, "high_price"] = float(real_row["high_price"])
+            out.loc[idx_real, "low_price"] = float(real_row["low_price"])
+            out.loc[idx_real, "close_price"] = float(real_row["close_price"])
+            out.loc[idx_real, "volume"] = float(row_get(real_row, "volume", out.loc[idx_real, "volume"]) or 0)
         prev = out["close_price"].shift(1).fillna(out["open_price"])
         out["change_pct"] = ((out["close_price"] - prev) / prev.replace(0, np.nan) * 100).fillna(0)
+        for idx_real, (_, real_row) in zip(anchor_idx, src.iterrows()):
+            out.loc[idx_real, "round"] = int(real_row["round"])
+            out.loc[idx_real, "change_pct"] = float(row_get(real_row, "change_pct", out.loc[idx_real, "change_pct"]) or 0)
     out["mid"] = out["close_price"].rolling(20, min_periods=5).mean()
     std = out["close_price"].rolling(20, min_periods=5).std().fillna(0)
     out["upper"] = out["mid"] + 2 * std
@@ -2482,43 +2502,43 @@ def page_kline():
     low_idx = int(df_k["low_price"].idxmin())
     fig.add_annotation(x=df_k.loc[high_idx, "x_pos"], y=high_price, text=f"高 {high_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
-                       arrowcolor="#2f343b", font=dict(size=13, color="#2f343b"),
-                       bgcolor="rgba(255,255,255,.74)", bordercolor="rgba(0,0,0,0)", row=1, col=1)
+                       arrowcolor="#94a3b8", font=dict(size=13, color="#e2e8f0"),
+                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
     fig.add_annotation(x=df_k.loc[low_idx, "x_pos"], y=low_price, text=f"低 {low_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
-                       arrowcolor="#2f343b", font=dict(size=13, color="#2f343b"),
-                       bgcolor="rgba(255,255,255,.74)", bordercolor="rgba(0,0,0,0)", row=1, col=1)
+                       arrowcolor="#94a3b8", font=dict(size=13, color="#e2e8f0"),
+                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
 
     # ── 布局：同花顺/东方财富专业风格 ──
     fig.update_layout(
         height=600,
         margin=dict(t=24, b=8, l=56, r=56),
-        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+        plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
         xaxis_rangeslider_visible=False,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    bgcolor="rgba(255,255,255,0.82)", bordercolor="#e5e7eb", borderwidth=0.5,
-                    font=dict(color="#68707d")),
+                    bgcolor="rgba(15,23,36,0.86)", bordercolor="#1e2a3a", borderwidth=0.5,
+                    font=dict(color="#cbd5e1")),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#ffffff", font_size=11, font_color="#1f2937",
-                        bordercolor="#d6dde7"),
+        hoverlabel=dict(bgcolor="#111827", font_size=11, font_color="#e5e7eb",
+                        bordercolor="#334155"),
         font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-                  size=11, color="#8a929d"),
+                  size=11, color="#94a3b8"),
         # 十字光标（同花顺风格：实线细十字）
         xaxis=dict(type="linear",
                    showspikes=True, spikemode="across", spikethickness=0.8,
-                   spikecolor="#aab2bd", spikedash="solid"),
+                   spikecolor="#64748b", spikedash="solid"),
         yaxis=dict(showspikes=True, spikethickness=0.8,
-                   spikecolor="#aab2bd", spikedash="solid"),
+                   spikecolor="#64748b", spikedash="solid"),
         bargap=0.42,
         dragmode="zoom",
     )
-    fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#9aa4b2",
+    fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
                   annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
-                  annotation_font_color="#4b5563", row=1, col=1)
+                  annotation_font_color="#fbbf24", row=1, col=1)
     fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
                   annotation_text="0% 基准", annotation_position="bottom left",
-                  annotation_font_color="#7c8794", row=1, col=1)
+                  annotation_font_color="#94a3b8", row=1, col=1)
 
     # 主图 Y 轴：右侧价格标签 + 左侧涨跌幅参考轴
     y_min = low_price
@@ -2529,19 +2549,19 @@ def page_kline():
     pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in pct_ticks]
     fig.update_yaxes(
         range=y_range,
-        showgrid=True, gridcolor="#edf1f5", gridwidth=1, griddash="solid",
-        tickformat=",.2f", tickfont=dict(size=12, color="#8a929d", family="monospace"),
+        showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
+        tickformat=",.2f", tickfont=dict(size=12, color="#94a3b8", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
-        title_text="", title_font=dict(size=10, color="#8a929d"),
+        title_text="", title_font=dict(size=10, color="#94a3b8"),
     )
     fig.update_layout(
         yaxis3=dict(
             overlaying="y", anchor="x", side="left", range=y_range,
             tickmode="array", tickvals=pct_ticks, ticktext=pct_text,
             showgrid=False, zeroline=False, ticks="outside",
-            tickfont=dict(size=12, color="#8a929d", family="monospace"),
-            title=dict(text="", font=dict(size=10, color="#8a929d")),
+            tickfont=dict(size=12, color="#94a3b8", family="monospace"),
+            title=dict(text="", font=dict(size=10, color="#94a3b8")),
         )
     )
     tick_step = max(1, len(df_k)//6)
@@ -2550,14 +2570,14 @@ def page_kline():
     fig.update_xaxes(
         showgrid=False, type="linear",
         tickmode="array", tickvals=tick_vals, ticktext=tick_text,
-        tickfont=dict(size=11, color="#8a929d"),
+        tickfont=dict(size=11, color="#94a3b8"),
         row=1, col=1,
     )
 
     # 成交量副图
     fig.update_yaxes(
-        showgrid=True, gridcolor="#edf1f5", gridwidth=1, griddash="solid",
-        tickfont=dict(size=10, color="#8a929d"), side="right", row=2, col=1,
+        showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
+        tickfont=dict(size=10, color="#94a3b8"), side="right", row=2, col=1,
         zeroline=False,
     )
     fig.update_xaxes(
@@ -2565,7 +2585,7 @@ def page_kline():
         tickmode="array",
         tickvals=tick_vals,
         ticktext=tick_text,
-        tickfont=dict(size=11, color="#8a929d"),
+        tickfont=dict(size=11, color="#94a3b8"),
         row=2, col=1,
     )
 
