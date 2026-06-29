@@ -1685,53 +1685,86 @@ def page_public_dashboard():
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
     data = get_kline_data(sym)
     if data:
-        df_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
-        df_k["x"] = df_k["round"].apply(lambda r: f"第{r}轮")
+        raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
+        df_k = build_professional_kline_view(raw_k, sym)
+        df_k["x_pos"] = np.arange(len(df_k)) + 1
+        df_k["x_label"] = df_k["round"].apply(lambda r: f"{int(r)}")
+        x_values = df_k["x_pos"]
 
-        RED_UP = "#ef5350"
-        GREEN_DN = "#2ecc71"
+        RED_UP = "#d64b45"
+        GREEN_DN = "#07984f"
         up_mask = df_k["close_price"] >= df_k["open_price"]
-        vol_c = ["rgba(239,83,80,0.4)" if u else "rgba(46,204,113,0.4)" for u in up_mask]
+        body_fill = ["rgba(255,255,255,0)" if u else GREEN_DN for u in up_mask]
+        candle_line = [RED_UP if u else GREEN_DN for u in up_mask]
+        vol_fill = ["rgba(255,255,255,0)" if u else GREEN_DN for u in up_mask]
+        vol_line = [RED_UP if u else GREEN_DN for u in up_mask]
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.75, 0.25])
-        fig.add_trace(go.Candlestick(x=df_k["x"], open=df_k["open_price"], high=df_k["high_price"],
-            low=df_k["low_price"], close=df_k["close_price"],
-            increasing=dict(line=dict(color=RED_UP, width=1.2), fillcolor=RED_UP),
-            decreasing=dict(line=dict(color=GREEN_DN, width=1.2), fillcolor=GREEN_DN),
-            whiskerwidth=0.5, name="", showlegend=False), row=1, col=1)
-        fig.add_trace(go.Bar(x=df_k["x"], y=df_k["volume"], marker_color=vol_c, name="", showlegend=False), row=2, col=1)
+        for is_up, color in [(True, RED_UP), (False, GREEN_DN)]:
+            wick_x, wick_y = [], []
+            for _, r in df_k[up_mask == is_up].iterrows():
+                wick_x.extend([r["x_pos"], r["x_pos"], None])
+                wick_y.extend([r["low_price"], r["high_price"], None])
+            fig.add_trace(go.Scatter(x=wick_x, y=wick_y, mode="lines",
+                line=dict(color=color, width=1), hoverinfo="skip", showlegend=False), row=1, col=1)
 
-        for period, color, name in [(5, "#f59e0b", "MA5"), (10, "#a78bfa", "MA10")]:
-            if len(df_k) >= period:
-                ma = df_k["close_price"].rolling(period).mean()
-                fig.add_trace(go.Scatter(x=df_k["x"], y=ma, mode="lines", line=dict(color=color, width=1.2), name=name), row=1, col=1)
+        body_base = df_k[["open_price", "close_price"]].min(axis=1)
+        body_height = (df_k["close_price"] - df_k["open_price"]).abs()
+        min_body = max((df_k["high_price"].max() - df_k["low_price"].min()) * 0.008, float(df_k.iloc[-1]["close_price"]) * 0.001, 0.01)
+        body_height = body_height.where(body_height > min_body, min_body)
+        fig.add_trace(go.Bar(x=x_values, y=body_height, base=body_base, width=0.42,
+            marker=dict(color=body_fill, line=dict(color=candle_line, width=1.05)),
+            name="K线", showlegend=False,
+            customdata=np.stack([df_k["round"], df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
+            hovertemplate="第%{customdata[0]}<br>开 %{customdata[1]:,.2f}<br>高 %{customdata[2]:,.2f}<br>低 %{customdata[3]:,.2f}<br>收 %{customdata[4]:,.2f}<br>涨跌 %{customdata[5]:+.2f}%<extra></extra>"), row=1, col=1)
+
+        for col, color, name in [("upper", "#6b9ec7", "UPPER"), ("mid", "#d6a11d", "MID"), ("lower", "#d957a8", "LOWER")]:
+            if df_k[col].notna().any():
+                fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
+                    line=dict(color=color, width=1.2), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
+
+        fig.add_trace(go.Bar(x=x_values, y=df_k["volume"], width=0.42,
+            marker=dict(color=vol_fill, line=dict(color=vol_line, width=1)),
+            name="成交量", showlegend=False, hovertemplate="量 %{y:,.0f}<extra></extra>"), row=2, col=1)
+        for period, color, name in [(5, "#d6a11d", "VOL5"), (10, "#4c8fbd", "VOL10")]:
+            vol_ma = df_k["volume"].rolling(period, min_periods=2).mean()
+            fig.add_trace(go.Scatter(x=x_values, y=vol_ma, mode="lines",
+                line=dict(color=color, width=1), showlegend=False, hovertemplate=f"{name} %{{y:,.0f}}<extra></extra>"), row=2, col=1)
+
+        latest_mid = float(df_k["mid"].dropna().iloc[-1]) if df_k["mid"].notna().any() else float(df_k.iloc[-1]["close_price"])
+        latest_upper = float(df_k["upper"].dropna().iloc[-1]) if df_k["upper"].notna().any() else float(df_k["high_price"].max())
+        latest_lower = float(df_k["lower"].dropna().iloc[-1]) if df_k["lower"].notna().any() else float(df_k["low_price"].min())
 
         st.markdown(f"""
         <div class="dash-chart-head">
             <div>
                 <div class="name">{esc(selected_stock["name"])} · {esc(selected_stock["symbol"])}</div>
-                <div class="meta">K线走势 ｜ 共 {len(df_k)} 轮数据 ｜ 当前市场第 {mkt_round} 轮</div>
+                <div class="meta">BOLL [20,2] ｜ MID {latest_mid:,.2f} ｜ UPPER {latest_upper:,.2f} ｜ LOWER {latest_lower:,.2f}</div>
             </div>
-            <div class="meta">红涨绿跌 · MA5/MA10</div>
+            <div class="meta">专业展示K线 · 红空心绿实心</div>
         </div>
         """, unsafe_allow_html=True)
 
-        fig.update_layout(height=520, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(t=8, b=8, l=0, r=12), xaxis_rangeslider_visible=False,
-            font=dict(color="rgba(255,255,255,.5)", size=10), hovermode="x unified",
-            hoverlabel=dict(bgcolor="#1e293b", font_size=12, font_color="#ffffff"),
-            xaxis=dict(showspikes=True, spikemode="across", spikecolor="rgba(255,255,255,.1)"),
-            yaxis=dict(showspikes=True, spikecolor="rgba(255,255,255,.1)"),
+        tick_step = max(1, len(df_k)//6)
+        tick_vals = x_values.iloc[::tick_step]
+        tick_text = df_k["x_label"].iloc[::tick_step]
+        fig.update_layout(height=540, plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+            margin=dict(t=8, b=8, l=44, r=48), xaxis_rangeslider_visible=False,
+            font=dict(color="#8a929d", size=10), hovermode="x unified",
+            hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_color="#1f2937", bordercolor="#d6dde7"),
+            xaxis=dict(type="linear", showspikes=True, spikemode="across", spikecolor="#aab2bd"),
+            yaxis=dict(showspikes=True, spikecolor="#aab2bd"),
             showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                font=dict(color="rgba(255,255,255,.4)", size=10)),
-            bargap=0.1)
-        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,.05)", griddash="dot",
-            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10))
-        fig.update_xaxes(showgrid=False, row=1, col=1)
-        fig.update_yaxes(showgrid=True, gridcolor="rgba(255,255,255,.05)", griddash="dot",
-            side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9))
+                font=dict(color="#68707d", size=10)),
+            bargap=0.42)
+        fig.update_yaxes(showgrid=True, gridcolor="#edf1f5", griddash="solid",
+            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10, color="#8a929d"))
+        fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=1, col=1)
+        fig.update_yaxes(showgrid=True, gridcolor="#edf1f5", griddash="solid",
+            side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9, color="#8a929d"))
+        fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=2, col=1)
 
-        st.markdown('<div class="chart-box">', unsafe_allow_html=True)
+        st.markdown('<div class="chart-panel pro-chart">', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": True})
         st.markdown('</div>', unsafe_allow_html=True)
     else:
