@@ -916,6 +916,37 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
     background: rgba(15,23,36,.76); border: 1px solid #1e2a3a;
     border-radius: 8px; padding: 14px; margin-bottom: 14px;
 }
+.data-table-wrap {
+    overflow-x: auto;
+    background: rgba(15,23,36,.78);
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    margin: 10px 0 14px;
+}
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 680px;
+}
+.data-table th {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 750;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #1e2a3a;
+    background: rgba(255,255,255,.025);
+    white-space: nowrap;
+}
+.data-table td {
+    color: #e2e8f0;
+    font-size: 13px;
+    padding: 11px 12px;
+    border-bottom: 1px solid rgba(30,42,58,.72);
+    white-space: nowrap;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(255,255,255,.025); }
 div[data-testid="stForm"] {
     background: rgba(15,23,36,.72) !important;
     border: 1px solid #1e2a3a !important;
@@ -927,6 +958,8 @@ div[data-testid="stForm"] {
     .page-head .title { font-size: 18px; }
     .page-head .sub { display: none; }
     .page-badge { min-height: 24px; padding: 4px 9px; font-size: 11px; }
+    .data-table { min-width: 560px; }
+    .data-table th, .data-table td { padding: 9px 10px; font-size: 12px; }
 }
 
 /* KPI 卡片 */
@@ -1216,8 +1249,8 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     .st-key-mobile_nav_bar { display: none !important; }
     .mob-bar-inner { display: none !important; }
     .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
-    .desktop-only { display: block; }
-    .mobile-only { display: none; }
+    .desktop-only { display: block !important; }
+    .mobile-only { display: none !important; }
     .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 6px; }
     .desktop-table { background: #0f1724; border-radius: 6px; padding: 0 12px 8px 12px; border: 1px solid #1e2a3a; }
     [data-testid="stDataFrame"] { border: none !important; }
@@ -1704,6 +1737,7 @@ def page_login():
                 ok, role = auth_user(u, p)
                 if ok:
                     st.session_state.logged_in = True; st.session_state.username = u; st.session_state.role = role
+                    st.session_state.nav_current = "市场控制" if role == "admin" else "总览"
                     log_action(u, "login", "auth", "success")
                 else:
                     with get_db_cm() as conn:
@@ -1744,6 +1778,31 @@ def page_header(title, subtitle="", badge=None, ok=False):
             {sub_html}
         </div>
         {badge_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+def kpi_card(label, value, delta=None, up=True):
+    delta_html = ""
+    if delta is not None:
+        delta_cls = "up" if up else "down"
+        delta_html = f'<div class="delta {delta_cls}">{esc(delta)}</div>'
+    return f'<div class="kpi-card"><div class="label">{esc(label)}</div><div class="value">{esc(value)}</div>{delta_html}</div>'
+
+def render_table(df, columns=None):
+    if df is None or len(df) == 0:
+        st.info("暂无数据")
+        return
+    view = df[columns].copy() if columns else df.copy()
+    head = "".join(f"<th>{esc(str(c))}</th>" for c in view.columns)
+    rows = []
+    for _, row in view.iterrows():
+        rows.append("<tr>" + "".join(f"<td>{esc(str(row[c]))}</td>" for c in view.columns) + "</tr>")
+    st.markdown(f"""
+    <div class="data-table-wrap">
+        <table class="data-table">
+            <thead><tr>{head}</tr></thead>
+            <tbody>{''.join(rows)}</tbody>
+        </table>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1854,7 +1913,7 @@ def page_portfolio():
     d["市值"] = pf["market_value"].apply(lambda x: fmt_money(x))
     d["盈亏"] = pf["pnl"].apply(lambda x: fmt_money(x))
     d["收益率"] = pf["pnl_ratio"].apply(lambda x: f"{x:,.2f}%")
-    st.dataframe(d[["名称", "代码", "持仓", "成本", "现价", "市值", "盈亏", "收益率"]], use_container_width=True, hide_index=True)
+    render_table(d[["名称", "代码", "持仓", "成本", "现价", "市值", "盈亏", "收益率"]])
     st.markdown('</div></div>', unsafe_allow_html=True)
 
     # 买入时间（从最近一笔买入记录取）
@@ -1907,7 +1966,7 @@ def page_market_making():
         "金额": f"¥{r['price']*r['shares']:,.0f}", "轮次": f"第{r['round']}轮",
         "时间": str(r["trade_date"])[:19] if r["trade_date"] else "-",
     } for r in rows])
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    render_table(df)
     st.markdown('</div></div>', unsafe_allow_html=True)
 
 def page_trade_hall():
@@ -2190,7 +2249,7 @@ def page_kline():
     disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
     disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
     disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
-    st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
+    render_table(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}))
 
 def page_admin_stock_summary():
     page_header("股票汇总", "全市场持仓、市值与盈亏概览", badge="管理员", ok=True)
@@ -2211,14 +2270,14 @@ def page_admin_stock_summary():
                 dd["当前价"] = dd["当前价"].apply(lambda x: f"¥{x:,.2f}")
                 dd["盈亏"] = dd["盈亏"].apply(lambda x: f"¥{x:,.2f}")
                 dd["收益率"] = dd["收益率"].apply(lambda x: f"{x:,.2f}%")
-                st.dataframe(dd, use_container_width=True, hide_index=True)
+                render_table(dd)
     disp = summary.copy()
     disp["当前价"] = disp["当前价"].apply(lambda x: f"¥{x:,.2f}")
     disp["总成本"] = disp["总成本"].apply(lambda x: f"¥{x:,.2f}")
     disp["总盈亏"] = disp["总盈亏"].apply(lambda x: f"¥{x:,.2f}")
     disp["收益率"] = disp["收益率"].apply(lambda x: f"{x:,.2f}%")
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(disp, use_container_width=True, hide_index=True)
+    render_table(disp)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_admin_stock_mgmt():
@@ -2289,8 +2348,8 @@ def page_admin_stock_mgmt():
     sdf["幸福度"] = sdf.get("premium_rate", 50).apply(lambda x: f"{x:.0f}%")
     sdf["lu"] = sdf["last_update"].apply(lambda x: str(x)[:19] if x else "-")
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(sdf[["symbol", "name", "总股本", "净利润", "行业PE", "price", "碳排", "碳排均值", "幸福度", "lu"]].rename(
-        columns={"symbol": "代码", "name": "名称", "price": "当前价", "lu": "更新"}), use_container_width=True, hide_index=True)
+    render_table(sdf[["symbol", "name", "总股本", "净利润", "行业PE", "price", "碳排", "碳排均值", "幸福度", "lu"]].rename(
+        columns={"symbol": "代码", "name": "名称", "price": "当前价", "lu": "更新"}))
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 因子可视化
@@ -2375,7 +2434,7 @@ def page_admin_user_mgmt():
     df.columns = ["ID", "用户名", "角色", "注册时间", "status_col", "状态"]
     df["角色"] = df["角色"].map({"admin": "管理员", "player": "选手"})
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
-    st.dataframe(df[["ID", "用户名", "角色", "状态", "注册时间"]], use_container_width=True, hide_index=True)
+    render_table(df[["ID", "用户名", "角色", "状态", "注册时间"]])
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin:20px 0 12px 0;">操作</div>""", unsafe_allow_html=True)
@@ -2507,7 +2566,7 @@ def page_admin_user_mgmt():
         st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin:20px 0 12px 0;">最近操作日志</div>""", unsafe_allow_html=True)
         log_df = pd.DataFrame(logs)
         log_df.columns = ["操作者", "动作", "对象", "详情", "时间"]
-        st.dataframe(log_df, use_container_width=True, hide_index=True)
+        render_table(log_df)
 def page_admin_settle():
     market_open = is_market_open()
     current_round = get_market_round()
@@ -2617,7 +2676,7 @@ def page_admin_settle():
             df["收盘"] = df["close_price"].apply(lambda x: f"¥{x:,.2f}")
             df["涨跌幅"] = df["change_pct"].apply(lambda x: f"{x:+.2f}%")
             df["成交量"] = df["volume"].apply(lambda x: f"{x:,.0f}")
-            st.dataframe(df[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
+            render_table(df[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}))
         else:
             st.info("暂无K线数据")
 
