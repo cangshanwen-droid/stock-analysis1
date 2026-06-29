@@ -1083,6 +1083,119 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     white-space: nowrap !important;
 }
 
+.st-key-desktop_nav_bar { display: none; }
+
+@media (min-width: 768px) {
+    [data-testid="stApp"]:has(.st-key-desktop_nav_bar) section[data-testid="stSidebar"] {
+        display: none !important;
+    }
+    [data-testid="stApp"]:has(.st-key-desktop_nav_bar) [data-testid="stMain"] {
+        margin-left: 300px !important;
+        width: calc(100% - 300px) !important;
+    }
+    [data-testid="stApp"]:has(.st-key-desktop_nav_bar) [data-testid="stMainBlockContainer"] {
+        max-width: none !important;
+    }
+    .st-key-desktop_nav_bar {
+        display: flex !important;
+        flex-direction: column !important;
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        width: 300px !important;
+        z-index: 9998 !important;
+        padding: 24px 22px !important;
+        background: #0a0f1a !important;
+        border-right: 1px solid #1a2332 !important;
+        box-shadow: 18px 0 44px rgba(0,0,0,.22) !important;
+        overflow-y: auto !important;
+    }
+    .desktop-nav-brand {
+        padding-bottom: 16px;
+        border-bottom: 1px solid #1a2332;
+        margin-bottom: 14px;
+    }
+    .desktop-nav-brand .name {
+        font-size: 24px;
+        font-weight: 850;
+        line-height: 1.1;
+        letter-spacing: 2px;
+        background: linear-gradient(135deg, #fff4cf, #d4a853);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .desktop-nav-brand .sub {
+        margin-top: 5px;
+        color: #94a3b8;
+        font-size: 10px;
+        letter-spacing: 4px;
+    }
+    .desktop-nav-user {
+        padding: 0 0 14px;
+        border-bottom: 1px solid #1a2332;
+        margin-bottom: 14px;
+    }
+    .desktop-nav-user .uname {
+        color: #f8fafc;
+        font-size: 14px;
+        font-weight: 750;
+    }
+    .desktop-nav-user .role {
+        margin-top: 4px;
+        color: #94a3b8;
+        font-size: 12px;
+    }
+    .desktop-nav-user .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #10b981;
+        margin-right: 6px;
+        vertical-align: 1px;
+    }
+    .desktop-nav-label {
+        color: #64748b;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        margin: 2px 0 8px;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button {
+        justify-content: flex-start !important;
+        min-height: 42px !important;
+        margin: 3px 0 !important;
+        padding: 10px 14px !important;
+        border-radius: 8px !important;
+        color: #cbd5e1 !important;
+        font-size: 14px !important;
+        font-weight: 650 !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button p,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button [data-testid="stMarkdownContainer"] {
+        width: 100% !important;
+        color: inherit !important;
+        text-align: left !important;
+        font-weight: inherit !important;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button:hover {
+        background: rgba(255,255,255,.06) !important;
+        border-color: rgba(255,255,255,.06) !important;
+        color: #ffffff !important;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"] {
+        background: linear-gradient(90deg, rgba(242,54,69,.22), rgba(242,54,69,.08)) !important;
+        border-color: rgba(242,54,69,.30) !important;
+        color: #ffffff !important;
+        font-weight: 800 !important;
+    }
+    .desktop-nav-spacer { flex: 1; min-height: 18px; }
+}
+
 @media (max-width: 430px) {
     section.main > div.block-container,
     [data-testid="stMainBlockContainer"] {
@@ -2559,6 +2672,33 @@ def main():
                 st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
+            st.rerun()
+    # 桌面端固定导航：不依赖 Streamlit 原生 sidebar，避免部署端折叠后找不到导航
+    role_text = "管理员" if st.session_state.role == "admin" else "选手"
+    bal = get_user_balance(st.session_state.username)
+    bal_text = f" ｜ {fmt_money(bal)}" if st.session_state.role == "player" else ""
+    with st.container(key="desktop_nav_bar"):
+        st.markdown(f"""
+        <div class="desktop-nav-brand">
+            <div class="name">双镜</div>
+            <div class="sub">INSIGHT+</div>
+        </div>
+        <div class="desktop-nav-user">
+            <div class="uname">{esc(st.session_state.username)}</div>
+            <div class="role"><span class="dot"></span>{role_text}{bal_text}</div>
+        </div>
+        <div class="desktop-nav-label">导航</div>
+        """, unsafe_allow_html=True)
+        for n in nav:
+            tp = "primary" if n == st.session_state.nav_current else "secondary"
+            if st.button(n, key=f"dn_{n}", type=tp, use_container_width=True):
+                st.session_state.nav_current = n
+                st.rerun()
+        st.markdown('<div class="desktop-nav-spacer"></div>', unsafe_allow_html=True)
+        if st.button("退出登录", key="dn_exit", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
