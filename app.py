@@ -2251,7 +2251,8 @@ def page_kline():
     # X轴用轮次序号（时间升序）
     df_k = df_k.sort_values("round").reset_index(drop=True)
     df_k["x_label"] = df_k["round"].apply(lambda r: f"第{r}轮")
-    x_values = df_k["x_label"]
+    df_k["x_pos"] = np.arange(len(df_k)) + 1
+    x_values = df_k["x_pos"]
 
     latest = df_k.iloc[-1]
     first_open = float(df_k.iloc[0]["open_price"])
@@ -2282,36 +2283,42 @@ def page_kline():
     RED_UP   = "#ef5350"   # 阳线红
     GREEN_DN = "#2ecc71"   # 阴线绿
     up_mask  = df_k["close_price"] >= df_k["open_price"]
-    vol_color = ["rgba(239,83,80,0.4)" if u else "rgba(46,204,113,0.4)" for u in up_mask]
+    candle_color = [RED_UP if u else GREEN_DN for u in up_mask]
+    vol_color = ["rgba(239,83,80,0.42)" if u else "rgba(46,204,113,0.42)" for u in up_mask]
 
     # ── 主图蜡烛 + 成交量副图 ──
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.03, row_heights=[0.75, 0.25])
 
-    fig.add_trace(go.Candlestick(
-        x=x_values, open=df_k["open_price"], high=df_k["high_price"],
-        low=df_k["low_price"], close=df_k["close_price"],
-        increasing=dict(
-            line=dict(color=RED_UP, width=1.2),
-            fillcolor=RED_UP,
-        ),
-        decreasing=dict(
-            line=dict(color=GREEN_DN, width=1.2),
-            fillcolor=GREEN_DN,
-        ),
-        whiskerwidth=0.5,
+    wick_x, wick_y = [], []
+    for _, r in df_k.iterrows():
+        wick_x.extend([r["x_pos"], r["x_pos"], None])
+        wick_y.extend([r["low_price"], r["high_price"], None])
+    fig.add_trace(go.Scatter(
+        x=wick_x, y=wick_y, mode="lines",
+        line=dict(color="rgba(226,232,240,.72)", width=1),
+        hoverinfo="skip", showlegend=False,
+    ), row=1, col=1)
+
+    body_base = df_k[["open_price", "close_price"]].min(axis=1)
+    body_height = (df_k["close_price"] - df_k["open_price"]).abs()
+    min_body = max((high_price - low_price) * 0.008, latest_close * 0.001, 0.01)
+    body_height = body_height.where(body_height > min_body, min_body)
+    fig.add_trace(go.Bar(
+        x=x_values, y=body_height, base=body_base, width=0.42,
+        marker=dict(color=candle_color, line=dict(color=candle_color, width=1)),
         name="K线", showlegend=False,
-        customdata=np.stack([df_k["round"], df_k["change_pct"], df_k["volume"]], axis=-1),
+        customdata=np.stack([df_k["round"], df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
         hovertemplate=(
             "第%{customdata[0]}轮<br>"
-            "开盘 %{open:,.2f}<br>最高 %{high:,.2f}<br>"
-            "最低 %{low:,.2f}<br>收盘 %{close:,.2f}<br>"
-            "涨跌 %{customdata[1]:+.2f}%<br>成交量 %{customdata[2]:,.0f}<extra></extra>"
+            "开盘 %{customdata[1]:,.2f}<br>最高 %{customdata[2]:,.2f}<br>"
+            "最低 %{customdata[3]:,.2f}<br>收盘 %{customdata[4]:,.2f}<br>"
+            "涨跌 %{customdata[5]:+.2f}%<br>成交量 %{customdata[6]:,.0f}<extra></extra>"
         ),
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
-        x=x_values, y=df_k["volume"], marker_color=vol_color,
+        x=x_values, y=df_k["volume"], width=0.42, marker_color=vol_color,
         name="成交量", showlegend=False,
         customdata=df_k["round"],
         hovertemplate="第%{customdata}轮<br>成交量 %{y:,.0f}<extra></extra>",
@@ -2331,11 +2338,11 @@ def page_kline():
 
     high_idx = int(df_k["high_price"].idxmax())
     low_idx = int(df_k["low_price"].idxmin())
-    fig.add_annotation(x=df_k.loc[high_idx, "x_label"], y=high_price, text=f"高 {high_price:,.2f}",
+    fig.add_annotation(x=df_k.loc[high_idx, "x_pos"], y=high_price, text=f"高 {high_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
                        arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
                        bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
-    fig.add_annotation(x=df_k.loc[low_idx, "x_label"], y=low_price, text=f"低 {low_price:,.2f}",
+    fig.add_annotation(x=df_k.loc[low_idx, "x_pos"], y=low_price, text=f"低 {low_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
                        arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
                        bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
@@ -2356,12 +2363,12 @@ def page_kline():
         font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
                   size=11, color="#94a3b8"),
         # 十字光标（同花顺风格：实线细十字）
-        xaxis=dict(type="category", categoryorder="array", categoryarray=list(x_values),
+        xaxis=dict(type="linear",
                    showspikes=True, spikemode="across", spikethickness=0.8,
                    spikecolor="#94a3b8", spikedash="solid"),
         yaxis=dict(showspikes=True, spikethickness=0.8,
                    spikecolor="#94a3b8", spikedash="solid"),
-        bargap=0.1,  # 蜡烛紧凑，更接近专业密度
+        bargap=0.42,
         dragmode="zoom",
     )
     fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
@@ -2395,7 +2402,15 @@ def page_kline():
             title=dict(text="涨跌幅", font=dict(size=10, color="#94a3b8")),
         )
     )
-    fig.update_xaxes(showgrid=False, row=1, col=1)
+    tick_step = max(1, len(df_k)//6)
+    tick_vals = x_values.iloc[::tick_step]
+    tick_text = df_k["x_label"].iloc[::tick_step]
+    fig.update_xaxes(
+        showgrid=False, type="linear",
+        tickmode="array", tickvals=tick_vals, ticktext=tick_text,
+        tickfont=dict(size=10, color="#94a3b8"),
+        row=1, col=1,
+    )
 
     # 成交量副图
     fig.update_yaxes(
@@ -2404,9 +2419,10 @@ def page_kline():
         zeroline=False,
     )
     fig.update_xaxes(
-        showgrid=False, type="category",
-        tickvals=x_values.iloc[::max(1, len(df_k)//6)],
-        ticktext=df_k["x_label"].iloc[::max(1, len(df_k)//6)],
+        showgrid=False, type="linear",
+        tickmode="array",
+        tickvals=tick_vals,
+        ticktext=tick_text,
         tickfont=dict(size=10, color="#94a3b8"),
         row=2, col=1,
     )
