@@ -1952,10 +1952,7 @@ def page_public_dashboard():
         tick_step = max(1, len(df_k)//6)
         tick_vals = x_values.iloc[::tick_step]
         tick_text = df_k["x_label"].iloc[::tick_step]
-        y_min = low_price
-        y_max = high_price
-        y_pad = (y_max - y_min) * 0.06 if y_max > y_min else max(y_max * 0.03, 1)
-        y_range = [y_min - y_pad, y_max + y_pad]
+        y_range, raw_min, raw_max, clipped_axis = kline_display_range(df_k, first_open)
         y_ticks = np.linspace(y_range[0], y_range[1], 6)
         pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in y_ticks]
         vol_max = float(df_k["volume"].max() or 1)
@@ -1976,6 +1973,12 @@ def page_public_dashboard():
         fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
             annotation_text="0% 基准", annotation_position="bottom left",
             annotation_font_color="#94a3b8", row=1, col=1)
+        if clipped_axis:
+            fig.add_annotation(x=0.995, y=0.985, xref="paper", yref="paper",
+                text=f"异常价已压缩显示：{fmt_axis_num(raw_min)} - {fmt_axis_num(raw_max)}",
+                showarrow=False, xanchor="right", yanchor="top",
+                font=dict(size=10, color="#fbbf24"),
+                bgcolor="rgba(15,23,36,.82)", bordercolor="rgba(251,191,36,.25)")
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
             range=y_range, tickmode="array", tickvals=y_ticks, ticktext=[fmt_axis_num(v) for v in y_ticks],
             side="right", row=1, col=1, zeroline=False, tickfont=dict(size=12, color="#94a3b8", family="monospace"))
@@ -2581,6 +2584,32 @@ def build_professional_kline_view(df_src, symbol, target=72):
     out["ma10"] = out["close_price"].rolling(10, min_periods=3).mean()
     return out
 
+def kline_display_range(df_k, ref_price=None):
+    """Use a robust display range so one bad price does not flatten the chart."""
+    vals = pd.concat([
+        df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"],
+        df_k.get("upper", pd.Series(dtype=float)),
+        df_k.get("lower", pd.Series(dtype=float)),
+    ], ignore_index=True).astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+    vals = vals[vals > 0]
+    if vals.empty:
+        return [0, 1], 0, 1, False
+    raw_min, raw_max = float(vals.min()), float(vals.max())
+    q_low = float(vals.quantile(0.03))
+    q_high = float(vals.quantile(0.97))
+    median = float(vals.median())
+    if ref_price and ref_price > 0:
+        lo = max(min(q_low, ref_price * 0.82), ref_price * 0.55, 0.01)
+        hi = min(max(q_high, ref_price * 1.18), ref_price * 1.80)
+    else:
+        lo, hi = q_low, q_high
+    if hi <= lo:
+        lo, hi = median * 0.92, median * 1.08
+    pad = max((hi - lo) * 0.08, median * 0.015, 0.05)
+    display_range = [max(lo - pad, 0.01), hi + pad]
+    clipped = raw_min < display_range[0] or raw_max > display_range[1]
+    return display_range, raw_min, raw_max, clipped
+
 def page_kline():
     stocks = get_stocks()
     if not stocks: st.info("无数据"); return
@@ -2783,12 +2812,15 @@ def page_kline():
                   annotation_font_color="#94a3b8", row=1, col=1)
 
     # 主图 Y 轴：右侧价格标签 + 左侧涨跌幅参考轴
-    y_min = low_price
-    y_max = high_price
-    pad = (y_max - y_min) * 0.06 if y_max > y_min else 10
-    y_range = [y_min - pad, y_max + pad]
+    y_range, raw_min, raw_max, clipped_axis = kline_display_range(df_k, first_open)
     pct_ticks = np.linspace(y_range[0], y_range[1], 6)
     pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in pct_ticks]
+    if clipped_axis:
+        fig.add_annotation(x=0.995, y=0.985, xref="paper", yref="paper",
+                           text=f"异常价已压缩显示：{fmt_axis_num(raw_min)} - {fmt_axis_num(raw_max)}",
+                           showarrow=False, xanchor="right", yanchor="top",
+                           font=dict(size=10, color="#fbbf24"),
+                           bgcolor="rgba(15,23,36,.82)", bordercolor="rgba(251,191,36,.25)")
     fig.update_yaxes(
         range=y_range,
         showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
