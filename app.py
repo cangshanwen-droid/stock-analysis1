@@ -977,6 +977,14 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
     border-collapse: collapse;
     min-width: 680px;
 }
+.data-table.compact {
+    min-width: 0;
+}
+.data-table.compact th,
+.data-table.compact td {
+    padding: 9px 10px;
+    font-size: 12px;
+}
 .data-table th {
     color: #94a3b8;
     font-size: 11px;
@@ -1964,7 +1972,7 @@ def kpi_card(label, value, delta=None, up=True):
         delta_html = f'<div class="delta {delta_cls}">{esc(delta)}</div>'
     return f'<div class="kpi-card"><div class="label">{esc(label)}</div><div class="value">{esc(value)}</div>{delta_html}</div>'
 
-def render_table(df, columns=None):
+def render_table(df, columns=None, compact=False):
     if df is None or len(df) == 0:
         st.info("暂无数据")
         return
@@ -1989,9 +1997,10 @@ def render_table(df, columns=None):
     rows = []
     for _, row in view.iterrows():
         rows.append("<tr>" + "".join(f"<td{cell_class(c, row[c])}>{esc(str(row[c]))}</td>" for c in view.columns) + "</tr>")
+    table_cls = "data-table compact" if compact else "data-table"
     st.markdown(f"""
     <div class="data-table-wrap">
-        <table class="data-table">
+        <table class="{table_cls}">
             <thead><tr>{head}</tr></thead>
             <tbody>{''.join(rows)}</tbody>
         </table>
@@ -2021,21 +2030,21 @@ def render_admin_risk_panel():
     st.markdown("""<div style="font-size:14px;font-weight:700;color:#eef2ff;margin:12px 0 8px;">风险监控</div>""", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1.2, 1, 1])
     with c1:
-        render_table(warn_df.head(8))
+        render_table(warn_df.head(8), compact=True)
     with c2:
         leaders = df.sort_values("总资产", ascending=False).head(5).copy()
         leaders["总资产"] = leaders["总资产"].apply(lambda x: f"¥{x:,.0f}")
         leaders["收益率"] = leaders["收益率"].apply(lambda x: f"{x:,.2f}%")
-        render_table(leaders[["选手", "总资产", "收益率"]])
+        render_table(leaders[["选手", "总资产", "收益率"]], compact=True)
     with c3:
         losses = df[df["浮动盈亏"] < 0].sort_values("浮动盈亏").head(5).copy()
         if losses.empty:
-            render_table(pd.DataFrame([{"选手": "全场", "浮动盈亏": "暂无亏损", "收益率": "-", "集中度": "-"}]))
+            render_table(pd.DataFrame([{"选手": "全场", "浮动盈亏": "暂无亏损", "收益率": "-", "集中度": "-"}]), compact=True)
         else:
             losses["浮动盈亏"] = losses["浮动盈亏"].apply(lambda x: f"¥{x:,.0f}")
             losses["收益率"] = losses["收益率"].apply(lambda x: f"{x:,.2f}%")
             losses["集中度"] = losses["集中度"].apply(lambda x: f"{x:,.2f}%")
-            render_table(losses[["选手", "浮动盈亏", "收益率", "集中度"]])
+            render_table(losses[["选手", "浮动盈亏", "收益率", "集中度"]], compact=True)
 
 def download_db_button():
     """管理员一键导出数据库按钮"""
