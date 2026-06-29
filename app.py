@@ -1083,7 +1083,7 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
 
     .sb-brand { padding: 18px 20px 12px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 22px !important; font-weight: 800 !important; color: #f1f5f9 !important; margin: 0 !important; letter-spacing: 2px !important; }
+    .sb-brand .name p { font-size: 22px !important; font-weight: 800 !important; margin: 0 !important; letter-spacing: 2px !important; background: linear-gradient(135deg, #f0e6d3, #d4a853) !important; -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important; background-clip: text !important; }
     .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
     .sb-user { padding: 8px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
     .sb-user .uname p { font-size: 13px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
