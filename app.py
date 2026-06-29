@@ -1132,12 +1132,22 @@ div[data-testid="stVerticalBlock"] { gap: 2px !important; }
 ::-webkit-scrollbar-thumb:hover { background: #2a3a4e; }
 
 /* Selectbox / Dropdown */
-div[data-baseweb="select"] > div, div[data-baseweb="select"] > div:hover {
+div[data-baseweb="select"],
+div[data-baseweb="select"] > div,
+div[data-baseweb="select"] > div:hover,
+div[data-baseweb="select"] > div:focus,
+div[data-baseweb="select"] > div:focus-within {
     background: #0f1724 !important; border: 1px solid #1e2a3a !important;
     border-radius: 6px !important; color: #e2e8f0 !important;
     box-shadow: none !important;
 }
-div[data-baseweb="select"] svg { fill: #5a6a7e !important; }
+div[data-baseweb="select"] div,
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] input {
+    color: #e2e8f0 !important;
+    -webkit-text-fill-color: #e2e8f0 !important;
+}
+div[data-baseweb="select"] svg { fill: #94a3b8 !important; color: #94a3b8 !important; }
 div[data-baseweb="select"] > div:focus { border-color: #f23645 !important; }
 div[data-baseweb="popover"] ul { background: #0f1724 !important; border: 1px solid #1e2a3a !important; border-radius: 6px !important; }
 div[data-baseweb="popover"] li { color: #94a3b8 !important; }
@@ -1432,10 +1442,29 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     details, .st-emotion-cache-1aej4i3 {
         background: #0f1724 !important; border: 1px solid #1e2a3a !important;
         border-radius: 6px !important; margin-bottom: 4px !important;
+        color: #e2e8f0 !important;
     }
-    details summary, .st-emotion-cache-1aej4i3 summary {
+    details summary,
+    details[open] summary,
+    details summary:hover,
+    details summary:focus,
+    details summary:focus-visible,
+    .st-emotion-cache-1aej4i3 summary,
+    .st-emotion-cache-1aej4i3 summary:hover,
+    .st-emotion-cache-1aej4i3 summary:focus,
+    .st-emotion-cache-1aej4i3 summary:focus-visible {
+        background: #0f1724 !important;
         font-weight: 500 !important; padding: 8px 12px !important; color: #e2e8f0 !important;
         border-radius: 6px !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    details summary *,
+    details[open] summary *,
+    .st-emotion-cache-1aej4i3 summary * {
+        color: #e2e8f0 !important;
+        -webkit-text-fill-color: #e2e8f0 !important;
+        background: transparent !important;
     }
     /* 输入框 */
     input, div[data-baseweb="input"] input, textarea {
