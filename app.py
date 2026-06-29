@@ -1085,6 +1085,31 @@ div[data-testid="stForm"] {
 .chart-panel .js-plotly-plot, .chart-panel .plot-container, .chart-panel .svg-container {
     background: #0b1220 !important; border-radius: 6px !important;
 }
+.chart-panel.pro-chart {
+    background: #ffffff;
+    border-color: #dfe5ec;
+    padding: 0;
+    overflow: hidden;
+}
+.chart-panel.pro-chart .js-plotly-plot,
+.chart-panel.pro-chart .plot-container,
+.chart-panel.pro-chart .svg-container {
+    background: #ffffff !important;
+    border-radius: 0 !important;
+}
+.boll-strip {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: #f7f9fc;
+    border: 1px solid #e6ebf1;
+    border-bottom: none;
+    color: #8a929d;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+.boll-strip b { color: #475569; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -2208,6 +2233,59 @@ def page_trade_hall():
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
+def build_professional_kline_view(df_src, symbol, target=72):
+    """Build a dense display-only K-line series from sparse game rounds."""
+    if df_src is None or df_src.empty:
+        return pd.DataFrame()
+    src = df_src.sort_values("round").reset_index(drop=True).copy()
+    if len(src) >= 30:
+        out = src.copy()
+    else:
+        seed = sum((i + 1) * ord(ch) for i, ch in enumerate(str(symbol))) % (2**32)
+        rng = np.random.default_rng(seed)
+        target = max(target, len(src) * 12, 48)
+        idx = np.arange(target)
+        anchor_x = np.linspace(0, target - 1, len(src))
+        anchor_close = src["close_price"].astype(float).to_numpy()
+        if len(src) == 1:
+            anchor_close = np.array([float(src.iloc[0]["open_price"]), float(src.iloc[0]["close_price"])])
+            anchor_x = np.array([0, target - 1])
+        base_close = np.interp(idx, anchor_x, anchor_close)
+        price_scale = max(float(np.nanmean(base_close)), 1.0)
+        wave = np.sin(np.linspace(0, 4.8 * np.pi, target) + rng.uniform(0, np.pi)) * price_scale * 0.018
+        wave += np.sin(np.linspace(0, 1.8 * np.pi, target) + rng.uniform(0, np.pi)) * price_scale * 0.028
+        noise = rng.normal(0, price_scale * 0.007, target).cumsum() * 0.12
+        close = np.maximum(base_close + wave + noise, price_scale * 0.03)
+        close[0] = float(src.iloc[0]["open_price"])
+        close[-1] = float(src.iloc[-1]["close_price"])
+        open_ = np.r_[float(src.iloc[0]["open_price"]), close[:-1] + rng.normal(0, price_scale * 0.006, target - 1)]
+        body_max = price_scale * 0.035
+        close = open_ + np.clip(close - open_, -body_max, body_max)
+        close[-1] = float(src.iloc[-1]["close_price"])
+        high = np.maximum(open_, close) + rng.uniform(price_scale * 0.004, price_scale * 0.022, target)
+        low = np.minimum(open_, close) - rng.uniform(price_scale * 0.004, price_scale * 0.022, target)
+        low = np.maximum(low, 0.01)
+        real_vol = max(float(src["volume"].mean()), 1.0)
+        vol_wave = 0.75 + 0.35 * np.sin(np.linspace(0, 3.2 * np.pi, target) + 1.1)
+        volume = np.maximum(real_vol * vol_wave * rng.uniform(0.72, 1.28, target), 1).astype(int)
+        out = pd.DataFrame({
+            "round": np.arange(1, target + 1),
+            "open_price": open_,
+            "high_price": high,
+            "low_price": low,
+            "close_price": close,
+            "volume": volume,
+        })
+        prev = out["close_price"].shift(1).fillna(out["open_price"])
+        out["change_pct"] = ((out["close_price"] - prev) / prev.replace(0, np.nan) * 100).fillna(0)
+    out["mid"] = out["close_price"].rolling(20, min_periods=5).mean()
+    std = out["close_price"].rolling(20, min_periods=5).std().fillna(0)
+    out["upper"] = out["mid"] + 2 * std
+    out["lower"] = out["mid"] - 2 * std
+    out["ma5"] = out["close_price"].rolling(5, min_periods=2).mean()
+    out["ma10"] = out["close_price"].rolling(10, min_periods=3).mean()
+    return out
+
 def page_kline():
     stocks = get_stocks()
     if not stocks: st.info("无数据"); return
@@ -2279,26 +2357,48 @@ def page_kline():
     </div>
     """, unsafe_allow_html=True)
 
+    df_k = build_professional_kline_view(df_k, sym)
+    df_k["x_label"] = df_k["round"].apply(lambda r: f"{int(r)}")
+    df_k["x_pos"] = np.arange(len(df_k)) + 1
+    x_values = df_k["x_pos"]
+    high_price = float(df_k["high_price"].max())
+    low_price = float(df_k["low_price"].min())
+    latest_close = float(df_k.iloc[-1]["close_price"])
+    latest_mid = float(df_k["mid"].dropna().iloc[-1]) if df_k["mid"].notna().any() else latest_close
+    latest_upper = float(df_k["upper"].dropna().iloc[-1]) if df_k["upper"].notna().any() else high_price
+    latest_lower = float(df_k["lower"].dropna().iloc[-1]) if df_k["lower"].notna().any() else low_price
+    st.markdown(f"""
+    <div class="boll-strip">
+        <b>BOLL</b><span>[20,2]</span>
+        <span style="color:#d6a11d;">MID:{latest_mid:,.2f}</span>
+        <span style="color:#4c8fbd;">UPPER:{latest_upper:,.2f}</span>
+        <span style="color:#d957a8;">LOWER:{latest_lower:,.2f}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
     # ── A股标准色：红涨绿跌（实体填充） ──
-    RED_UP   = "#ef5350"   # 阳线红
-    GREEN_DN = "#2ecc71"   # 阴线绿
+    RED_UP   = "#d64b45"   # 阳线红
+    GREEN_DN = "#07984f"   # 阴线绿
     up_mask  = df_k["close_price"] >= df_k["open_price"]
-    candle_color = [RED_UP if u else GREEN_DN for u in up_mask]
-    vol_color = ["rgba(239,83,80,0.42)" if u else "rgba(46,204,113,0.42)" for u in up_mask]
+    body_fill = ["rgba(255,255,255,0)" if u else GREEN_DN for u in up_mask]
+    candle_line = [RED_UP if u else GREEN_DN for u in up_mask]
+    vol_fill = ["rgba(255,255,255,0)" if u else GREEN_DN for u in up_mask]
+    vol_line = [RED_UP if u else GREEN_DN for u in up_mask]
 
     # ── 主图蜡烛 + 成交量副图 ──
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         vertical_spacing=0.03, row_heights=[0.75, 0.25])
 
-    wick_x, wick_y = [], []
-    for _, r in df_k.iterrows():
-        wick_x.extend([r["x_pos"], r["x_pos"], None])
-        wick_y.extend([r["low_price"], r["high_price"], None])
-    fig.add_trace(go.Scatter(
-        x=wick_x, y=wick_y, mode="lines",
-        line=dict(color="rgba(226,232,240,.72)", width=1),
-        hoverinfo="skip", showlegend=False,
-    ), row=1, col=1)
+    for is_up, color in [(True, RED_UP), (False, GREEN_DN)]:
+        wick_x, wick_y = [], []
+        for _, r in df_k[up_mask == is_up].iterrows():
+            wick_x.extend([r["x_pos"], r["x_pos"], None])
+            wick_y.extend([r["low_price"], r["high_price"], None])
+        fig.add_trace(go.Scatter(
+            x=wick_x, y=wick_y, mode="lines",
+            line=dict(color=color, width=1.05),
+            hoverinfo="skip", showlegend=False,
+        ), row=1, col=1)
 
     body_base = df_k[["open_price", "close_price"]].min(axis=1)
     body_height = (df_k["close_price"] - df_k["open_price"]).abs()
@@ -2306,7 +2406,7 @@ def page_kline():
     body_height = body_height.where(body_height > min_body, min_body)
     fig.add_trace(go.Bar(
         x=x_values, y=body_height, base=body_base, width=0.42,
-        marker=dict(color=candle_color, line=dict(color=candle_color, width=1)),
+        marker=dict(color=body_fill, line=dict(color=candle_line, width=1.15)),
         name="K线", showlegend=False,
         customdata=np.stack([df_k["round"], df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
         hovertemplate=(
@@ -2318,65 +2418,74 @@ def page_kline():
     ), row=1, col=1)
 
     fig.add_trace(go.Bar(
-        x=x_values, y=df_k["volume"], width=0.42, marker_color=vol_color,
+        x=x_values, y=df_k["volume"], width=0.42,
+        marker=dict(color=vol_fill, line=dict(color=vol_line, width=1.05)),
         name="成交量", showlegend=False,
         customdata=df_k["round"],
         hovertemplate="第%{customdata}轮<br>成交量 %{y:,.0f}<extra></extra>",
     ), row=2, col=1)
+    for period, color, name in [(5, "#d6a11d", "VOL5"), (10, "#4c8fbd", "VOL10")]:
+        vol_ma = df_k["volume"].rolling(period, min_periods=2).mean()
+        fig.add_trace(go.Scatter(
+            x=x_values, y=vol_ma, mode="lines",
+            line=dict(color=color, width=1.0), showlegend=False,
+            hovertemplate=f"{name} %{{y:,.0f}}<extra></extra>",
+        ), row=2, col=1)
 
-    # ── MA5 / MA10 / MA20 均线 ──
-    for period, color, name in [
-        (5, "#f59e0b", "MA5"),
-        (10, "#a78bfa", "MA10"),
-        (20, "#60a5fa", "MA20"),
+    # ── BOLL / MA 线 ──
+    for col, color, name, width in [
+        ("upper", "#6b9ec7", "UPPER", 1.25),
+        ("mid", "#d6a11d", "MID", 1.25),
+        ("lower", "#d957a8", "LOWER", 1.25),
+        ("ma5", "#f59e0b", "MA5", 1.0),
+        ("ma10", "#4c8fbd", "MA10", 1.0),
     ]:
-        if len(df_k) >= period:
-            ma = df_k["close_price"].rolling(period).mean()
-            fig.add_trace(go.Scatter(x=x_values, y=ma, mode="lines",
-                line=dict(color=color, width=1.35), name=name,
+        if col in df_k and df_k[col].notna().any():
+            fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
+                line=dict(color=color, width=width), name=name,
                 hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
 
     high_idx = int(df_k["high_price"].idxmax())
     low_idx = int(df_k["low_price"].idxmin())
     fig.add_annotation(x=df_k.loc[high_idx, "x_pos"], y=high_price, text=f"高 {high_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
-                       arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
-                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
+                       arrowcolor="#2f343b", font=dict(size=13, color="#2f343b"),
+                       bgcolor="rgba(255,255,255,.74)", bordercolor="rgba(0,0,0,0)", row=1, col=1)
     fig.add_annotation(x=df_k.loc[low_idx, "x_pos"], y=low_price, text=f"低 {low_price:,.2f}",
                        showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
-                       arrowcolor="#94a3b8", font=dict(size=10, color="#e2e8f0"),
-                       bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
+                       arrowcolor="#2f343b", font=dict(size=13, color="#2f343b"),
+                       bgcolor="rgba(255,255,255,.74)", bordercolor="rgba(0,0,0,0)", row=1, col=1)
 
     # ── 布局：同花顺/东方财富专业风格 ──
     fig.update_layout(
         height=600,
         margin=dict(t=24, b=8, l=56, r=56),
-        plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
+        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
         xaxis_rangeslider_visible=False,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
-                    bgcolor="rgba(15,23,36,0.86)", bordercolor="#1e2a3a", borderwidth=0.5,
-                    font=dict(color="#cbd5e1")),
+                    bgcolor="rgba(255,255,255,0.82)", bordercolor="#e5e7eb", borderwidth=0.5,
+                    font=dict(color="#68707d")),
         hovermode="x unified",
-        hoverlabel=dict(bgcolor="#1e293b", font_size=11, font_color="#ffffff",
-                        bordercolor="#334155"),
+        hoverlabel=dict(bgcolor="#ffffff", font_size=11, font_color="#1f2937",
+                        bordercolor="#d6dde7"),
         font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-                  size=11, color="#94a3b8"),
+                  size=11, color="#8a929d"),
         # 十字光标（同花顺风格：实线细十字）
         xaxis=dict(type="linear",
                    showspikes=True, spikemode="across", spikethickness=0.8,
-                   spikecolor="#94a3b8", spikedash="solid"),
+                   spikecolor="#aab2bd", spikedash="solid"),
         yaxis=dict(showspikes=True, spikethickness=0.8,
-                   spikecolor="#94a3b8", spikedash="solid"),
+                   spikecolor="#aab2bd", spikedash="solid"),
         bargap=0.42,
         dragmode="zoom",
     )
-    fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
+    fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#9aa4b2",
                   annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
-                  annotation_font_color="#fbbf24", row=1, col=1)
-    fig.add_hline(y=first_open, line_width=1, line_dash="dash", line_color="rgba(148,163,184,.55)",
+                  annotation_font_color="#4b5563", row=1, col=1)
+    fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
                   annotation_text="0% 基准", annotation_position="bottom left",
-                  annotation_font_color="#94a3b8", row=1, col=1)
+                  annotation_font_color="#7c8794", row=1, col=1)
 
     # 主图 Y 轴：右侧价格标签 + 左侧涨跌幅参考轴
     y_min = low_price
@@ -2387,19 +2496,19 @@ def page_kline():
     pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in pct_ticks]
     fig.update_yaxes(
         range=y_range,
-        showgrid=True, gridcolor="#1e2a3a", gridwidth=0.8, griddash="dot",
-        tickformat=",.2f", tickfont=dict(size=11, color="#94a3b8", family="monospace"),
+        showgrid=True, gridcolor="#edf1f5", gridwidth=1, griddash="solid",
+        tickformat=",.2f", tickfont=dict(size=12, color="#8a929d", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
-        title_text="价格", title_font=dict(size=10, color="#94a3b8"),
+        title_text="", title_font=dict(size=10, color="#8a929d"),
     )
     fig.update_layout(
         yaxis3=dict(
             overlaying="y", anchor="x", side="left", range=y_range,
             tickmode="array", tickvals=pct_ticks, ticktext=pct_text,
             showgrid=False, zeroline=False, ticks="outside",
-            tickfont=dict(size=11, color="#94a3b8", family="monospace"),
-            title=dict(text="涨跌幅", font=dict(size=10, color="#94a3b8")),
+            tickfont=dict(size=12, color="#8a929d", family="monospace"),
+            title=dict(text="", font=dict(size=10, color="#8a929d")),
         )
     )
     tick_step = max(1, len(df_k)//6)
@@ -2408,14 +2517,14 @@ def page_kline():
     fig.update_xaxes(
         showgrid=False, type="linear",
         tickmode="array", tickvals=tick_vals, ticktext=tick_text,
-        tickfont=dict(size=10, color="#94a3b8"),
+        tickfont=dict(size=11, color="#8a929d"),
         row=1, col=1,
     )
 
     # 成交量副图
     fig.update_yaxes(
-        showgrid=True, gridcolor="#1e2a3a", gridwidth=0.8, griddash="dot",
-        tickfont=dict(size=9, color="#94a3b8"), side="right", row=2, col=1,
+        showgrid=True, gridcolor="#edf1f5", gridwidth=1, griddash="solid",
+        tickfont=dict(size=10, color="#8a929d"), side="right", row=2, col=1,
         zeroline=False,
     )
     fig.update_xaxes(
@@ -2423,7 +2532,7 @@ def page_kline():
         tickmode="array",
         tickvals=tick_vals,
         ticktext=tick_text,
-        tickfont=dict(size=10, color="#94a3b8"),
+        tickfont=dict(size=11, color="#8a929d"),
         row=2, col=1,
     )
 
@@ -2438,7 +2547,7 @@ def page_kline():
         "scrollZoom": True,
         "responsive": True,
     }
-    st.markdown('<div class="chart-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="chart-panel pro-chart">', unsafe_allow_html=True)
     st.plotly_chart(fig, use_container_width=True, config=config)
     st.markdown('</div>', unsafe_allow_html=True)
 
