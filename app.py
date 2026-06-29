@@ -1903,7 +1903,7 @@ def page_public_dashboard():
             marker=dict(color=body_fill, line=dict(color=candle_line, width=1.15)),
             name="K线", showlegend=False,
             customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
-            hovertemplate="展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"), row=1, col=1)
+            hovertemplate="轮次 %{customdata[0]}<br>数据轮次 %{customdata[1]:.0f}<br>开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"), row=1, col=1)
 
         for col, color, name in [("upper", "#6b9ec7", "UPPER"), ("mid", "#d6a11d", "MID"), ("lower", "#d957a8", "LOWER")]:
             if df_k[col].notna().any():
@@ -1952,7 +1952,7 @@ def page_public_dashboard():
         tick_step = max(1, len(df_k)//6)
         tick_vals = x_values.iloc[::tick_step]
         tick_text = df_k["x_label"].iloc[::tick_step]
-        y_range, raw_min, raw_max, clipped_axis = kline_display_range(df_k, first_open)
+        y_range, _, _, _ = kline_display_range(df_k, first_open)
         y_ticks = np.linspace(y_range[0], y_range[1], 6)
         pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in y_ticks]
         vol_max = float(df_k["volume"].max() or 1)
@@ -1971,14 +1971,7 @@ def page_public_dashboard():
             annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
             annotation_font_color="#fbbf24", row=1, col=1)
         fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
-            annotation_text="0% 基准", annotation_position="bottom left",
-            annotation_font_color="#94a3b8", row=1, col=1)
-        if clipped_axis:
-            fig.add_annotation(x=0.995, y=0.985, xref="paper", yref="paper",
-                text=f"异常价已压缩显示：{fmt_axis_num(raw_min)} - {fmt_axis_num(raw_max)}",
-                showarrow=False, xanchor="right", yanchor="top",
-                font=dict(size=10, color="#fbbf24"),
-                bgcolor="rgba(15,23,36,.82)", bordercolor="rgba(251,191,36,.25)")
+            row=1, col=1)
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
             range=y_range, tickmode="array", tickvals=y_ticks, ticktext=[fmt_axis_num(v) for v in y_ticks],
             side="right", row=1, col=1, zeroline=False, tickfont=dict(size=12, color="#94a3b8", family="monospace"))
@@ -2734,7 +2727,7 @@ def page_kline():
         name="K线", showlegend=False,
         customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
         hovertemplate=(
-            "展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>"
+            "轮次 %{customdata[0]}<br>数据轮次 %{customdata[1]:.0f}<br>"
             "开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>"
             "最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>"
             "涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"
@@ -2808,19 +2801,12 @@ def page_kline():
                   annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
                   annotation_font_color="#fbbf24", row=1, col=1)
     fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
-                  annotation_text="0% 基准", annotation_position="bottom left",
-                  annotation_font_color="#94a3b8", row=1, col=1)
+                  row=1, col=1)
 
     # 主图 Y 轴：右侧价格标签 + 左侧涨跌幅参考轴
-    y_range, raw_min, raw_max, clipped_axis = kline_display_range(df_k, first_open)
+    y_range, _, _, _ = kline_display_range(df_k, first_open)
     pct_ticks = np.linspace(y_range[0], y_range[1], 6)
     pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in pct_ticks]
-    if clipped_axis:
-        fig.add_annotation(x=0.995, y=0.985, xref="paper", yref="paper",
-                           text=f"异常价已压缩显示：{fmt_axis_num(raw_min)} - {fmt_axis_num(raw_max)}",
-                           showarrow=False, xanchor="right", yanchor="top",
-                           font=dict(size=10, color="#fbbf24"),
-                           bgcolor="rgba(15,23,36,.82)", bordercolor="rgba(251,191,36,.25)")
     fig.update_yaxes(
         range=y_range,
         showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
