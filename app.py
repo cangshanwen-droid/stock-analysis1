@@ -886,6 +886,9 @@ def get_admin_risk_overview():
             warnings.append({"级别": "高", "对象": username, "信号": "现金接近耗尽", "数值": fmt_money(balance)})
         if pnl_ratio >= 80:
             warnings.append({"级别": "中", "对象": username, "信号": "收益率异常偏高", "数值": f"{pnl_ratio:,.2f}%"})
+        if pnl_ratio < 0:
+            level = "高" if pnl_ratio <= -30 else "中"
+            warnings.append({"级别": level, "对象": username, "信号": "当前浮动亏损", "数值": f"{pnl_ratio:,.2f}%"})
         if pnl_ratio <= -30:
             warnings.append({"级别": "高", "对象": username, "信号": "收益率大幅回撤", "数值": f"{pnl_ratio:,.2f}%"})
         if concentration >= 80 and market_value > 0:
@@ -1935,10 +1938,14 @@ def render_admin_risk_panel():
         leaders["收益率"] = leaders["收益率"].apply(lambda x: f"{x:,.2f}%")
         render_table(leaders[["选手", "总资产", "收益率"]])
     with c3:
-        active = df.sort_values("本轮交易", ascending=False).head(5).copy()
-        active["余额"] = active["余额"].apply(lambda x: f"¥{x:,.0f}")
-        active["集中度"] = active["集中度"].apply(lambda x: f"{x:,.2f}%")
-        render_table(active[["选手", "本轮交易", "余额", "集中度"]])
+        losses = df[df["浮动盈亏"] < 0].sort_values("浮动盈亏").head(5).copy()
+        if losses.empty:
+            render_table(pd.DataFrame([{"选手": "全场", "浮动盈亏": "暂无亏损", "收益率": "-", "集中度": "-"}]))
+        else:
+            losses["浮动盈亏"] = losses["浮动盈亏"].apply(lambda x: f"¥{x:,.0f}")
+            losses["收益率"] = losses["收益率"].apply(lambda x: f"{x:,.2f}%")
+            losses["集中度"] = losses["集中度"].apply(lambda x: f"{x:,.2f}%")
+            render_table(losses[["选手", "浮动盈亏", "收益率", "集中度"]])
 
 def download_db_button():
     """管理员一键导出数据库按钮"""
