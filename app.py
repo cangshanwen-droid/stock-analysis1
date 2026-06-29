@@ -877,7 +877,7 @@ header[data-testid="stHeader"] {
 }
 section.main > div.block-container,
 [data-testid="stMainBlockContainer"] {
-    padding: 4px 14px 112px !important;
+    padding: 4px 14px 144px !important;
 }
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] { background: #070b13 !important; }
@@ -1024,7 +1024,7 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
 
 .st-key-mobile_nav_bar {
     position: fixed !important;
-    left: 0 !important; right: 0 !important; bottom: 0 !important;
+    left: 0 !important; right: 0 !important; bottom: 54px !important;
     z-index: 9999 !important;
     padding: 7px 8px calc(9px + env(safe-area-inset-bottom)) !important;
     background: rgba(10,15,26,.98) !important;
@@ -1047,6 +1047,16 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     border-radius: 8px !important;
     font-size: 12px !important;
     white-space: nowrap !important;
+}
+
+@media (max-width: 430px) {
+    section.main > div.block-container,
+    [data-testid="stMainBlockContainer"] {
+        padding-bottom: 156px !important;
+    }
+    .st-key-mobile_nav_bar {
+        bottom: 58px !important;
+    }
 }
 
 @media (min-width: 768px) {
@@ -1211,7 +1221,7 @@ DASHBOARD_CSS = """
     .s-card:hover { border-color: rgba(255,255,255,.15); }
     .s-card .sym { font-size: 11px; color: rgba(255,255,255,.35); letter-spacing: 1px; text-transform: uppercase; }
     .s-card .nm { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.85); margin: 2px 0 6px 0; }
-    .s-card .pr { font-size: 30px; font-weight: 700; font-feature-settings: "tnum"; }
+    .s-card .pr { font-size: 30px; font-weight: 700; font-feature-settings: "tnum"; white-space: nowrap; overflow-wrap: normal; }
     .s-card .pr.up { color: #ef5350; } .s-card .pr.down { color: #2ecc71; }
     .s-card .chg { font-size: 13px; margin-top: 2px; font-weight: 500; }
     .s-card .chg.up { color: #ef5350; } .s-card .chg.down { color: #2ecc71; }
@@ -1239,7 +1249,19 @@ DASHBOARD_CSS = """
         display: inline-block; text-align: center; }
     .login-btn:hover { background: rgba(212,168,83,.2); color: #f0e6d3; border-color: rgba(212,168,83,.5); }
 
-    @media (max-width: 768px) { .stock-grid { grid-template-columns: repeat(2, 1fr); } .s-card .pr { font-size: 22px; } }
+    @media (max-width: 768px) {
+        [data-testid="stMainBlockContainer"] { padding-bottom: 92px !important; }
+        .stock-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+        .s-card { padding: 13px 14px 16px; min-width: 0; }
+        .s-card .pr { font-size: 21px; letter-spacing: 0; }
+        .s-card .chg { font-size: 12px; }
+        .s-card .extra { font-size: 10px; line-height: 1.45; word-break: keep-all; }
+        .dash-ft { padding-bottom: 64px; }
+    }
+    @media (max-width: 390px) {
+        .s-card .pr { font-size: 19px; }
+        .s-card { padding-left: 12px; padding-right: 12px; }
+    }
 </style>
 """
 
@@ -1300,11 +1322,11 @@ def page_public_dashboard():
         <div class="s-card {cls}">
             <div class="sym">{s['symbol']}</div>
             <div class="nm">{esc(s['name'])}</div>
-            <div class="pr {cls}">¥{p:,.2f}</div>
+            <div class="pr {cls}">{fmt_money_short(p)}</div>
             <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
             <div class="extra">当前第 {mkt_round} 轮 ｜ 最新成交第 {q['round']} 轮</div>
-            <div class="extra">参考 ¥{prev:,.2f} ｜ 近5轮量 {q['volume5']:,}</div>
-            <div class="extra">近5轮买额 ¥{q['buy5']:,.0f} ｜ 卖额 ¥{q['sell5']:,.0f}</div>
+            <div class="extra">参考 {fmt_money_short(prev)} ｜ 近5轮量 {q['volume5']:,}</div>
+            <div class="extra">近5轮买额 {fmt_money_short(q['buy5'])} ｜ 卖额 {fmt_money_short(q['sell5'])}</div>
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
 
