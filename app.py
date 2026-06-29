@@ -1792,7 +1792,7 @@ def page_public_dashboard():
     # 顶栏（实时时钟用 JS 走浏览器时间）
     c1, c2 = st.columns([3, 1])
     with c1:
-        st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;"><span class="dash-brand">双镜</span><span class="dash-sub">智能投资分析系统</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:baseline;gap:12px;"><span class="dash-brand">Gipfel</span><span class="dash-sub">智能投资分析系统</span></div>', unsafe_allow_html=True)
     with c2:
         st.markdown(f'<div style="text-align:right;"><span class="dash-clock" id="liveClock"></span></div>', unsafe_allow_html=True)
         if st.button("登录交易", key="dash_login_btn", type="primary", use_container_width=True):
@@ -1955,7 +1955,7 @@ def page_public_dashboard():
         st.markdown('<div style="color:rgba(255,255,255,.3);text-align:center;padding:30px;">暂无K线数据</div>', unsafe_allow_html=True)
 
     # 底部
-    st.markdown(f'<div class="dash-ft"><span>双镜 · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="dash-ft"><span>Gipfel · 智能投资分析系统</span><span>数据每5秒刷新 · 仅供模拟参考</span></div>', unsafe_allow_html=True)
 
     # 自动刷新（仅公开行情页，不影响登录态）
     col1, col2, col3 = st.columns([3, 2, 3])
@@ -2044,7 +2044,7 @@ def page_login():
     <div style="text-align:center;margin-bottom:32px;">
         <h1 style="font-size:52px;font-weight:800;letter-spacing:8px;margin:0;
             background:linear-gradient(135deg,#f0e6d3,#d4a853);
-            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">双镜</h1>
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Gipfel</h1>
         <p style="color:rgba(255,255,255,.2);font-size:11px;letter-spacing:6px;text-transform:uppercase;margin:16px 0 0 0;">智能投资分析系统</p>
     </div>""", unsafe_allow_html=True)
 
@@ -2078,7 +2078,7 @@ def page_login():
     if st.button("← 返回行情看板", key="back_to_dash"):
         st.session_state.show_login = False
         st.rerun()
-    st.markdown('<p style="text-align:center;color:rgba(255,255,255,.1);font-size:10px;margin-top:20px;">双镜 · 智能投资分析系统</p>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align:center;color:rgba(255,255,255,.1);font-size:10px;margin-top:20px;">Gipfel · 智能投资分析系统</p>', unsafe_allow_html=True)
 
 def fmt_money(v):   return f"¥{v:,.0f}"
 def fmt_pnl(v):     return f"¥{v:,.2f}"
@@ -2113,7 +2113,7 @@ def page_header(title, subtitle="", badge=None, ok=False):
     st.markdown(f"""
     <div class="page-head">
         <div>
-            <div class="kicker">双镜 INSIGHT+</div>
+            <div class="kicker">Gipfel INSIGHT+</div>
             <div class="title">{esc(title)}</div>
             {sub_html}
         </div>
@@ -3289,7 +3289,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "交易记录", "K线展板"]
 ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
 
-st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Gipfel - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 if "db_initialized" not in st.session_state:
     init_db()
@@ -3314,7 +3314,7 @@ def main():
         bal = get_user_balance(st.session_state.username)
         bal_text = f" ｜ {fmt_money(bal)}" if st.session_state.role == "player" else ""
         st.markdown(f"""
-        <div class="sb-brand"><div class="name">双镜</div><div class="sub">INSIGHT+</div></div>
+        <div class="sb-brand"><div class="name">Gipfel</div><div class="sub">INSIGHT+</div></div>
         <div class="sb-user"><div class="uname">{esc(st.session_state.username)}</div><div class="urole"><span class="dot"></span>{role_text}{bal_text}</div></div>
         """, unsafe_allow_html=True)
         st.markdown('<div class="menu-group-label">导航</div>', unsafe_allow_html=True)
@@ -3338,7 +3338,7 @@ def main():
     with st.container(key="desktop_nav_bar"):
         st.markdown(f"""
         <div class="desktop-nav-brand">
-            <div class="name">双镜</div>
+            <div class="name">Gipfel</div>
             <div class="sub">INSIGHT+</div>
         </div>
         <div class="desktop-nav-user">
