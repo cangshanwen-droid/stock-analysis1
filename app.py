@@ -853,6 +853,51 @@ def get_platform_stats():
         cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
     return {"total_mv": round((s["当前价"] * s["总持仓量"]).sum(), 2), "total_pnl": round(s["总盈亏"].sum(), 2), "active_users": cnt}
 
+def get_admin_risk_overview():
+    current_round = get_market_round()
+    with get_db_cm() as conn:
+        players = conn.execute("SELECT username,balance,status FROM users WHERE role='player' ORDER BY username").fetchall()
+        trade_rows = conn.execute("""
+            SELECT username, COUNT(*) AS cnt, MAX(trade_date) AS last_time
+            FROM transactions
+            WHERE round=? AND username NOT LIKE '[系统]'
+            GROUP BY username
+        """, (current_round,)).fetchall()
+    trade_map = {r["username"]: {"cnt": int(r["cnt"] or 0), "last": r["last_time"]} for r in trade_rows}
+    rows, warnings = [], []
+    for p in players:
+        username = p["username"]
+        balance = float(row_get(p, "balance", 0) or 0)
+        pf = get_user_portfolio(username)
+        market_value = float(pf["market_value"].sum()) if not pf.empty else 0
+        cost = float((pf["avg_cost"] * pf["shares"]).sum()) if not pf.empty else 0
+        pnl = market_value - cost
+        pnl_ratio = round(pnl / cost * 100, 2) if cost else 0
+        total_assets = balance + market_value
+        max_mv = float(pf["market_value"].max()) if not pf.empty else 0
+        concentration = round(max_mv / market_value * 100, 2) if market_value else 0
+        trade_cnt = trade_map.get(username, {}).get("cnt", 0)
+        rows.append({
+            "选手": username, "余额": balance, "持仓市值": market_value, "总资产": total_assets,
+            "浮动盈亏": pnl, "收益率": pnl_ratio, "集中度": concentration,
+            "持仓股票": len(pf), "本轮交易": trade_cnt, "状态": row_get(p, "status", "active"),
+        })
+        if balance <= 1000:
+            warnings.append({"级别": "高", "对象": username, "信号": "现金接近耗尽", "数值": fmt_money(balance)})
+        if pnl_ratio >= 80:
+            warnings.append({"级别": "中", "对象": username, "信号": "收益率异常偏高", "数值": f"{pnl_ratio:,.2f}%"})
+        if pnl_ratio <= -30:
+            warnings.append({"级别": "高", "对象": username, "信号": "收益率大幅回撤", "数值": f"{pnl_ratio:,.2f}%"})
+        if concentration >= 80 and market_value > 0:
+            warnings.append({"级别": "中", "对象": username, "信号": "持仓过度集中", "数值": f"{concentration:,.2f}%"})
+        if trade_cnt >= 20:
+            warnings.append({"级别": "中", "对象": username, "信号": "本轮交易过于活跃", "数值": fmt_num(trade_cnt)})
+    df = pd.DataFrame(rows)
+    warn_df = pd.DataFrame(warnings)
+    if warn_df.empty:
+        warn_df = pd.DataFrame([{"级别": "正常", "对象": "全场", "信号": "暂无明显异常", "数值": "-"}])
+    return df, warn_df
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 响应式 CSS — 移动端优先
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -954,6 +999,34 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 .data-table td.neg { color: #089981; font-weight: 700; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: rgba(255,255,255,.025); }
+.risk-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 10px 0 14px;
+}
+.risk-card {
+    background: rgba(15,23,36,.82);
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+.risk-card .label {
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .4px;
+}
+.risk-card .value {
+    color: #f8fafc;
+    font-size: 20px;
+    font-weight: 800;
+    margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+}
+.risk-card.alert { border-color: rgba(242,54,69,.36); background: rgba(242,54,69,.08); }
+.risk-card.safe { border-color: rgba(16,185,129,.30); background: rgba(16,185,129,.07); }
+.risk-card.warn { border-color: rgba(245,158,11,.34); background: rgba(245,158,11,.07); }
 div[data-testid="stForm"] {
     background: rgba(15,23,36,.72) !important;
     border: 1px solid #1e2a3a !important;
@@ -967,6 +1040,9 @@ div[data-testid="stForm"] {
     .page-badge { min-height: 24px; padding: 4px 9px; font-size: 11px; }
     .data-table { min-width: 560px; }
     .data-table th, .data-table td { padding: 9px 10px; font-size: 12px; }
+    .risk-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .risk-card { padding: 12px; }
+    .risk-card .value { font-size: 18px; }
 }
 
 /* KPI 卡片 */
@@ -1829,6 +1905,41 @@ def render_table(df, columns=None):
     </div>
     """, unsafe_allow_html=True)
 
+def render_admin_risk_panel():
+    df, warn_df = get_admin_risk_overview()
+    if df.empty:
+        return
+    risky_count = 0 if (len(warn_df) == 1 and warn_df.iloc[0]["级别"] == "正常") else len(warn_df)
+    cash_low = int((df["余额"] <= 1000).sum())
+    max_conc = float(df["集中度"].max()) if not df.empty else 0
+    active_trades = int(df["本轮交易"].sum()) if not df.empty else 0
+    risk_cls = "safe" if risky_count == 0 else "alert"
+    cash_cls = "safe" if cash_low == 0 else "warn"
+    conc_cls = "safe" if max_conc < 80 else "warn"
+    st.markdown(f"""
+    <div class="risk-grid">
+        <div class="risk-card {risk_cls}"><div class="label">风险信号</div><div class="value">{fmt_num(risky_count)}</div></div>
+        <div class="risk-card {cash_cls}"><div class="label">现金耗尽</div><div class="value">{fmt_num(cash_low)}</div></div>
+        <div class="risk-card {conc_cls}"><div class="label">最高集中度</div><div class="value">{max_conc:,.2f}%</div></div>
+        <div class="risk-card"><div class="label">本轮交易</div><div class="value">{fmt_num(active_trades)}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""<div style="font-size:14px;font-weight:700;color:#eef2ff;margin:12px 0 8px;">风险监控</div>""", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+    with c1:
+        render_table(warn_df.head(8))
+    with c2:
+        leaders = df.sort_values("总资产", ascending=False).head(5).copy()
+        leaders["总资产"] = leaders["总资产"].apply(lambda x: f"¥{x:,.0f}")
+        leaders["收益率"] = leaders["收益率"].apply(lambda x: f"{x:,.2f}%")
+        render_table(leaders[["选手", "总资产", "收益率"]])
+    with c3:
+        active = df.sort_values("本轮交易", ascending=False).head(5).copy()
+        active["余额"] = active["余额"].apply(lambda x: f"¥{x:,.0f}")
+        active["集中度"] = active["集中度"].apply(lambda x: f"{x:,.2f}%")
+        render_table(active[["选手", "本轮交易", "余额", "集中度"]])
+
 def download_db_button():
     """管理员一键导出数据库按钮"""
     if os.path.exists(DB_PATH):
@@ -2281,6 +2392,7 @@ def page_admin_stock_summary():
     if summary.empty: st.info("无数据"); return
     held_stocks = int((summary["总持仓量"] > 0).sum())
     st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}{kpi_card("持仓股票", f"{held_stocks}/{len(summary)}")}</div>""", unsafe_allow_html=True)
+    render_admin_risk_panel()
     sdf = summary.sort_values("总盈亏")
     fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"], marker_color=[pnl_color(v) for v in sdf["总盈亏"]], text=[fmt_money(v) for v in sdf["总盈亏"]], textposition="outside"))
     fig.update_layout(height=280, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"); fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
