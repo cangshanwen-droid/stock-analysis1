@@ -1011,6 +1011,85 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 .data-table td.neg { color: #089981; font-weight: 700; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: rgba(255,255,255,.025); }
+.section-title {
+    margin: 16px 0 8px;
+    color: #f8fafc;
+    font-size: 16px;
+    font-weight: 850;
+}
+.stock-audit-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin: 10px 0 6px;
+}
+.stock-audit-card {
+    background: linear-gradient(180deg, rgba(15,23,36,.92), rgba(10,15,26,.94));
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+.stock-audit-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.stock-audit-title {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 850;
+}
+.stock-audit-code {
+    margin-left: 6px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .6px;
+}
+.stock-audit-pill {
+    border: 1px solid rgba(148,163,184,.18);
+    border-radius: 999px;
+    padding: 4px 9px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+.stock-audit-pill.up { color: #f87171; border-color: rgba(242,54,69,.28); background: rgba(242,54,69,.08); }
+.stock-audit-pill.down { color: #34d399; border-color: rgba(16,185,129,.24); background: rgba(16,185,129,.07); }
+.stock-audit-metrics {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+.stock-audit-metric {
+    min-width: 0;
+    background: rgba(255,255,255,.022);
+    border: 1px solid rgba(30,42,58,.78);
+    border-radius: 7px;
+    padding: 8px 9px;
+}
+.stock-audit-metric .label {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 800;
+    margin-bottom: 4px;
+    white-space: nowrap;
+}
+.stock-audit-metric .value {
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.stock-audit-metric .value.pos { color: #f23645; }
+.stock-audit-metric .value.neg { color: #089981; }
 .risk-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1052,6 +1131,8 @@ div[data-testid="stForm"] {
     .page-badge { min-height: 24px; padding: 4px 9px; font-size: 11px; }
     .data-table { min-width: 560px; }
     .data-table th, .data-table td { padding: 9px 10px; font-size: 12px; }
+    .stock-audit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stock-audit-head { align-items: flex-start; }
     .risk-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .risk-card { padding: 12px; }
     .risk-card .value { font-size: 18px; }
@@ -2749,8 +2830,29 @@ def page_admin_stock_summary():
     fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"], marker_color=[pnl_color(v) for v in sdf["总盈亏"]], text=[fmt_money(v) for v in sdf["总盈亏"]], textposition="outside"))
     fig.update_layout(height=280, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"); fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.markdown('<div class="section-title">个股行情检测</div>', unsafe_allow_html=True)
     for _, row in summary.iterrows():
-        with st.expander(f"{row['股票名称']} ({row['代码']})"):
+        pnl = float(row["总盈亏"])
+        ratio = float(row["收益率"])
+        pill_cls = "up" if pnl >= 0 else "down"
+        val_cls = "pos" if pnl > 0 else "neg" if pnl < 0 else ""
+        st.markdown(f"""
+        <div class="stock-audit-card">
+            <div class="stock-audit-head">
+                <div class="stock-audit-title">{esc(row['股票名称'])}<span class="stock-audit-code">{esc(row['代码'])}</span></div>
+                <div class="stock-audit-pill {pill_cls}">{esc(fmt_pct(ratio))}</div>
+            </div>
+            <div class="stock-audit-metrics">
+                <div class="stock-audit-metric"><div class="label">当前价</div><div class="value">{esc(fmt_money(row['当前价']))}</div></div>
+                <div class="stock-audit-metric"><div class="label">持有人</div><div class="value">{esc(fmt_num(row['持有用户数']))}</div></div>
+                <div class="stock-audit-metric"><div class="label">总持仓</div><div class="value">{esc(fmt_num(row['总持仓量']))}</div></div>
+                <div class="stock-audit-metric"><div class="label">总成本</div><div class="value">{esc(fmt_money(row['总成本']))}</div></div>
+                <div class="stock-audit-metric"><div class="label">总市值</div><div class="value">{esc(fmt_money(row['总市值']))}</div></div>
+                <div class="stock-audit-metric"><div class="label">总盈亏</div><div class="value {val_cls}">{esc(fmt_money(pnl))}</div></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.expander(f"查看 {row['股票名称']} ({row['代码']}) 持有人明细"):
             d = get_holder_detail(row["代码"])
             if not d.empty:
                 dd = d.copy()
@@ -2759,7 +2861,9 @@ def page_admin_stock_summary():
                 dd["当前价"] = dd["当前价"].apply(lambda x: f"¥{x:,.2f}")
                 dd["盈亏"] = dd["盈亏"].apply(lambda x: f"¥{x:,.2f}")
                 dd["收益率"] = dd["收益率"].apply(lambda x: f"{x:,.2f}%")
-                render_table(dd)
+                render_table(dd, compact=True)
+            else:
+                st.info("暂无持仓明细")
     disp = summary.copy()
     disp["当前价"] = disp["当前价"].apply(lambda x: f"¥{x:,.2f}")
     disp["持有用户数"] = disp["持有用户数"].apply(lambda x: fmt_num(x))
