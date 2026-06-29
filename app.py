@@ -1692,8 +1692,8 @@ def page_public_dashboard():
     if data:
         raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
         df_k = build_professional_kline_view(raw_k, sym)
-        df_k["x_pos"] = np.arange(len(df_k)) + 1
-        df_k["x_label"] = df_k["round"].apply(lambda r: f"{int(r)}")
+        df_k["x_pos"] = df_k["display_round"]
+        df_k["x_label"] = df_k["display_round"].apply(lambda r: f"{int(r)}")
         x_values = df_k["x_pos"]
 
         RED_UP = "#d64b45"
@@ -1720,8 +1720,8 @@ def page_public_dashboard():
         fig.add_trace(go.Bar(x=x_values, y=body_height, base=body_base, width=0.42,
             marker=dict(color=body_fill, line=dict(color=candle_line, width=1.05)),
             name="K线", showlegend=False,
-            customdata=np.stack([df_k["round"], df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
-            hovertemplate="第%{customdata[0]}<br>开 %{customdata[1]:,.2f}<br>高 %{customdata[2]:,.2f}<br>低 %{customdata[3]:,.2f}<br>收 %{customdata[4]:,.2f}<br>涨跌 %{customdata[5]:+.2f}%<extra></extra>"), row=1, col=1)
+            customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
+            hovertemplate="展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>开 %{customdata[2]:,.2f}<br>高 %{customdata[3]:,.2f}<br>低 %{customdata[4]:,.2f}<br>收 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<extra></extra>"), row=1, col=1)
 
         for col, color, name in [("upper", "#6b9ec7", "UPPER"), ("mid", "#d6a11d", "MID"), ("lower", "#d957a8", "LOWER")]:
             if df_k[col].notna().any():
@@ -1753,6 +1753,13 @@ def page_public_dashboard():
         tick_step = max(1, len(df_k)//6)
         tick_vals = x_values.iloc[::tick_step]
         tick_text = df_k["x_label"].iloc[::tick_step]
+        y_min = float(df_k["low_price"].min())
+        y_max = float(df_k["high_price"].max())
+        y_pad = (y_max - y_min) * 0.06 if y_max > y_min else max(y_max * 0.03, 1)
+        y_range = [y_min - y_pad, y_max + y_pad]
+        y_ticks = np.linspace(y_range[0], y_range[1], 5)
+        vol_max = float(df_k["volume"].max() or 1)
+        vol_ticks = np.linspace(0, vol_max, 4)
         fig.update_layout(height=540, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
             margin=dict(t=8, b=8, l=44, r=48), xaxis_rangeslider_visible=False,
             font=dict(color="#94a3b8", size=10), hovermode="x unified",
@@ -1763,9 +1770,11 @@ def page_public_dashboard():
                 font=dict(color="#94a3b8", size=10)),
             bargap=0.42)
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
+            range=y_range, tickmode="array", tickvals=y_ticks, ticktext=[fmt_axis_num(v) for v in y_ticks],
             side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10, color="#94a3b8"))
         fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=1, col=1)
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
+            tickmode="array", tickvals=vol_ticks, ticktext=[fmt_axis_num(v) for v in vol_ticks],
             side="right", row=2, col=1, zeroline=False, tickfont=dict(size=9, color="#94a3b8"))
         fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=2, col=1)
 
@@ -1913,6 +1922,17 @@ def fmt_pct(v, s=True):
     return f"{sign}{v:,.2f}%"
 
 def fmt_num(v):     return f"{v:,}"
+
+def fmt_axis_num(v):
+    v = float(v or 0)
+    av = abs(v)
+    if av >= 100000000:
+        return f"{v / 100000000:.2f}亿"
+    if av >= 10000:
+        return f"{v / 10000:.2f}万"
+    if av < 1000:
+        return f"{v:.2f}"
+    return f"{v:,.0f}"
 
 def page_header(title, subtitle="", badge=None, ok=False):
     badge_html = ""
@@ -2278,6 +2298,9 @@ def build_professional_kline_view(df_src, symbol, target=72):
     src = df_src.sort_values("round").reset_index(drop=True).copy()
     if len(src) >= 30:
         out = src.copy()
+        out["display_round"] = np.arange(1, len(out) + 1)
+        out["source_round"] = out["round"]
+        out["is_anchor"] = True
     else:
         seed = sum((i + 1) * ord(ch) for i, ch in enumerate(str(symbol))) % (2**32)
         rng = np.random.default_rng(seed)
@@ -2313,6 +2336,9 @@ def build_professional_kline_view(df_src, symbol, target=72):
         volume = np.maximum(real_vol * vol_wave * rng.uniform(0.72, 1.28, target), 1).astype(int)
         out = pd.DataFrame({
             "round": np.arange(1, target + 1),
+            "display_round": np.arange(1, target + 1),
+            "source_round": np.nan,
+            "is_anchor": False,
             "open_price": open_,
             "high_price": high,
             "low_price": low,
@@ -2326,10 +2352,11 @@ def build_professional_kline_view(df_src, symbol, target=72):
             out.loc[idx_real, "low_price"] = float(real_row["low_price"])
             out.loc[idx_real, "close_price"] = float(real_row["close_price"])
             out.loc[idx_real, "volume"] = float(row_get(real_row, "volume", out.loc[idx_real, "volume"]) or 0)
+            out.loc[idx_real, "source_round"] = int(real_row["round"])
+            out.loc[idx_real, "is_anchor"] = True
         prev = out["close_price"].shift(1).fillna(out["open_price"])
         out["change_pct"] = ((out["close_price"] - prev) / prev.replace(0, np.nan) * 100).fillna(0)
         for idx_real, (_, real_row) in zip(anchor_idx, src.iterrows()):
-            out.loc[idx_real, "round"] = int(real_row["round"])
             out.loc[idx_real, "change_pct"] = float(row_get(real_row, "change_pct", out.loc[idx_real, "change_pct"]) or 0)
     out["mid"] = out["close_price"].rolling(20, min_periods=5).mean()
     std = out["close_price"].rolling(20, min_periods=5).std().fillna(0)
@@ -2411,8 +2438,8 @@ def page_kline():
     """, unsafe_allow_html=True)
 
     df_k = build_professional_kline_view(df_k, sym)
-    df_k["x_label"] = df_k["round"].apply(lambda r: f"{int(r)}")
-    df_k["x_pos"] = np.arange(len(df_k)) + 1
+    df_k["x_label"] = df_k["display_round"].apply(lambda r: f"{int(r)}")
+    df_k["x_pos"] = df_k["display_round"]
     x_values = df_k["x_pos"]
     high_price = float(df_k["high_price"].max())
     low_price = float(df_k["low_price"].min())
@@ -2461,12 +2488,12 @@ def page_kline():
         x=x_values, y=body_height, base=body_base, width=0.42,
         marker=dict(color=body_fill, line=dict(color=candle_line, width=1.15)),
         name="K线", showlegend=False,
-        customdata=np.stack([df_k["round"], df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
+        customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
         hovertemplate=(
-            "第%{customdata[0]}轮<br>"
-            "开盘 %{customdata[1]:,.2f}<br>最高 %{customdata[2]:,.2f}<br>"
-            "最低 %{customdata[3]:,.2f}<br>收盘 %{customdata[4]:,.2f}<br>"
-            "涨跌 %{customdata[5]:+.2f}%<br>成交量 %{customdata[6]:,.0f}<extra></extra>"
+            "展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>"
+            "开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>"
+            "最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>"
+            "涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"
         ),
     ), row=1, col=1)
 
@@ -2550,7 +2577,8 @@ def page_kline():
     fig.update_yaxes(
         range=y_range,
         showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
-        tickformat=",.2f", tickfont=dict(size=12, color="#94a3b8", family="monospace"),
+        tickmode="array", tickvals=pct_ticks, ticktext=[fmt_axis_num(v) for v in pct_ticks],
+        tickfont=dict(size=12, color="#94a3b8", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
         title_text="", title_font=dict(size=10, color="#94a3b8"),
@@ -2577,6 +2605,9 @@ def page_kline():
     # 成交量副图
     fig.update_yaxes(
         showgrid=True, gridcolor="#1e2a3a", gridwidth=1, griddash="dot",
+        tickmode="array",
+        tickvals=np.linspace(0, float(df_k["volume"].max() or 1), 4),
+        ticktext=[fmt_axis_num(v) for v in np.linspace(0, float(df_k["volume"].max() or 1), 4)],
         tickfont=dict(size=10, color="#94a3b8"), side="right", row=2, col=1,
         zeroline=False,
     )
