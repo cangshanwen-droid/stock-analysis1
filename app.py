@@ -869,8 +869,18 @@ html, body, .stApp {
 
 /* 全局 — 深色交易终端 */
 .stApp { background: #070b13 !important; }
-.stApp > header { height: 0 !important; min-height: 0 !important; overflow: hidden !important; }
-section.main > div.block-container { padding: 4px 14px 80px !important; }
+.stApp > header,
+header[data-testid="stHeader"] {
+    display: none !important;
+    height: 0 !important; min-height: 0 !important; overflow: hidden !important;
+    background: transparent !important;
+}
+section.main > div.block-container,
+[data-testid="stMainBlockContainer"] {
+    padding: 4px 14px 112px !important;
+}
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] { background: #070b13 !important; }
 
 /* 所有 Streamlit 原生控件压暗 */
 div[data-testid="stVerticalBlock"] { gap: 6px !important; }
@@ -892,7 +902,7 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
     border: 1px solid #1e2a3a;
 }
 .kpi-card .label { font-size: 10px; color: #5a6a7e; margin-bottom: 2px; letter-spacing: .5px; }
-.kpi-card .value { font-size: 22px; font-weight: 700; color: #e2e8f0; font-feature-settings: "tnum"; }
+.kpi-card .value { font-size: 22px; font-weight: 700; color: #e2e8f0; font-feature-settings: "tnum"; white-space: nowrap; overflow-wrap: normal; }
 .kpi-card .delta { font-size: 11px; margin-top: 1px; }
 .kpi-card .delta.up { color: #f23645; }
 .kpi-card .delta.down { color: #089981; }
@@ -918,6 +928,9 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 .chart-metric .value.up { color: #f23645; }
 .chart-metric .value.down { color: #089981; }
 .chart-panel { background: #0f1724; border: 1px solid #1e2a3a; border-radius: 6px; padding: 4px; }
+.chart-panel .js-plotly-plot, .chart-panel .plot-container, .chart-panel .svg-container {
+    background: #0b1220 !important; border-radius: 6px !important;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -1009,8 +1022,42 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
 .desktop-only { display: none; }
 .mobile-only { display: block; }
 
+.st-key-mobile_nav_bar {
+    position: fixed !important;
+    left: 0 !important; right: 0 !important; bottom: 0 !important;
+    z-index: 9999 !important;
+    padding: 7px 8px calc(9px + env(safe-area-inset-bottom)) !important;
+    background: rgba(10,15,26,.98) !important;
+    border-top: 1px solid #1a2332 !important;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.32) !important;
+}
+.st-key-mobile_nav_bar [data-testid="stHorizontalBlock"] {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+}
+.st-key-mobile_nav_bar [data-testid="column"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+}
+.st-key-mobile_nav_bar div[data-testid="stButton"] button {
+    min-height: 42px !important;
+    padding: 4px 2px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+}
+
 @media (min-width: 768px) {
-    section.main > div.block-container { padding: 12px 22px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    section.main > div.block-container,
+    [data-testid="stMainBlockContainer"] {
+        padding: 12px 22px 28px !important;
+        max-width: 1400px !important;
+        margin: 0 auto !important;
+    }
+    .st-key-mobile_nav_bar { display: none !important; }
+    .mob-bar-inner { display: none !important; }
     .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
     .desktop-only { display: block; }
     .mobile-only { display: none; }
@@ -1018,6 +1065,10 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     .desktop-table { background: #0f1724; border-radius: 6px; padding: 0 12px 8px 12px; border: 1px solid #1e2a3a; }
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] [data-testid="stDataFrameToolbar"] { display: none !important; }
+    [data-testid="stDataFrame"] iframe,
+    [data-testid="stDataFrame"] div {
+        background-color: #0f1724 !important;
+    }
     [data-testid="stDataFrame"] th {
         background: transparent !important; font-size: 10px !important;
         color: #5a6a7e !important; font-weight: 600 !important;
@@ -1125,7 +1176,9 @@ SIDEBAR_CSS = """
 DASHBOARD_CSS = """
 <style>
     .stApp { background: #080c17 !important; }
-    section.main > div.block-container { padding: 0 14px 0 14px !important; max-width: 1400px !important; margin: 0 auto !important; }
+    section[data-testid="stSidebar"] { display: none !important; }
+    section.main > div.block-container,
+    [data-testid="stMainBlockContainer"] { padding: 0 14px 0 14px !important; max-width: 1400px !important; margin: 0 auto !important; }
     #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
     [data-testid="stDecoration"], [data-testid="stToolbar"], header { display: none !important; }
     .stApp > header { height: 0 !important; overflow: hidden; }
@@ -1338,9 +1391,11 @@ def page_login():
         .stApp {
             background: linear-gradient(135deg, #060b1a 0%, #0d1a3a 50%, #060b1a 100%) !important;
         }
+        section[data-testid="stSidebar"] { display: none !important; }
         .stApp > header { height: 0 !important; overflow: hidden; }
         div[data-testid="stToolbar"] { visibility: hidden; }
-        section.main > div.block-container { padding: 0 !important; }
+        section.main > div.block-container,
+        [data-testid="stMainBlockContainer"] { padding: 0 !important; }
         div[data-testid="stTextInput"] input {
             background: rgba(10,18,40,.85) !important;
             border: 1px solid rgba(255,255,255,.1) !important;
@@ -1354,6 +1409,21 @@ def page_login():
         div[data-testid="stTextInput"] input:focus {
             border-color: rgba(212,168,83,.4) !important;
             box-shadow: 0 0 24px rgba(212,168,83,.08) !important;
+        }
+        button[aria-label="Show password text"],
+        button[aria-label="Hide password text"] {
+            font-size: 0 !important;
+            color: transparent !important;
+        }
+        button[aria-label="Show password text"]::after {
+            content: "显示" !important;
+            font-size: 12px !important;
+            color: rgba(255,255,255,.45) !important;
+        }
+        button[aria-label="Hide password text"]::after {
+            content: "隐藏" !important;
+            font-size: 12px !important;
+            color: rgba(255,255,255,.45) !important;
         }
         div[data-testid="stButton"] button[kind="primary"] {
             background: linear-gradient(135deg, #d4a853, #f0e6d3) !important;
@@ -1423,6 +1493,11 @@ def page_login():
 
 def fmt_money(v):   return f"¥{v:,.0f}"
 def fmt_pnl(v):     return f"¥{v:,.2f}"
+def fmt_money_short(v):
+    v = float(v or 0)
+    if abs(v) >= 10000:
+        return f"¥{v / 10000:,.2f}万"
+    return fmt_money(v)
 def fmt_pct(v, s=True):
     sign = "+" if (s and v > 0) else ("" if s else "")
     return f"{sign}{v:,.2f}%"
@@ -1494,11 +1569,11 @@ def page_portfolio():
     <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
         <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持仓市值</div>
-            <div style="font-size:20px;font-weight:700;color:#eef2ff;">{fmt_money(total_mv)}</div>
+            <div style="font-size:20px;font-weight:700;color:#eef2ff;white-space:nowrap;">{fmt_money_short(total_mv)}</div>
         </div>
         <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">总盈亏</div>
-            <div style="font-size:20px;font-weight:700;color:{pnl_color(total_pnl)};">{fmt_money(total_pnl)}</div>
+            <div style="font-size:20px;font-weight:700;color:{pnl_color(total_pnl)};white-space:nowrap;">{fmt_money_short(total_pnl)}</div>
         </div>
         <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:10px 18px;flex:1;min-width:100px;">
             <div style="font-size:11px;color:#64748b;">持股数</div>
@@ -1799,16 +1874,17 @@ def page_kline():
     fig.update_layout(
         height=560,
         margin=dict(t=8, b=8, l=0, r=20),
-        plot_bgcolor="#ffffff", paper_bgcolor="#ffffff",
+        plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
         xaxis_rangeslider_visible=False,
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                    bgcolor="rgba(255,255,255,0.85)", bordercolor="#d0d5dd", borderwidth=0.5),
+                    bgcolor="rgba(15,23,36,0.86)", bordercolor="#1e2a3a", borderwidth=0.5,
+                    font=dict(color="#cbd5e1")),
         hovermode="x unified",
         hoverlabel=dict(bgcolor="#1e293b", font_size=11, font_color="#ffffff",
                         bordercolor="#334155"),
         font=dict(family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-                  size=11, color="#475569"),
+                  size=11, color="#94a3b8"),
         # 十字光标（同花顺风格：实线细十字）
         xaxis=dict(type="category", categoryorder="array", categoryarray=list(x_values),
                    showspikes=True, spikemode="across", spikethickness=0.8,
@@ -1825,8 +1901,8 @@ def page_kline():
     pad = (y_max - y_min) * 0.06 if y_max > y_min else 10
     fig.update_yaxes(
         range=[y_min - pad, y_max + pad],
-        showgrid=True, gridcolor="#e8ecf1", gridwidth=0.8, griddash="dot",
-        tickformat=",.2f", tickfont=dict(size=11, color="#64748b", family="monospace"),
+        showgrid=True, gridcolor="#1e2a3a", gridwidth=0.8, griddash="dot",
+        tickformat=",.2f", tickfont=dict(size=11, color="#94a3b8", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
         title_text="价格", title_font=dict(size=10, color="#94a3b8"),
@@ -1835,7 +1911,7 @@ def page_kline():
 
     # 成交量副图
     fig.update_yaxes(
-        showgrid=True, gridcolor="#e8ecf1", gridwidth=0.8, griddash="dot",
+        showgrid=True, gridcolor="#1e2a3a", gridwidth=0.8, griddash="dot",
         tickfont=dict(size=9, color="#94a3b8"), side="right", row=2, col=1,
         zeroline=False,
     )
@@ -1849,7 +1925,7 @@ def page_kline():
 
     # 工具栏：极简，只保留基础功能
     config = {
-        "displayModeBar": True,
+        "displayModeBar": False,
         "modeBarButtonsToRemove": ["lasso2d", "select2d", "sendDataToCloud",
                                      "autoScale2d", "toggleSpikelines",
                                      "zoomIn2d", "zoomOut2d"],
@@ -2367,16 +2443,14 @@ def main():
     sel = st.session_state.nav_current
     if st.session_state.role == "player" and sel in PLAYER_NAV:
         short = {"总览": "总览", "交易大厅": "交易", "我的持仓": "持仓", "交易记录": "记录", "K线展板": "K线"}
-        st.markdown('<div class="mob-bar-inner">', unsafe_allow_html=True)
-        mm = st.columns(5)
-        for mi, mn in enumerate(PLAYER_NAV):
-            with mm[mi]:
-                tp = "primary" if mn == sel else "secondary"
-                if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
-                    st.session_state.nav_current = mn
-                    st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('<div style="height:60px"></div>', unsafe_allow_html=True)
+        with st.container(key="mobile_nav_bar"):
+            mm = st.columns(5)
+            for mi, mn in enumerate(PLAYER_NAV):
+                with mm[mi]:
+                    tp = "primary" if mn == sel else "secondary"
+                    if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
+                        st.session_state.nav_current = mn
+                        st.rerun()
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
