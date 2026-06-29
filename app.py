@@ -1746,7 +1746,7 @@ def page_public_dashboard():
                 <div class="name">{esc(selected_stock["name"])} · {esc(selected_stock["symbol"])}</div>
                 <div class="meta">BOLL [20,2] ｜ MID {latest_mid:,.2f} ｜ UPPER {latest_upper:,.2f} ｜ LOWER {latest_lower:,.2f}</div>
             </div>
-            <div class="meta">真实轮次锚定 · 专业展示K线</div>
+            <div class="meta">红涨绿跌 · BOLL</div>
         </div>
         """, unsafe_allow_html=True)
 
