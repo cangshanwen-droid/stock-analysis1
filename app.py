@@ -1169,6 +1169,7 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] {
         background: #0a0f1a !important;
         border-right: 1px solid #1a2332 !important;
+        min-width: 300px !important;
     }
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
@@ -1177,32 +1178,56 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
 
-    .sb-brand { padding: 18px 20px 12px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-brand .name p { font-size: 22px !important; font-weight: 800 !important; margin: 0 !important; letter-spacing: 2px !important; background: linear-gradient(135deg, #f0e6d3, #d4a853) !important; -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important; background-clip: text !important; }
-    .sb-brand .sub p { color: #475569 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 2px 0 0 0 !important; }
-    .sb-user { padding: 8px 20px 8px 20px; border-bottom: 1px solid #1a2332; }
-    .sb-user .uname p { font-size: 13px !important; font-weight: 600 !important; color: #f1f5f9 !important; margin: 0 !important; }
-    .sb-user .urole p { font-size: 11px !important; color: #475569 !important; margin: 0 !important; }
+    .sb-brand { padding: 18px 20px 14px 20px; border-bottom: 1px solid #1a2332; }
+    .sb-brand .name,
+    .sb-brand .name p {
+        font-size: 24px !important; font-weight: 850 !important; margin: 0 !important;
+        letter-spacing: 2px !important; line-height: 1.1 !important;
+        background: linear-gradient(135deg, #fff4cf, #d4a853) !important;
+        -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important; background-clip: text !important;
+    }
+    .sb-brand .sub,
+    .sb-brand .sub p {
+        color: #94a3b8 !important; font-size: 10px !important; letter-spacing: 4px !important; margin: 5px 0 0 0 !important;
+    }
+    .sb-user { padding: 12px 20px 12px 20px; border-bottom: 1px solid #1a2332; }
+    .sb-user .uname,
+    .sb-user .uname p { font-size: 14px !important; font-weight: 700 !important; color: #f8fafc !important; margin: 0 !important; }
+    .sb-user .urole,
+    .sb-user .urole p { font-size: 12px !important; color: #94a3b8 !important; margin: 4px 0 0 0 !important; }
     .sb-user .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #089981; margin-right: 4px; vertical-align: middle; }
-    .menu-group-label { padding: 12px 20px 2px 20px; }
-    .menu-group-label p { font-size: 9px !important; font-weight: 700 !important; color: #475569 !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
+    .menu-group-label { padding: 14px 20px 6px 20px; }
+    .menu-group-label,
+    .menu-group-label p { font-size: 10px !important; font-weight: 800 !important; color: #64748b !important; text-transform: uppercase; letter-spacing: 2px !important; margin: 0 !important; }
 
     /* 侧边栏导航按钮 */
     section[data-testid="stSidebar"] button {
-        display: block !important; width: calc(100% - 16px) !important;
-        margin: 2px 8px !important; padding: 8px 12px !important;
-        border-radius: 6px !important; font-size: 14px !important;
-        font-weight: 500 !important; text-align: left !important;
-        background: transparent !important; border: none !important;
-        color: #64748b !important; cursor: pointer !important;
+        display: flex !important; align-items: center !important; justify-content: flex-start !important;
+        width: calc(100% - 16px) !important;
+        margin: 4px 8px !important; padding: 10px 14px !important;
+        border-radius: 8px !important; font-size: 14px !important;
+        font-weight: 650 !important; text-align: left !important;
+        background: transparent !important; border: 1px solid transparent !important;
+        color: #cbd5e1 !important; cursor: pointer !important;
         transition: background .1s !important;
     }
+    section[data-testid="stSidebar"] button [data-testid="stMarkdownContainer"],
+    section[data-testid="stSidebar"] button p {
+        width: 100% !important;
+        color: inherit !important;
+        text-align: left !important;
+        font-weight: inherit !important;
+    }
     section[data-testid="stSidebar"] button:hover {
-        background: rgba(255,255,255,.04) !important; color: #94a3b8 !important;
+        background: rgba(255,255,255,.06) !important; color: #ffffff !important;
+        border-color: rgba(255,255,255,.06) !important;
     }
     section[data-testid="stSidebar"] button[kind="primary"] {
-        background: rgba(242,54,69,.08) !important; color: #f23645 !important;
-        font-weight: 600 !important; position: relative !important;
+        background: linear-gradient(90deg, rgba(242,54,69,.22), rgba(242,54,69,.08)) !important;
+        color: #ffffff !important;
+        border-color: rgba(242,54,69,.30) !important;
+        font-weight: 800 !important; position: relative !important;
+        box-shadow: inset 0 0 0 1px rgba(242,54,69,.08) !important;
     }
     section[data-testid="stSidebar"] button[kind="primary"]::before {
         content: '' !important; position: absolute !important;
@@ -1213,6 +1238,9 @@ SIDEBAR_CSS = """
     section[data-testid="stSidebar"] button[kind="secondary"] { border: none !important; background: transparent !important; }
     section[data-testid="stSidebar"] button:last-of-type {
         margin: 4px 12px !important; width: calc(100% - 24px) !important;
+    }
+    @media (min-width: 768px) {
+        [data-testid="stSidebarCollapseButton"] { display: none !important; }
     }
 </style>
 """
@@ -2493,7 +2521,7 @@ NAV = {
 PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "交易记录", "K线展板"]
 ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
 
-st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="双镜 - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 if "db_initialized" not in st.session_state:
     init_db()
