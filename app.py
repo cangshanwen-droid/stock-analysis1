@@ -1564,6 +1564,9 @@ DASHBOARD_CSS = """
         color: rgba(255,255,255,.4); transition: all .15s; font-family: inherit; }
     .tab-btn:hover { background: rgba(255,255,255,.05); color: rgba(255,255,255,.7); }
     .tab-btn.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.3); color: #60a5fa; }
+    .period-row { display: flex; align-items: center; gap: 18px; padding: 8px 2px 10px; color: rgba(255,255,255,.42); font-size: 14px; }
+    .period-row .active { color: #e2e8f0; font-weight: 800; position: relative; }
+    .period-row .active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -8px; height: 2px; background: #3b82f6; border-radius: 2px; }
 
     .chart-box { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06);
         border-radius: 12px; padding: 8px; margin-bottom: 12px; }
@@ -1585,13 +1588,22 @@ DASHBOARD_CSS = """
 
     @media (max-width: 768px) {
         [data-testid="stMainBlockContainer"] { padding-bottom: 92px !important; }
-        .stock-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
-        .s-card { padding: 13px 14px 16px; min-width: 0; }
-        .s-card .pr { font-size: 21px; letter-spacing: 0; }
-        .s-card .chg { font-size: 12px; }
-        .s-card .extra { font-size: 10px; line-height: 1.45; word-break: keep-all; }
-        .s-meta { grid-template-columns: 1fr; gap: 2px; margin-top: 8px; }
-        .s-meta span { font-size: 10px; }
+        .stock-grid {
+            display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+            margin-bottom: 10px; scroll-snap-type: x mandatory;
+        }
+        .s-card {
+            flex: 0 0 138px; min-width: 138px; padding: 10px 12px 12px;
+            border-radius: 10px; scroll-snap-align: start;
+        }
+        .s-card .sym { font-size: 9px; }
+        .s-card .nm { font-size: 12px; margin-bottom: 4px; }
+        .s-card .pr { font-size: 18px; letter-spacing: 0; }
+        .s-card .chg { font-size: 10px; }
+        .s-meta { display: none; }
+        .s-card::after { left: 12px; right: 12px; }
+        .tab-row { gap: 4px; margin-bottom: 6px; overflow-x: auto; }
+        .period-row { gap: 15px; font-size: 15px; padding-top: 4px; }
         .dash-chart-head { align-items: flex-start; flex-direction: column; gap: 2px; }
         .dash-ft { padding-bottom: 64px; }
     }
@@ -1684,6 +1696,7 @@ def page_public_dashboard():
             st.session_state.dash_sym = s["symbol"]
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('<div class="period-row"><span>分时</span><span>五日</span><span class="active">日K</span><span>周K</span><span>月K</span><span>更多</span></div>', unsafe_allow_html=True)
 
     # K线图
     sym = st.session_state.dash_sym
@@ -1760,7 +1773,7 @@ def page_public_dashboard():
         y_ticks = np.linspace(y_range[0], y_range[1], 5)
         vol_max = float(df_k["volume"].max() or 1)
         vol_ticks = np.linspace(0, vol_max, 4)
-        fig.update_layout(height=540, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
+        fig.update_layout(height=580, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
             margin=dict(t=8, b=8, l=44, r=48), xaxis_rangeslider_visible=False,
             font=dict(color="#94a3b8", size=10), hovermode="x unified",
             hoverlabel=dict(bgcolor="#111827", font_size=12, font_color="#e5e7eb", bordercolor="#334155"),
