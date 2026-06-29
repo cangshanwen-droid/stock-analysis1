@@ -1338,7 +1338,7 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 10px; }
     .desktop-only { display: block !important; }
     .mobile-only { display: none !important; }
-    .chart-summary { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .chart-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
     .desktop-table { background: #0f1724; border-radius: 6px; padding: 0 12px 8px 12px; border: 1px solid #1e2a3a; }
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] [data-testid="stDataFrameToolbar"] { display: none !important; }
@@ -2272,6 +2272,7 @@ def page_kline():
     <div class="chart-summary">
         <div class="chart-metric"><div class="label">最新价 · 第{latest_round}轮</div><div class="value {latest_cls}">{fmt_money(latest_close)}</div></div>
         <div class="chart-metric"><div class="label">本轮涨跌</div><div class="value {latest_cls}">{latest_change:+.2f}%</div></div>
+        <div class="chart-metric"><div class="label">区间涨跌</div><div class="value {total_cls}">{total_change:+.2f}%</div></div>
         <div class="chart-metric"><div class="label">开 / 高 / 低</div><div class="value">{latest_open:,.2f} / {latest_high:,.2f} / {latest_low:,.2f}</div></div>
         <div class="chart-metric"><div class="label">本轮量 / 区间量</div><div class="value">{fmt_num(latest_volume)} / {fmt_num(total_volume)}</div></div>
     </div>
@@ -2342,7 +2343,7 @@ def page_kline():
     # ── 布局：同花顺/东方财富专业风格 ──
     fig.update_layout(
         height=600,
-        margin=dict(t=24, b=8, l=0, r=56),
+        margin=dict(t=24, b=8, l=56, r=56),
         plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
         xaxis_rangeslider_visible=False,
         showlegend=True,
@@ -2366,18 +2367,33 @@ def page_kline():
     fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
                   annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
                   annotation_font_color="#fbbf24", row=1, col=1)
+    fig.add_hline(y=first_open, line_width=1, line_dash="dash", line_color="rgba(148,163,184,.55)",
+                  annotation_text="0% 基准", annotation_position="bottom left",
+                  annotation_font_color="#94a3b8", row=1, col=1)
 
-    # 主图 Y 轴：右侧价格标签，浅灰虚线网格
+    # 主图 Y 轴：右侧价格标签 + 左侧涨跌幅参考轴
     y_min = low_price
     y_max = high_price
     pad = (y_max - y_min) * 0.06 if y_max > y_min else 10
+    y_range = [y_min - pad, y_max + pad]
+    pct_ticks = np.linspace(y_range[0], y_range[1], 6)
+    pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in pct_ticks]
     fig.update_yaxes(
-        range=[y_min - pad, y_max + pad],
+        range=y_range,
         showgrid=True, gridcolor="#1e2a3a", gridwidth=0.8, griddash="dot",
         tickformat=",.2f", tickfont=dict(size=11, color="#94a3b8", family="monospace"),
         side="right", row=1, col=1,
         zeroline=False,
         title_text="价格", title_font=dict(size=10, color="#94a3b8"),
+    )
+    fig.update_layout(
+        yaxis3=dict(
+            overlaying="y", anchor="x", side="left", range=y_range,
+            tickmode="array", tickvals=pct_ticks, ticktext=pct_text,
+            showgrid=False, zeroline=False, ticks="outside",
+            tickfont=dict(size=11, color="#94a3b8", family="monospace"),
+            title=dict(text="涨跌幅", font=dict(size=10, color="#94a3b8")),
+        )
     )
     fig.update_xaxes(showgrid=False, row=1, col=1)
 
