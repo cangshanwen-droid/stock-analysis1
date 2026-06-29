@@ -39,6 +39,24 @@ def esc(s):
     if not isinstance(s, str): return str(s)
     return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#x27;")
 
+INITIAL_PRICE_POOL = (8.14, 19.52, 16.33, 12.40)
+INITIAL_PRICE_BY_SYMBOL = {
+    "WULIU": 8.14,
+    "JXIAO": 19.52,
+    "JGONG": 16.33,
+    "YLIAO": 12.40,
+}
+
+def pick_initial_price(symbol=""):
+    """比赛初始价只从指定候选值中取，避免公式价失真。"""
+    sym = (symbol or "").strip().upper()
+    if sym in INITIAL_PRICE_BY_SYMBOL:
+        return INITIAL_PRICE_BY_SYMBOL[sym]
+    if not sym:
+        return INITIAL_PRICE_POOL[0]
+    idx = sum(ord(ch) for ch in sym) % len(INITIAL_PRICE_POOL)
+    return INITIAL_PRICE_POOL[idx]
+
 def check_pwd(stored, plain):
     """验证密码，兼容旧版无盐哈希"""
     if ":" in stored:
@@ -99,7 +117,7 @@ def init_db():
                 ("YLIAO", "原料1公司", 10000, 500, 20, 50, 50, 50),
             ]
             for sym, name, ts_, rev, ipe, cp, icm, pr in stock_defs:
-                price = calc_initial_price(rev, ts_, ipe)
+                price = calc_initial_price(rev, ts_, ipe, sym)
                 exists = conn.execute("SELECT id FROM stocks WHERE symbol=?", (sym,)).fetchone()
                 if exists:
                     # 不覆盖 current_price/previous_close（保留交易产生的价格变化）
@@ -206,7 +224,7 @@ def _seed(conn):
         ("JGONG", "加工1公司", 10000, 400, 20, 50, 50, 50, 4000),
         ("YLIAO", "原料1公司", 10000, 500, 20, 50, 50, 50, 5000),
     ]:
-        price = calc_initial_price(rev, ts_, ipe)
+        price = calc_initial_price(rev, ts_, ipe, sym)
         cur.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
             total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
             VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
@@ -227,8 +245,10 @@ def calc_pe(stock):
     ts = row_get(stock, "total_shares", 10000)
     return round(cp * ts / rev, 2)
 
-def calc_initial_price(revenue, total_shares, industry_pe):
-    """初始价 = 净利润×10000÷总股本÷行业PE（Excel公式）"""
+def calc_initial_price(revenue, total_shares, industry_pe, symbol=None):
+    """比赛初始价：从指定候选值池取值；未给代码时保留旧公式兜底。"""
+    if symbol:
+        return pick_initial_price(symbol)
     if not total_shares or not industry_pe or not revenue:
         return 0
     return round(revenue * 10000 / total_shares / industry_pe, 2)
@@ -382,7 +402,7 @@ def get_stock(sid):
 def add_stock(sym, name, total_shares, revenue, industry_pe):
     try:
         with get_db_cm() as conn:
-            price = calc_initial_price(revenue, total_shares, industry_pe)
+            price = calc_initial_price(revenue, total_shares, industry_pe, sym)
             funds = price * 10000 * 20 / 10000
             conn.execute("INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,total_shares,revenue,industry_pe) VALUES(?,?,?,?,?,?,?,?)",
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
@@ -658,6 +678,7 @@ def reset_to_round1():
                 row_get(s, "revenue", 0),
                 row_get(s, "total_shares", 0),
                 row_get(s, "industry_pe", 0),
+                row_get(s, "symbol", ""),
             ) or row_get(s, "current_price", 0) or 1
             conn.execute(
                 "UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?",
@@ -2922,9 +2943,8 @@ def page_admin_stock_mgmt():
             c4, c5 = st.columns(2)
             with c4: rev = st.number_input("初始净利润（万）", min_value=1.0, value=100.0, step=10.0, format="%.0f", key="arev")
             with c5: ipe = st.number_input("行业PE", min_value=1.0, value=20.0, step=1.0, format="%.1f", key="aipe")
-            # 预览自动计算的初始价
-            preview_price = calc_initial_price(rev, ts_, ipe)
-            st.caption(f"📌 初始价（自动计算）= {rev}×10000÷{ts_:.0f}÷{ipe} = **¥{preview_price}**")
+            preview_price = calc_initial_price(rev, ts_, ipe, sym.strip().upper())
+            st.caption(f"📌 初始价候选池：8.14 / 19.52 / 16.33 / 12.40；当前代码将使用 **¥{preview_price}**")
             if st.form_submit_button("添加", type="primary", use_container_width=True):
                 s, n = sym.strip().upper(), name.strip()
                 if s and n and ts_ > 0 and rev > 0 and ipe > 0:
@@ -2936,7 +2956,7 @@ def page_admin_stock_mgmt():
                 else: st.session_state.stock_add_err = "请完整填写所有字段"
                 st.rerun()
     with st.expander("批量添加股票（上传 Excel）"):
-        st.caption("Excel 五列：股票代码 / 公司名称 / 总股本(万股) / 初始净利润(万) / 行业PE")
+        st.caption("Excel 五列：股票代码 / 公司名称 / 总股本(万股) / 初始净利润(万) / 行业PE；初始价从 8.14 / 19.52 / 16.33 / 12.40 中匹配")
         uploaded_stocks = st.file_uploader("选择 Excel 文件", type=["xlsx"], key="batch_stocks")
         if uploaded_stocks:
             df = pd.read_excel(uploaded_stocks)
@@ -3019,7 +3039,7 @@ def page_admin_stock_mgmt():
 
     st.divider()
     st.markdown("""<div style="font-size:16px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票信息（Excel基础信息表）</div>""", unsafe_allow_html=True)
-    st.caption("价格由撮合逻辑自动生成，不可手动修改。修改基础参数后系统自动计算理论价。")
+    st.caption("价格由撮合逻辑自动生成，不可手动修改。重开赛局时初始价从 8.14 / 19.52 / 16.33 / 12.40 中匹配。")
     for s in stocks:
         with st.expander(f"{s['name']} ({s['symbol']}) — 当前价 {fmt_money(s['current_price'])}"):
             c1, c2 = st.columns([3, 1])
@@ -3034,9 +3054,8 @@ def page_admin_stock_mgmt():
                     cp = st.number_input("当前碳排", min_value=0.0, max_value=200.0, value=float(s["carbon_price"]), step=1.0, format="%.1f", key=f"cp_{s['id']}")
                     icm = st.number_input("行业碳排均值", min_value=1.0, max_value=200.0, value=float(s["industry_carbon_mean"]), step=1.0, format="%.1f", key=f"icm_{s['id']}")
                     pr = st.number_input("当前幸福度（%）", min_value=0.0, max_value=100.0, value=float(s["premium_rate"]), step=1.0, format="%.0f", key=f"pr_{s['id']}")
-                # 显示自动计算
-                init_p = calc_initial_price(rev, ts_, ipe)
-                st.info(f"📐 理论初始价 = {rev:,.0f}×10000÷{ts_:,.0f}÷{ipe} = **¥{init_p}**  ｜  当前市价 **¥{s['current_price']:.2f}**（由交易撮合决定）")
+                init_p = calc_initial_price(rev, ts_, ipe, s["symbol"])
+                st.info(f"📐 重开赛局初始价 = **¥{init_p}**（候选池 8.14 / 19.52 / 16.33 / 12.40） ｜ 当前市价 **¥{s['current_price']:.2f}**（由交易撮合决定）")
                 if st.button("💾 保存参数", key=f"sv_{s['id']}", type="primary"):
                     update_stock_params(s["id"], carbon_price=cp, premium_rate=pr, industry_carbon_mean=icm, revenue=rev, total_shares=ts_, industry_pe=ipe)
                     log_action(st.session_state.username, "stock_params_update", s["symbol"], f"carbon={cp}, premium={pr}, icm={icm}, rev={rev}, ts={ts_}, pe={ipe}")
