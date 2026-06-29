@@ -895,6 +895,40 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 }
 .topbar .brand { font-size: 18px; font-weight: 700; color: #e2e8f0; letter-spacing: .5px; }
 
+.page-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 16px; padding: 2px 0 14px; margin-bottom: 12px;
+    border-bottom: 1px solid #1a2332;
+}
+.page-head .kicker { font-size: 11px; color: #5a6a7e; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 4px; }
+.page-head .title { font-size: 22px; font-weight: 800; color: #f1f5f9; letter-spacing: .5px; line-height: 1.15; }
+.page-head .sub { font-size: 12px; color: #64748b; margin-top: 5px; }
+.page-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 28px; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid rgba(242,54,69,.24); background: rgba(242,54,69,.08);
+    color: #f87171; font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.page-badge.ok {
+    border-color: rgba(16,185,129,.24); background: rgba(16,185,129,.08); color: #34d399;
+}
+.terminal-panel {
+    background: rgba(15,23,36,.76); border: 1px solid #1e2a3a;
+    border-radius: 8px; padding: 14px; margin-bottom: 14px;
+}
+div[data-testid="stForm"] {
+    background: rgba(15,23,36,.72) !important;
+    border: 1px solid #1e2a3a !important;
+    border-radius: 8px !important;
+    padding: 14px !important;
+}
+@media (max-width: 767px) {
+    .page-head { padding-top: 0; margin-bottom: 10px; }
+    .page-head .title { font-size: 18px; }
+    .page-head .sub { display: none; }
+    .page-badge { min-height: 24px; padding: 4px 9px; font-size: 11px; }
+}
+
 /* KPI 卡片 */
 .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
 .kpi-card {
@@ -1226,6 +1260,9 @@ DASHBOARD_CSS = """
     .s-card .chg { font-size: 13px; margin-top: 2px; font-weight: 500; }
     .s-card .chg.up { color: #ef5350; } .s-card .chg.down { color: #2ecc71; }
     .s-card .extra { font-size: 11px; color: rgba(255,255,255,.25); margin-top: 6px; font-family: monospace; }
+    .s-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 10px; }
+    .s-meta span { color: rgba(255,255,255,.28); font-size: 11px; line-height: 1.35; font-family: monospace; min-width: 0; }
+    .s-meta b { color: rgba(255,255,255,.58); font-weight: 600; }
     .s-card::after { content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 2px; border-radius: 2px 2px 0 0; }
     .s-card.up::after { background: #ef5350; }
     .s-card.down::after { background: #2ecc71; }
@@ -1239,6 +1276,12 @@ DASHBOARD_CSS = """
 
     .chart-box { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06);
         border-radius: 12px; padding: 8px; margin-bottom: 12px; }
+    .dash-chart-head {
+        display: flex; justify-content: space-between; align-items: end;
+        gap: 12px; margin: 2px 0 10px;
+    }
+    .dash-chart-head .name { font-size: 16px; font-weight: 750; color: rgba(255,255,255,.86); }
+    .dash-chart-head .meta { font-size: 11px; color: rgba(255,255,255,.32); font-family: monospace; }
     .dash-ft { display: flex; justify-content: space-between; padding: 10px 0 0 0;
         border-top: 1px solid rgba(255,255,255,.06); margin-top: 4px;
         font-size: 11px; color: rgba(255,255,255,.18); font-family: monospace; }
@@ -1256,6 +1299,9 @@ DASHBOARD_CSS = """
         .s-card .pr { font-size: 21px; letter-spacing: 0; }
         .s-card .chg { font-size: 12px; }
         .s-card .extra { font-size: 10px; line-height: 1.45; word-break: keep-all; }
+        .s-meta { grid-template-columns: 1fr; gap: 2px; margin-top: 8px; }
+        .s-meta span { font-size: 10px; }
+        .dash-chart-head { align-items: flex-start; flex-direction: column; gap: 2px; }
         .dash-ft { padding-bottom: 64px; }
     }
     @media (max-width: 390px) {
@@ -1324,9 +1370,14 @@ def page_public_dashboard():
             <div class="nm">{esc(s['name'])}</div>
             <div class="pr {cls}">{fmt_money_short(p)}</div>
             <div class="chg {cls}">{sign}{chg:,.2f} ({sign}{pct:.2f}%)</div>
-            <div class="extra">当前第 {mkt_round} 轮 ｜ 最新成交第 {q['round']} 轮</div>
-            <div class="extra">参考 {fmt_money_short(prev)} ｜ 近5轮量 {q['volume5']:,}</div>
-            <div class="extra">近5轮买额 {fmt_money_short(q['buy5'])} ｜ 卖额 {fmt_money_short(q['sell5'])}</div>
+            <div class="s-meta">
+                <span>当前 <b>第 {mkt_round} 轮</b></span>
+                <span>成交 <b>第 {q['round']} 轮</b></span>
+                <span>参考 <b>{fmt_money_short(prev)}</b></span>
+                <span>量 <b>{q['volume5']:,}</b></span>
+                <span>买额 <b>{fmt_money_short(q['buy5'])}</b></span>
+                <span>卖额 <b>{fmt_money_short(q['sell5'])}</b></span>
+            </div>
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
 
@@ -1337,13 +1388,15 @@ def page_public_dashboard():
         st.session_state.dash_sym = stocks[0]["symbol"]
     for i, s in enumerate(stocks):
         active = "active" if st.session_state.dash_sym == s["symbol"] else ""
-        if cols[i].button(f"{s['name']}", key=f"tab_{s['symbol']}", use_container_width=True):
+        btn_type = "primary" if active else "secondary"
+        if cols[i].button(f"{s['name']}", key=f"tab_{s['symbol']}", type=btn_type, use_container_width=True):
             st.session_state.dash_sym = s["symbol"]
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
     # K线图
     sym = st.session_state.dash_sym
+    selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
     data = get_kline_data(sym)
     if data:
         df_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
@@ -1366,6 +1419,16 @@ def page_public_dashboard():
             if len(df_k) >= period:
                 ma = df_k["close_price"].rolling(period).mean()
                 fig.add_trace(go.Scatter(x=df_k["x"], y=ma, mode="lines", line=dict(color=color, width=1.2), name=name), row=1, col=1)
+
+        st.markdown(f"""
+        <div class="dash-chart-head">
+            <div>
+                <div class="name">{esc(selected_stock["name"])} · {esc(selected_stock["symbol"])}</div>
+                <div class="meta">K线走势 ｜ 共 {len(df_k)} 轮数据 ｜ 当前市场第 {mkt_round} 轮</div>
+            </div>
+            <div class="meta">红涨绿跌 · MA5/MA10</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         fig.update_layout(height=520, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             margin=dict(t=8, b=8, l=0, r=12), xaxis_rangeslider_visible=False,
@@ -1526,6 +1589,23 @@ def fmt_pct(v, s=True):
 
 def fmt_num(v):     return f"{v:,}"
 
+def page_header(title, subtitle="", badge=None, ok=False):
+    badge_html = ""
+    if badge:
+        badge_cls = "page-badge ok" if ok else "page-badge"
+        badge_html = f'<span class="{badge_cls}">{esc(badge)}</span>'
+    sub_html = f'<div class="sub">{esc(subtitle)}</div>' if subtitle else ""
+    st.markdown(f"""
+    <div class="page-head">
+        <div>
+            <div class="kicker">双镜 INSIGHT+</div>
+            <div class="title">{esc(title)}</div>
+            {sub_html}
+        </div>
+        {badge_html}
+    </div>
+    """, unsafe_allow_html=True)
+
 def download_db_button():
     """管理员一键导出数据库按钮"""
     if os.path.exists(DB_PATH):
@@ -1551,6 +1631,7 @@ def page_overview():
     bal = get_user_balance(st.session_state.username)
     mv = data["total_assets"]
     total = mv + bal
+    page_header("总览", "资产、余额与收益状态", badge=st.session_state.username, ok=True)
 
     # KPI卡片：总资产拆明细
     css_col2 = "grid-template-columns:repeat(2,1fr)!important;" if st.session_state.get('mobile', False) else ""
@@ -1580,6 +1661,7 @@ def page_overview():
 
 def page_portfolio():
     pf = get_user_portfolio(st.session_state.username)
+    page_header("我的持仓", "持仓明细、市值与浮动盈亏", badge=st.session_state.username, ok=True)
     if pf.empty: st.info("暂无持仓"); return
 
     # 汇总行
@@ -1641,8 +1723,7 @@ def page_portfolio():
         st.caption(f"最近买入：{times[0]['stock_symbol']} {str(times[0]['t'])[:16]}" if times[0]['t'] else "")
 
 def page_market_making():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">交易记录</div>""", unsafe_allow_html=True)
+    page_header("交易记录", "最近 100 笔交易流水与成交明细", badge=st.session_state.username, ok=True)
     with get_db_cm() as conn:
         rows = conn.execute("""
             SELECT t.stock_symbol, t.trade_type, t.price, t.shares, t.round, t.trade_date,
@@ -1678,7 +1759,7 @@ def page_market_making():
     st.markdown('</div>', unsafe_allow_html=True)
 
     # 桌面端：表格
-    st.markdown('<div class="desktop-only">', unsafe_allow_html=True)
+    st.markdown('<div class="desktop-only"><div class="desktop-table">', unsafe_allow_html=True)
     df = pd.DataFrame([{
         "股票": r["nm"], "类型": "买入" if r["trade_type"]=="buy" else "卖出",
         "价格": f"¥{r['price']:.2f}", "数量": f"{r['shares']:,}股",
@@ -1686,15 +1767,14 @@ def page_market_making():
         "时间": str(r["trade_date"])[:19] if r["trade_date"] else "-",
     } for r in rows])
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
 def page_trade_hall():
     stocks = get_stocks()
     if not stocks: st.error("无股票"); return
     mkt_open = is_market_open()
     mkt_round = get_market_round()
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">交易大厅</div>""", unsafe_allow_html=True)
+    page_header("交易大厅", f"第 {mkt_round} 轮 · {'可提交买卖委托' if mkt_open else '等待管理员开市'}", badge=("交易中" if mkt_open else "已闭市"), ok=mkt_open)
 
     if not mkt_open:
         st.markdown(f"""
@@ -1789,8 +1869,7 @@ def page_trade_hall():
 def page_kline():
     stocks = get_stocks()
     if not stocks: st.info("无数据"); return
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div class="section-title">K 线展板</div>""", unsafe_allow_html=True)
+    page_header("K 线展板", "轮次走势、成交量与均线观察", badge=st.session_state.username, ok=True)
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
     sym = opts[sel]["symbol"]
@@ -1973,8 +2052,7 @@ def page_kline():
     st.dataframe(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}), use_container_width=True, hide_index=True)
 
 def page_admin_stock_summary():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票汇总</div>""", unsafe_allow_html=True)
+    page_header("股票汇总", "全市场持仓、市值与盈亏概览", badge="管理员", ok=True)
     stats = get_platform_stats()
     st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}<div></div></div>""", unsafe_allow_html=True)
     summary = get_admin_summary()
@@ -2003,8 +2081,7 @@ def page_admin_stock_summary():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_admin_stock_mgmt():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">股票管理</div>""", unsafe_allow_html=True)
+    page_header("股票管理", "维护股票基础参数、定价因子与批量导入", badge="管理员", ok=True)
     if st.session_state.get("stock_add_ok"): st.success(st.session_state.stock_add_ok); st.session_state.stock_add_ok = ""
     if st.session_state.get("stock_add_err"): st.error(st.session_state.stock_add_err); st.session_state.stock_add_err = ""
     with st.expander("添加新股票（Excel基础信息表）"):
@@ -2149,8 +2226,7 @@ def page_admin_stock_mgmt():
                         st.session_state[f"confirm_delete_{s['id']}"] = False; st.rerun()
 
 def page_admin_user_mgmt():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:12px">用户管理</div>""", unsafe_allow_html=True)
+    page_header("用户管理", "创建选手、重置密码、启停与批量导入", badge="管理员", ok=True)
     users = get_all_users()
     df = pd.DataFrame(users)
     df["created_at"] = df["created_at"].apply(lambda x: str(x)[:19] if x else "-")
@@ -2292,13 +2368,11 @@ def page_admin_user_mgmt():
         log_df.columns = ["操作者", "动作", "对象", "详情", "时间"]
         st.dataframe(log_df, use_container_width=True, hide_index=True)
 def page_admin_settle():
-    st.markdown(f"""<div class="topbar"><span class="brand">双镜</span><span>{esc(st.session_state.username)}</span></div>""", unsafe_allow_html=True)
-    st.markdown("""<div style="font-size:20px;font-weight:500;color:#eef2ff;margin-bottom:16px">市场控制</div>""", unsafe_allow_html=True)
-
     market_open = is_market_open()
     current_round = get_market_round()
     status = "交易中" if market_open else "已闭市"
     color = "#16a34a" if market_open else "#ef4444"
+    page_header("市场控制", f"当前第 {current_round} 轮 · 开闭市、撤销与重置", badge=status, ok=market_open)
 
     # 初始化确认状态
     for k in ["cf_close", "cf_open", "cf_undo", "cf_r1"]:
