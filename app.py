@@ -1861,6 +1861,7 @@ def page_public_dashboard():
     data = get_kline_data(sym)
     if data:
         raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
+        first_open = float(raw_k.iloc[0]["open_price"])
         df_k = build_professional_kline_view(raw_k, sym)
         df_k["x_pos"] = df_k["display_round"]
         df_k["x_label"] = df_k["display_round"].apply(lambda r: f"{int(r)}")
@@ -1881,25 +1882,29 @@ def page_public_dashboard():
                 wick_x.extend([r["x_pos"], r["x_pos"], None])
                 wick_y.extend([r["low_price"], r["high_price"], None])
             fig.add_trace(go.Scatter(x=wick_x, y=wick_y, mode="lines",
-                line=dict(color=color, width=1), hoverinfo="skip", showlegend=False), row=1, col=1)
+                line=dict(color=color, width=1.05), hoverinfo="skip", showlegend=False), row=1, col=1)
 
         body_base = df_k[["open_price", "close_price"]].min(axis=1)
         body_height = (df_k["close_price"] - df_k["open_price"]).abs()
         min_body = max((df_k["high_price"].max() - df_k["low_price"].min()) * 0.008, float(df_k.iloc[-1]["close_price"]) * 0.001, 0.01)
         body_height = body_height.where(body_height > min_body, min_body)
         fig.add_trace(go.Bar(x=x_values, y=body_height, base=body_base, width=0.42,
-            marker=dict(color=body_fill, line=dict(color=candle_line, width=1.05)),
+            marker=dict(color=body_fill, line=dict(color=candle_line, width=1.15)),
             name="K线", showlegend=False,
             customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
-            hovertemplate="展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>开 %{customdata[2]:,.2f}<br>高 %{customdata[3]:,.2f}<br>低 %{customdata[4]:,.2f}<br>收 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<extra></extra>"), row=1, col=1)
+            hovertemplate="展示 %{customdata[0]}<br>真实轮次 %{customdata[1]:.0f}<br>开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"), row=1, col=1)
 
         for col, color, name in [("upper", "#6b9ec7", "UPPER"), ("mid", "#d6a11d", "MID"), ("lower", "#d957a8", "LOWER")]:
             if df_k[col].notna().any():
                 fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
-                    line=dict(color=color, width=1.2), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
+                    line=dict(color=color, width=1.25), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
+        for col, color, name in [("ma5", "#f59e0b", "MA5"), ("ma10", "#4c8fbd", "MA10")]:
+            if col in df_k and df_k[col].notna().any():
+                fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
+                    line=dict(color=color, width=1.0), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
 
         fig.add_trace(go.Bar(x=x_values, y=df_k["volume"], width=0.42,
-            marker=dict(color=vol_fill, line=dict(color=vol_line, width=1)),
+            marker=dict(color=vol_fill, line=dict(color=vol_line, width=1.05)),
             name="成交量", showlegend=False, hovertemplate="量 %{y:,.0f}<extra></extra>"), row=2, col=1)
         for period, color, name in [(5, "#d6a11d", "VOL5"), (10, "#4c8fbd", "VOL10")]:
             vol_ma = df_k["volume"].rolling(period, min_periods=2).mean()
@@ -1909,6 +1914,19 @@ def page_public_dashboard():
         latest_mid = float(df_k["mid"].dropna().iloc[-1]) if df_k["mid"].notna().any() else float(df_k.iloc[-1]["close_price"])
         latest_upper = float(df_k["upper"].dropna().iloc[-1]) if df_k["upper"].notna().any() else float(df_k["high_price"].max())
         latest_lower = float(df_k["lower"].dropna().iloc[-1]) if df_k["lower"].notna().any() else float(df_k["low_price"].min())
+        latest_close = float(df_k.iloc[-1]["close_price"])
+        high_idx = int(df_k["high_price"].idxmax())
+        low_idx = int(df_k["low_price"].idxmin())
+        high_price = float(df_k.loc[high_idx, "high_price"])
+        low_price = float(df_k.loc[low_idx, "low_price"])
+        fig.add_annotation(x=df_k.loc[high_idx, "x_pos"], y=high_price, text=f"高 {high_price:,.2f}",
+            showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
+            arrowcolor="#94a3b8", font=dict(size=13, color="#e2e8f0"),
+            bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
+        fig.add_annotation(x=df_k.loc[low_idx, "x_pos"], y=low_price, text=f"低 {low_price:,.2f}",
+            showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1,
+            arrowcolor="#94a3b8", font=dict(size=13, color="#e2e8f0"),
+            bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
 
         st.markdown(f"""
         <div class="dash-chart-head">
@@ -1916,32 +1934,47 @@ def page_public_dashboard():
                 <div class="name">{esc(selected_stock["name"])} · {esc(selected_stock["symbol"])}</div>
                 <div class="meta">BOLL [20,2] ｜ MID {latest_mid:,.2f} ｜ UPPER {latest_upper:,.2f} ｜ LOWER {latest_lower:,.2f}</div>
             </div>
-            <div class="meta">红涨绿跌 · BOLL</div>
+            <div class="meta">红涨绿跌 · BOLL/MA</div>
         </div>
         """, unsafe_allow_html=True)
 
         tick_step = max(1, len(df_k)//6)
         tick_vals = x_values.iloc[::tick_step]
         tick_text = df_k["x_label"].iloc[::tick_step]
-        y_min = float(df_k["low_price"].min())
-        y_max = float(df_k["high_price"].max())
+        y_min = low_price
+        y_max = high_price
         y_pad = (y_max - y_min) * 0.06 if y_max > y_min else max(y_max * 0.03, 1)
         y_range = [y_min - y_pad, y_max + y_pad]
-        y_ticks = np.linspace(y_range[0], y_range[1], 5)
+        y_ticks = np.linspace(y_range[0], y_range[1], 6)
+        pct_text = [f"{((v - first_open) / first_open * 100):+.2f}%" if first_open else "0.00%" for v in y_ticks]
         vol_max = float(df_k["volume"].max() or 1)
         vol_ticks = np.linspace(0, vol_max, 4)
-        fig.update_layout(height=580, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
-            margin=dict(t=8, b=8, l=44, r=48), xaxis_rangeslider_visible=False,
+        fig.update_layout(height=600, plot_bgcolor="#0b1220", paper_bgcolor="#0b1220",
+            margin=dict(t=24, b=8, l=56, r=56), xaxis_rangeslider_visible=False,
             font=dict(color="#94a3b8", size=10), hovermode="x unified",
             hoverlabel=dict(bgcolor="#111827", font_size=12, font_color="#e5e7eb", bordercolor="#334155"),
-            xaxis=dict(type="linear", showspikes=True, spikemode="across", spikecolor="#64748b"),
-            yaxis=dict(showspikes=True, spikecolor="#64748b"),
-            showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.00, xanchor="left", x=0,
-                font=dict(color="#94a3b8", size=10)),
+            xaxis=dict(type="linear", showspikes=True, spikemode="across", spikethickness=0.8, spikecolor="#64748b", spikedash="solid"),
+            yaxis=dict(showspikes=True, spikethickness=0.8, spikecolor="#64748b", spikedash="solid"),
+            showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
+                bgcolor="rgba(15,23,36,0.86)", bordercolor="#1e2a3a", borderwidth=0.5,
+                font=dict(color="#cbd5e1", size=10)),
             bargap=0.42)
+        fig.add_hline(y=latest_close, line_width=1, line_dash="dot", line_color="#fbbf24",
+            annotation_text=f"最新 {latest_close:,.2f}", annotation_position="top right",
+            annotation_font_color="#fbbf24", row=1, col=1)
+        fig.add_hline(y=first_open, line_width=7, line_dash="solid", line_color="rgba(148,163,184,.22)",
+            annotation_text="0% 基准", annotation_position="bottom left",
+            annotation_font_color="#94a3b8", row=1, col=1)
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
             range=y_range, tickmode="array", tickvals=y_ticks, ticktext=[fmt_axis_num(v) for v in y_ticks],
-            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=10, color="#94a3b8"))
+            side="right", row=1, col=1, zeroline=False, tickfont=dict(size=12, color="#94a3b8", family="monospace"))
+        fig.update_layout(yaxis3=dict(
+            overlaying="y", anchor="x", side="left", range=y_range,
+            tickmode="array", tickvals=y_ticks, ticktext=pct_text,
+            showgrid=False, zeroline=False, ticks="outside",
+            tickfont=dict(size=12, color="#94a3b8", family="monospace"),
+            title=dict(text="", font=dict(size=10, color="#94a3b8")),
+        ))
         fig.update_xaxes(showgrid=False, type="linear", tickmode="array", tickvals=tick_vals, ticktext=tick_text, row=1, col=1)
         fig.update_yaxes(showgrid=True, gridcolor="#1e2a3a", griddash="dot",
             tickmode="array", tickvals=vol_ticks, ticktext=[fmt_axis_num(v) for v in vol_ticks],
