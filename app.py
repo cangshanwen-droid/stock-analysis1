@@ -1536,25 +1536,25 @@ DASHBOARD_CSS = """
     .mkt-text strong { color: rgba(255,255,255,.9); }
     .mkt-round { margin-left: auto; font-size: 12px; color: rgba(255,255,255,.25); font-family: monospace; }
 
-    .stock-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .stock-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
     .s-card {
         background: linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.01));
-        border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
-        padding: 16px 18px; position: relative; overflow: hidden; transition: border-color .2s;
+        border: 1px solid rgba(255,255,255,.08); border-radius: 10px;
+        padding: 10px 12px 12px; position: relative; overflow: hidden; transition: border-color .2s;
         cursor: default;
     }
     .s-card:hover { border-color: rgba(255,255,255,.15); }
-    .s-card .sym { font-size: 11px; color: rgba(255,255,255,.35); letter-spacing: 1px; text-transform: uppercase; }
-    .s-card .nm { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.85); margin: 2px 0 6px 0; }
-    .s-card .pr { font-size: 30px; font-weight: 700; font-feature-settings: "tnum"; white-space: nowrap; overflow-wrap: normal; }
+    .s-card .sym { font-size: 9px; color: rgba(255,255,255,.35); letter-spacing: 1px; text-transform: uppercase; }
+    .s-card .nm { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.85); margin: 2px 0 5px 0; }
+    .s-card .pr { font-size: 21px; font-weight: 700; font-feature-settings: "tnum"; white-space: nowrap; overflow-wrap: normal; }
     .s-card .pr.up { color: #ef5350; } .s-card .pr.down { color: #2ecc71; }
     .s-card .chg { font-size: 13px; margin-top: 2px; font-weight: 500; }
     .s-card .chg.up { color: #ef5350; } .s-card .chg.down { color: #2ecc71; }
     .s-card .extra { font-size: 11px; color: rgba(255,255,255,.25); margin-top: 6px; font-family: monospace; }
-    .s-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 10px; }
+    .s-meta { display: none; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 10px; }
     .s-meta span { color: rgba(255,255,255,.28); font-size: 11px; line-height: 1.35; font-family: monospace; min-width: 0; }
     .s-meta b { color: rgba(255,255,255,.58); font-weight: 600; }
-    .s-card::after { content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 2px; border-radius: 2px 2px 0 0; }
+    .s-card::after { content: ''; position: absolute; bottom: 0; left: 12px; right: 12px; height: 2px; border-radius: 2px 2px 0 0; }
     .s-card.up::after { background: #ef5350; }
     .s-card.down::after { background: #2ecc71; }
 
@@ -1564,10 +1564,6 @@ DASHBOARD_CSS = """
         color: rgba(255,255,255,.4); transition: all .15s; font-family: inherit; }
     .tab-btn:hover { background: rgba(255,255,255,.05); color: rgba(255,255,255,.7); }
     .tab-btn.active { background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.3); color: #60a5fa; }
-    .period-row { display: flex; align-items: center; gap: 18px; padding: 8px 2px 10px; color: rgba(255,255,255,.42); font-size: 14px; }
-    .period-row .active { color: #e2e8f0; font-weight: 800; position: relative; }
-    .period-row .active::after { content: ""; position: absolute; left: 0; right: 0; bottom: -8px; height: 2px; background: #3b82f6; border-radius: 2px; }
-
     .chart-box { background: rgba(255,255,255,.02); border: 1px solid rgba(255,255,255,.06);
         border-radius: 12px; padding: 8px; margin-bottom: 12px; }
     .dash-chart-head {
@@ -1603,7 +1599,6 @@ DASHBOARD_CSS = """
         .s-meta { display: none; }
         .s-card::after { left: 12px; right: 12px; }
         .tab-row { gap: 4px; margin-bottom: 6px; overflow-x: auto; }
-        .period-row { gap: 15px; font-size: 15px; padding-top: 4px; }
         .dash-chart-head { align-items: flex-start; flex-direction: column; gap: 2px; }
         .dash-ft { padding-bottom: 64px; }
     }
@@ -1696,8 +1691,6 @@ def page_public_dashboard():
             st.session_state.dash_sym = s["symbol"]
             st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('<div class="period-row"><span>分时</span><span>五日</span><span class="active">日K</span><span>周K</span><span>月K</span><span>更多</span></div>', unsafe_allow_html=True)
-
     # K线图
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
