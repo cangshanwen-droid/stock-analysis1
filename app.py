@@ -945,6 +945,13 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
     border-bottom: 1px solid rgba(30,42,58,.72);
     white-space: nowrap;
 }
+.data-table tbody tr:nth-child(even) td { background: rgba(255,255,255,.012); }
+.data-table th.num, .data-table td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.data-table td.pos { color: #f23645; font-weight: 700; }
+.data-table td.neg { color: #089981; font-weight: 700; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: rgba(255,255,255,.025); }
 div[data-testid="stForm"] {
@@ -1793,10 +1800,26 @@ def render_table(df, columns=None):
         st.info("暂无数据")
         return
     view = df[columns].copy() if columns else df.copy()
-    head = "".join(f"<th>{esc(str(c))}</th>" for c in view.columns)
+    numeric_keys = ("价", "额", "量", "率", "成本", "市值", "盈亏", "收益", "轮次", "数量", "持仓", "用户数", "PE", "碳排", "幸福度", "price")
+
+    def cell_class(col, value):
+        col_s = str(col)
+        value_s = str(value)
+        classes = []
+        if any(k in col_s for k in numeric_keys):
+            classes.append("num")
+        if any(k in col_s for k in ("盈亏", "收益率", "涨跌幅")):
+            clean_value = value_s.strip().replace("¥", "").replace(",", "")
+            if clean_value.startswith("-"):
+                classes.append("neg")
+            elif clean_value not in ("0", "0.00", "0.00%"):
+                classes.append("pos")
+        return f' class="{" ".join(classes)}"' if classes else ""
+
+    head = "".join(f"<th{cell_class(c, '')}>{esc(str(c))}</th>" for c in view.columns)
     rows = []
     for _, row in view.iterrows():
-        rows.append("<tr>" + "".join(f"<td>{esc(str(row[c]))}</td>" for c in view.columns) + "</tr>")
+        rows.append("<tr>" + "".join(f"<td{cell_class(c, row[c])}>{esc(str(row[c]))}</td>" for c in view.columns) + "</tr>")
     st.markdown(f"""
     <div class="data-table-wrap">
         <table class="data-table">
@@ -2254,9 +2277,10 @@ def page_kline():
 def page_admin_stock_summary():
     page_header("股票汇总", "全市场持仓、市值与盈亏概览", badge="管理员", ok=True)
     stats = get_platform_stats()
-    st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}<div></div></div>""", unsafe_allow_html=True)
     summary = get_admin_summary()
     if summary.empty: st.info("无数据"); return
+    held_stocks = int((summary["总持仓量"] > 0).sum())
+    st.markdown(f"""<div class="kpi-grid">{kpi_card("总市值", fmt_money(stats["total_mv"]))}{kpi_card("总盈亏", fmt_money(stats["total_pnl"]), fmt_pct(0) if stats["total_pnl"]==0 else None, stats["total_pnl"]>=0)}{kpi_card("活跃用户", fmt_num(stats["active_users"]))}{kpi_card("持仓股票", f"{held_stocks}/{len(summary)}")}</div>""", unsafe_allow_html=True)
     sdf = summary.sort_values("总盈亏")
     fig = go.Figure(go.Bar(x=sdf["股票名称"], y=sdf["总盈亏"], marker_color=[pnl_color(v) for v in sdf["总盈亏"]], text=[fmt_money(v) for v in sdf["总盈亏"]], textposition="outside"))
     fig.update_layout(height=280, margin=dict(t=8, b=0, l=0, r=0), plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"); fig.update_xaxes(showgrid=False); fig.update_yaxes(showgrid=False)
@@ -2266,6 +2290,7 @@ def page_admin_stock_summary():
             d = get_holder_detail(row["代码"])
             if not d.empty:
                 dd = d.copy()
+                dd["持仓量"] = dd["持仓量"].apply(lambda x: fmt_num(x))
                 dd["成本价"] = dd["成本价"].apply(lambda x: f"¥{x:,.2f}")
                 dd["当前价"] = dd["当前价"].apply(lambda x: f"¥{x:,.2f}")
                 dd["盈亏"] = dd["盈亏"].apply(lambda x: f"¥{x:,.2f}")
@@ -2273,7 +2298,10 @@ def page_admin_stock_summary():
                 render_table(dd)
     disp = summary.copy()
     disp["当前价"] = disp["当前价"].apply(lambda x: f"¥{x:,.2f}")
+    disp["持有用户数"] = disp["持有用户数"].apply(lambda x: fmt_num(x))
+    disp["总持仓量"] = disp["总持仓量"].apply(lambda x: fmt_num(x))
     disp["总成本"] = disp["总成本"].apply(lambda x: f"¥{x:,.2f}")
+    disp["总市值"] = disp["总市值"].apply(lambda x: f"¥{x:,.2f}")
     disp["总盈亏"] = disp["总盈亏"].apply(lambda x: f"¥{x:,.2f}")
     disp["收益率"] = disp["收益率"].apply(lambda x: f"{x:,.2f}%")
     st.markdown('<div class="desktop-table">', unsafe_allow_html=True)
