@@ -1345,11 +1345,34 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
         border-color: rgba(255,255,255,.06) !important;
         color: #ffffff !important;
     }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button:focus,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button:focus-visible,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button:active {
+        outline: none !important;
+        box-shadow: none !important;
+        background: rgba(255,255,255,.06) !important;
+        border-color: rgba(255,255,255,.08) !important;
+        color: #ffffff !important;
+    }
     .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"] {
         background: linear-gradient(90deg, rgba(242,54,69,.22), rgba(242,54,69,.08)) !important;
         border-color: rgba(242,54,69,.30) !important;
         color: #ffffff !important;
         font-weight: 800 !important;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"]:hover,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"]:focus,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"]:focus-visible,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"]:active {
+        background: linear-gradient(90deg, rgba(242,54,69,.28), rgba(242,54,69,.10)) !important;
+        border-color: rgba(242,54,69,.34) !important;
+        color: #ffffff !important;
+        box-shadow: inset 0 0 0 1px rgba(242,54,69,.08) !important;
+    }
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button *,
+    .st-key-desktop_nav_bar div[data-testid="stButton"] button[kind="primary"] * {
+        color: inherit !important;
+        -webkit-text-fill-color: currentColor !important;
     }
     .desktop-nav-spacer { flex: 1; min-height: 18px; }
 }
@@ -1493,12 +1516,35 @@ SIDEBAR_CSS = """
         background: rgba(255,255,255,.06) !important; color: #ffffff !important;
         border-color: rgba(255,255,255,.06) !important;
     }
+    section[data-testid="stSidebar"] button:focus,
+    section[data-testid="stSidebar"] button:focus-visible,
+    section[data-testid="stSidebar"] button:active {
+        outline: none !important;
+        box-shadow: none !important;
+        background: rgba(255,255,255,.06) !important;
+        color: #ffffff !important;
+        border-color: rgba(255,255,255,.08) !important;
+    }
     section[data-testid="stSidebar"] button[kind="primary"] {
         background: linear-gradient(90deg, rgba(242,54,69,.22), rgba(242,54,69,.08)) !important;
         color: #ffffff !important;
         border-color: rgba(242,54,69,.30) !important;
         font-weight: 800 !important; position: relative !important;
         box-shadow: inset 0 0 0 1px rgba(242,54,69,.08) !important;
+    }
+    section[data-testid="stSidebar"] button[kind="primary"]:hover,
+    section[data-testid="stSidebar"] button[kind="primary"]:focus,
+    section[data-testid="stSidebar"] button[kind="primary"]:focus-visible,
+    section[data-testid="stSidebar"] button[kind="primary"]:active {
+        background: linear-gradient(90deg, rgba(242,54,69,.28), rgba(242,54,69,.10)) !important;
+        color: #ffffff !important;
+        border-color: rgba(242,54,69,.34) !important;
+        box-shadow: inset 0 0 0 1px rgba(242,54,69,.08) !important;
+    }
+    section[data-testid="stSidebar"] button *,
+    section[data-testid="stSidebar"] button[kind="primary"] * {
+        color: inherit !important;
+        -webkit-text-fill-color: currentColor !important;
     }
     section[data-testid="stSidebar"] button[kind="primary"]::before {
         content: '' !important; position: absolute !important;
