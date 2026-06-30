@@ -2,7 +2,7 @@
 股票交易系统 — 移动端优先响应式版本
 商业模拟挑战赛 · 零图标纯文字 · 触屏友好
 """
-import os, hashlib, secrets
+import os, hashlib, secrets, base64, json, urllib.request, urllib.error
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -13,11 +13,106 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sqlite3
 
+DB_DIR = "data"
+DB_PATH = os.path.join(DB_DIR, "stock_analysis.db")
+DB_BACKUP_STATE = {"restored": False, "restore_failed": False}
+
+def secret_value(name, default=""):
+    val = os.environ.get(name)
+    if val:
+        return val
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+def github_backup_config():
+    token = secret_value("DB_BACKUP_GITHUB_TOKEN") or secret_value("GITHUB_TOKEN")
+    repo = secret_value("DB_BACKUP_REPO") or secret_value("GITHUB_REPOSITORY")
+    path = secret_value("DB_BACKUP_PATH", "data/stock_analysis.backup.db")
+    branch = secret_value("DB_BACKUP_BRANCH", "main")
+    return token, repo, path, branch
+
+def github_api_request(url, method="GET", payload=None, token=""):
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "gipfel-streamlit-backup"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        raw = resp.read()
+        return json.loads(raw.decode("utf-8")) if raw else {}
+
+def restore_db_from_backup_if_missing():
+    os.makedirs(DB_DIR, exist_ok=True)
+    if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 0:
+        return
+    backup_url = secret_value("DB_BACKUP_URL")
+    try:
+        if backup_url:
+            with urllib.request.urlopen(backup_url, timeout=30) as resp:
+                data = resp.read()
+            if data:
+                with open(DB_PATH, "wb") as f:
+                    f.write(data)
+                DB_BACKUP_STATE["restored"] = True
+                return
+        token, repo, path, branch = github_backup_config()
+        if token and repo and path:
+            api = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
+            meta = github_api_request(api, token=token)
+            content = meta.get("content", "")
+            if content:
+                with open(DB_PATH, "wb") as f:
+                    f.write(base64.b64decode(content))
+                DB_BACKUP_STATE["restored"] = True
+    except Exception:
+        DB_BACKUP_STATE["restore_failed"] = True
+
+def persist_db_backup(reason=""):
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) <= 0:
+        return False
+    token, repo, path, branch = github_backup_config()
+    if not (token and repo and path):
+        return False
+    try:
+        try:
+            with sqlite3.connect(DB_PATH) as chk:
+                chk.execute("PRAGMA wal_checkpoint(FULL)")
+        except Exception:
+            pass
+        with open(DB_PATH, "rb") as f:
+            content = base64.b64encode(f.read()).decode("ascii")
+        api = f"https://api.github.com/repos/{repo}/contents/{path}"
+        sha = None
+        try:
+            meta = github_api_request(f"{api}?ref={branch}", token=token)
+            sha = meta.get("sha")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+        payload = {
+            "message": f"backup sqlite database{': ' + reason if reason else ''}",
+            "content": content,
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+        github_api_request(api, method="PUT", payload=payload, token=token)
+        return True
+    except Exception:
+        return False
+
+def safe_persist_db_backup(reason=""):
+    if DB_BACKUP_STATE.get("restore_failed"):
+        return False
+    return persist_db_backup(reason)
+
 @contextmanager
 def get_db_cm():
     """带异常安全的数据库连接上下文管理器"""
-    os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect("data/stock_analysis.db")
+    os.makedirs(DB_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -294,17 +389,20 @@ def toggle_user(username):
         else: return
         conn.execute("UPDATE users SET status=? WHERE username=?", (new_s, username))
         conn.commit()
+    safe_persist_db_backup("toggle user")
 
 def delete_user(username):
     with get_db_cm() as conn:
         conn.execute("DELETE FROM users WHERE username=? AND role='player'", (username,))
         conn.commit()
+    safe_persist_db_backup("delete user")
 
 def register_user(u, p, role="player"):
     try:
         with get_db_cm() as conn:
             conn.execute("INSERT INTO users(username,password,role,balance) VALUES(?,?,?,1000000)", (u, make_pwd(p), role))
             conn.commit()
+        safe_persist_db_backup("register user")
         return True, "注册成功"
     except Exception:
         return False, "用户名已存在"
@@ -323,6 +421,7 @@ def reset_pwd(u, np_):
     with get_db_cm() as conn:
         conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u))
         conn.commit()
+    safe_persist_db_backup("reset password")
 
 def get_stocks():
     """缓存10分钟（修改函数会显式清缓存），跨会话共享"""
@@ -347,6 +446,7 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1) ON CONFLICT DO NOTHING", (sym.upper(),))
             conn.commit()
+        safe_persist_db_backup("add stock")
         try: get_stocks.clear()
         except: pass
         try: get_public_quote_snapshot.clear()
@@ -365,6 +465,7 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
         conn.commit()
+    safe_persist_db_backup("update stock")
     try: get_stocks.clear()
     except: pass
     try: get_public_quote_snapshot.clear()
@@ -374,6 +475,7 @@ def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
+    safe_persist_db_backup("delete stock")
     try: get_stocks.clear()
     except: pass
     try: get_public_quote_snapshot.clear()
@@ -481,6 +583,7 @@ def add_trade(username, symbol, tt, price, shares):
             msg, m = _match_sell(conn, username, symbol, price, shares, r, nm)
         log_action(username, f"trade_{tt}", symbol, f"round={r}, price={price}, shares={shares}, matched={m}", conn)
         conn.commit()
+    safe_persist_db_backup("trade")
     try: get_stocks.clear()
     except: pass
     try: get_public_quote_snapshot.clear()
@@ -563,6 +666,7 @@ def close_market():
                 conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (s["symbol"], cr))
         conn.execute("UPDATE market_state SET state='closed' WHERE id=1")
         conn.commit()
+    safe_persist_db_backup("close market")
 
     try:
         get_public_quote_snapshot.clear()
@@ -585,6 +689,7 @@ def open_market():
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0) ON CONFLICT DO NOTHING", (s["symbol"], new_round))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
         conn.commit()
+    safe_persist_db_backup("open market")
 
     try:
         get_public_quote_snapshot.clear()
@@ -614,6 +719,7 @@ def undo_market():
                 conn.execute("UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (prev_k["close_price"], prev_k["close_price"], s["symbol"]))
         conn.execute("UPDATE market_state SET state='open', round=? WHERE id=1", (prev_round,))
         conn.commit()
+    safe_persist_db_backup("undo market")
 
     try:
         get_public_quote_snapshot.clear()
@@ -653,6 +759,7 @@ def reset_to_round1():
         remaining = conn.execute("SELECT COUNT(*) FROM kline").fetchone()[0]
         conn.execute("UPDATE market_state SET round=1 WHERE id=1")
         conn.commit()
+    safe_persist_db_backup("reset match")
     try:
         get_public_quote_snapshot.clear()
     except Exception:
@@ -2258,8 +2365,22 @@ def render_admin_risk_panel():
             render_table(losses[["选手", "浮动盈亏", "收益率", "集中度"]], compact=True)
 
 def download_db_button():
-    """数据备份提示"""
-    st.caption("数据库为本地 SQLite 文件，定期备份 data/stock_analysis.db 即可。")
+    """Render lightweight database backup controls for admins."""
+    token, repo, path, branch = github_backup_config()
+    if DB_BACKUP_STATE.get("restored"):
+        st.success("已从远端备份恢复数据库。")
+    elif DB_BACKUP_STATE.get("restore_failed"):
+        st.warning("远端备份恢复失败，当前数据可能来自默认初始化。请先检查备份配置。")
+
+    if token and repo:
+        st.caption(f"远端备份：{repo}/{path} ({branch})")
+        if st.button("立即同步远端备份", key="manual_remote_db_backup", use_container_width=True):
+            if safe_persist_db_backup("manual"):
+                st.success("数据库已同步到远端备份。")
+            else:
+                st.error("同步失败，请检查 Token 权限或仓库路径。")
+    else:
+        st.warning("当前 SQLite 存在 Streamlit 临时磁盘。请配置 DB_BACKUP_GITHUB_TOKEN 和 DB_BACKUP_REPO，避免重启后丢失比赛数据。")
 
 GREEN = "#16a34a"; RED = "#ef4444"
 
@@ -3368,6 +3489,7 @@ ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K�
 st.set_page_config(page_title="Gipfel - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
 if "db_initialized" not in st.session_state:
+    restore_db_from_backup_if_missing()
     init_db()
     st.session_state.db_initialized = True
 
