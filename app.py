@@ -170,29 +170,13 @@ def init_db():
                 conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (s["symbol"], next_round))
             conn.commit()
         else:
-            # 非首次：市场开盘时同步 market_state.round 与真实未结算轮次。
+            # 非首次启动不自动改 market_state.round，避免部署/唤醒导致赛程跳轮。
             state_row = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
-            market_state = state_row["state"] if state_row else "open"
-            active_symbols = [s["symbol"] for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
-            if market_state == "open":
-                open_rounds = [
-                    r["round"] for r in conn.execute(
-                        "SELECT DISTINCT round FROM rounds WHERE is_settled=0 ORDER BY round"
-                    ).fetchall()
-                ]
-                if open_rounds:
-                    target_round = max(open_rounds)
-                else:
-                    max_k = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
-                    target_round = max(max_k + 1, state_row["round"] if state_row else 1)
+            if state_row and state_row["state"] == "open":
+                active_symbols = [s["symbol"] for s in conn.execute("SELECT symbol FROM stocks WHERE is_deleted=0").fetchall()]
                 for sym in active_symbols:
-                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (sym, target_round))
-                conn.execute("UPDATE market_state SET round=? WHERE id=1", (target_round,))
-            else:
-                max_k = conn.execute("SELECT COALESCE(MAX(round),0) FROM kline").fetchone()[0]
-                if max_k:
-                    conn.execute("UPDATE market_state SET round=? WHERE id=1", (max_k,))
-            conn.commit()
+                    conn.execute("INSERT OR IGNORE INTO rounds(stock_symbol,round,is_settled) VALUES(?,?,0)", (sym, state_row["round"]))
+                conn.commit()
 
 def _seed(conn):
     cur = conn.cursor()
@@ -779,8 +763,8 @@ def get_holder_detail(symbol):
                   "收益率": round((cp - avg) / avg * 100, 2) if avg else 0})
     return pd.DataFrame(r)
 
-def get_kline_data(symbol):
-    """K线数据 + 实时追加当前未结算轮次"""
+def get_kline_data(symbol, include_live=False):
+    """K线数据；默认只返回已结算K线，避免图表随当前轮临时成交跳动。"""
     with get_db_cm() as conn:
         r = conn.execute("""
             SELECT k.*
@@ -795,9 +779,12 @@ def get_kline_data(symbol):
         """, (symbol,)).fetchall()
         result = [dict(x) for x in r]
 
-        # 查找当前未结算轮次（选手正在交易的轮次）
-        open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
-        cr = open_r[0] if open_r and open_r[0] else 0
+        if include_live:
+            # 查找当前未结算轮次（选手正在交易的轮次）
+            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
+            cr = open_r[0] if open_r and open_r[0] else 0
+        else:
+            cr = 0
         if cr:
             stock = conn.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone()
             txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
@@ -822,7 +809,7 @@ def get_kline_data(symbol):
 def get_market_card_data(stock):
     """Return dashboard quote data from latest K-line instead of stale stock columns."""
     symbol = stock["symbol"]
-    klines = get_kline_data(symbol)
+    klines = get_kline_data(symbol, include_live=True)
     if klines:
         latest = klines[-1]
         ref_price = row_get(latest, "open_price", None) or row_get(stock, "previous_close", None) or row_get(stock, "current_price", 0)
