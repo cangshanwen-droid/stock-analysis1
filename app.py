@@ -2030,6 +2030,9 @@ def page_public_dashboard():
             arrowcolor="#94a3b8", font=dict(size=13, color="#e2e8f0"),
             bgcolor="rgba(15,23,36,.82)", bordercolor="#1e2a3a", row=1, col=1)
 
+        latest_mid = float(df_k["mid"].dropna().iloc[-1]) if df_k["mid"].notna().any() else float(df_k.iloc[-1]["close_price"])
+        latest_upper = float(df_k["upper"].dropna().iloc[-1]) if df_k["upper"].notna().any() else float(df_k["high_price"].max())
+        latest_lower = float(df_k["lower"].dropna().iloc[-1]) if df_k["lower"].notna().any() else float(df_k["low_price"].min())
         st.markdown(f"""
         <div class="dash-chart-head">
             <div>
