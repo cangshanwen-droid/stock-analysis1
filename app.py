@@ -56,7 +56,8 @@ class PGConn:
         if params:
             for i, p in enumerate(params):
                 pg_sql = pg_sql.replace("%s", f"${i+1}", 1)
-            rows = self.conn.run(pg_sql, params)
+            # pg8000 使用 1-based 索引，前面加 None 偏移
+            rows = self.conn.run(pg_sql, [None] + list(params))
         else:
             rows = self.conn.run(pg_sql)
         cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
