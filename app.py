@@ -1017,7 +1017,11 @@ html, body, .stApp {
 #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
 [data-testid="stDecoration"], [data-testid="stToolbar"],
 [data-testid="manage-app-button"], [data-testid="stAppUserItem"],
-[data-testid="stHeader"] { display: none !important; }
+[data-testid="stHeader"], [data-testid="stDeployButton"],
+[data-testid="stBaseButton-header"], [data-testid="stCloudToolbar"],
+button[aria-label="Manage app"], a[aria-label="Manage app"],
+[title="Manage app"], [class*="viewerBadge"], [class*="ViewerBadge"],
+[class*="manageApp"], [class*="ManageApp"], [class*="stDeployButton"] { display: none !important; }
 .stApp > header { height: 0 !important; overflow: hidden; }
 
 /* 全局 — 深色交易终端 */
@@ -1729,7 +1733,13 @@ SIDEBAR_CSS = """
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
     [data-testid="stDecoration"], [data-testid="manage-app-button"],
-    [data-testid="stAppUserItem"], [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stAppUserItem"], [data-testid="stHeader"],
+    [data-testid="stDeployButton"], [data-testid="stBaseButton-header"],
+    [data-testid="stCloudToolbar"], button[aria-label="Manage app"],
+    a[aria-label="Manage app"], [title="Manage app"],
+    [class*="viewerBadge"], [class*="ViewerBadge"],
+    [class*="manageApp"], [class*="ManageApp"],
+    [class*="stDeployButton"] { display: none !important; }
     .stApp > header { height: 0 !important; overflow: hidden; }
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
@@ -1833,7 +1843,12 @@ DASHBOARD_CSS = """
     #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
     [data-testid="stDecoration"], [data-testid="stToolbar"], header,
     [data-testid="manage-app-button"], [data-testid="stAppUserItem"],
-    [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stHeader"], [data-testid="stDeployButton"],
+    [data-testid="stBaseButton-header"], [data-testid="stCloudToolbar"],
+    button[aria-label="Manage app"], a[aria-label="Manage app"],
+    [title="Manage app"], [class*="viewerBadge"], [class*="ViewerBadge"],
+    [class*="manageApp"], [class*="ManageApp"],
+    [class*="stDeployButton"] { display: none !important; }
     .stApp > header { height: 0 !important; overflow: hidden; }
 
     .dash-top { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px 0; }
