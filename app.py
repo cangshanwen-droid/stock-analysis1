@@ -64,8 +64,13 @@ class PGConn:
                 else:
                     vals.append(literal(p))
             i = 0
-            while '%s' in sql and i < len(vals):
-                sql = sql.replace('%s', vals[i], 1)
+            while i < len(vals):
+                if '%s' in sql:
+                    sql = sql.replace('%s', vals[i], 1)
+                elif '?' in sql:
+                    sql = sql.replace('?', vals[i], 1)
+                else:
+                    break
                 i += 1
             rows = self.conn.run(sql)
         else:
