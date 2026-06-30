@@ -868,21 +868,10 @@ def get_platform_stats():
 def get_competition_snapshot():
     mkt_open = is_market_open()
     mkt_round = get_market_round()
-    with get_db_cm() as conn:
-        player_cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
-        active_cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player' AND status!='disabled'").fetchone()[0]
-        stock_cnt = conn.execute("SELECT COUNT(*) FROM stocks WHERE is_deleted=0").fetchone()[0]
-        round_trades = conn.execute("SELECT COUNT(*) FROM transactions WHERE round=? AND username NOT LIKE '[系统]'", (mkt_round,)).fetchone()[0]
-        total_trades = conn.execute("SELECT COUNT(*) FROM transactions WHERE username NOT LIKE '[系统]'").fetchone()[0]
     return {
         "state": "交易中" if mkt_open else "已闭市",
         "ok": mkt_open,
         "round": int(mkt_round or 1),
-        "players": int(player_cnt or 0),
-        "active_players": int(active_cnt or 0),
-        "stocks": int(stock_cnt or 0),
-        "round_trades": int(round_trades or 0),
-        "total_trades": int(total_trades or 0),
     }
 
 def get_admin_risk_overview():
@@ -1122,17 +1111,14 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 .stock-audit-metric .value.pos { color: #f23645; }
 .stock-audit-metric .value.neg { color: #089981; }
 .competition-strip {
-    display: grid;
-    grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin: 10px 0 14px;
+    display: block;
+    margin: 8px 0 12px;
 }
 .competition-cell {
-    min-width: 0;
     background: rgba(15,23,36,.82);
     border: 1px solid #1e2a3a;
     border-radius: 8px;
-    padding: 11px 13px;
+    padding: 11px 14px;
 }
 .competition-cell.primary {
     background: linear-gradient(90deg, rgba(242,54,69,.16), rgba(15,23,36,.86));
@@ -1207,8 +1193,6 @@ div[data-testid="stForm"] {
     .data-table th, .data-table td { padding: 9px 10px; font-size: 12px; }
     .stock-audit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .stock-audit-head { align-items: flex-start; }
-    .competition-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .competition-cell.primary { grid-column: span 2; }
     .risk-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .risk-card { padding: 12px; }
     .risk-card .value { font-size: 18px; }
@@ -2242,12 +2226,8 @@ def render_competition_strip():
         <div class="competition-cell primary {state_cls}">
             <div class="label">竞赛状态</div>
             <div class="value">第 {snap["round"]} 轮 · {esc(snap["state"])}</div>
-            <div class="sub">操作员代表公司交易 · 轮次结算</div>
+            <div class="sub">实时撮合 · 轮次结算 · 赛程监控</div>
         </div>
-        <div class="competition-cell"><div class="label">操作员账号</div><div class="value">{fmt_num(snap["active_players"])}/{fmt_num(snap["players"])}</div><div class="sub">有效/总数</div></div>
-        <div class="competition-cell"><div class="label">参赛公司</div><div class="value">{fmt_num(snap["stocks"])}</div><div class="sub">股票/公司</div></div>
-        <div class="competition-cell"><div class="label">本轮成交</div><div class="value">{fmt_num(snap["round_trades"])}</div><div class="sub">操作员委托成交</div></div>
-        <div class="competition-cell"><div class="label">累计成交</div><div class="value">{fmt_num(snap["total_trades"])}</div><div class="sub">全赛程记录</div></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2494,7 +2474,7 @@ def page_trade_hall():
     if not stocks: st.error("无股票"); return
     mkt_open = is_market_open()
     mkt_round = get_market_round()
-    page_header("交易大厅", f"第 {mkt_round} 轮 · {'操作员可提交买卖委托' if mkt_open else '等待管理员开市'}", badge=("交易中" if mkt_open else "已闭市"), ok=mkt_open)
+    page_header("交易大厅", f"第 {mkt_round} 轮 · {'可提交买卖委托' if mkt_open else '等待管理员开市'}", badge=("交易中" if mkt_open else "已闭市"), ok=mkt_open)
 
     if not mkt_open:
         st.markdown(f"""
