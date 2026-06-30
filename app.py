@@ -265,6 +265,8 @@ def _seed(conn):
         conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0) ON CONFLICT DO NOTHING", (sym,))
     trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
     for args in trades: conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
+    # PostgreSQL: 推进 SERIAL 序列，避免后续注册因ID冲突失败
+    conn.execute("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))")
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
