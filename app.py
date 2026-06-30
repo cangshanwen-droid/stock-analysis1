@@ -411,7 +411,7 @@ def _match_buy(conn, username, symbol, price, shares, cr, stock_name, bal):
     cost = price * remaining
     if bal and bal["balance"] >= cost:
         conn.execute("UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
-        conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE symbol=?", (price, price, symbol))
+        conn.execute("UPDATE stocks SET current_price=? WHERE symbol=?", (price, symbol))
         conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)", (username, symbol, price, remaining, cr))
         conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)", ("[系统]", symbol, price, remaining, cr))
         return f"[成交] {stock_name} {remaining}股 @ {price}，花费{cost:,.0f}", 0
@@ -448,7 +448,7 @@ def _match_sell(conn, username, symbol, price, shares, cr, stock_name):
         return f"[全部成交] {stock_name} {matched}股 @ {avg:.2f}，收入{total:,.0f}", matched
     cost = price * remaining
     conn.execute("UPDATE users SET balance=balance+? WHERE username=?", (cost, username))
-    conn.execute("UPDATE stocks SET current_price=?,previous_close=? WHERE symbol=?", (price, price, symbol))
+    conn.execute("UPDATE stocks SET current_price=? WHERE symbol=?", (price, symbol))
     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)", (username, symbol, price, remaining, cr))
     conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)", ("[系统]", symbol, price, remaining, cr))
     return f"[成交] {stock_name} {remaining}股 @ {price}，收入{cost:,.0f}", 0
