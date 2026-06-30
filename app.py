@@ -11,14 +11,8 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pg8000
-from pg8000.native import literal, Connection
+import sqlite3
 from kline_tradingview import page_kline_tradingview
-
-PG_USER = "neondb_owner"
-PG_PASS = "npg_BWv4ZzCwfYa5"
-PG_HOST = "ep-raspy-field-aohzm3n2-pooler.c-2.ap-southeast-1.aws.neon.tech"
-PG_DB = "neondb"
 
 class PGRow:
     """兼容 sqlite3.Row：同时支持 row['col'] 和 row[0] 访问"""
@@ -55,68 +49,40 @@ class PGResult(list):
         return list(self)
 
 class PGConn:
-    """pg8000 封装，返回 dict 格式。支持会话级连接复用。"""
-    def __init__(self, reuse=False):
-        if reuse and "_pg_conn" in st.session_state:
-            try:
-                st.session_state._pg_conn.run("SELECT 1")
-                self.conn = st.session_state._pg_conn
-                return
-            except Exception:
-                try: st.session_state._pg_conn.close()
-                except: pass
-                del st.session_state._pg_conn
-        self.conn = Connection(user=PG_USER, password=PG_PASS, host=PG_HOST, database=PG_DB, port=5432)
-        if reuse:
-            st.session_state._pg_conn = self.conn
+    """sqlite3 封装（类名保留PGConn是为了最小化改动）"""
+    def __init__(self):
+        os.makedirs("data", exist_ok=True)
+        self.conn = sqlite3.connect("data/stock_analysis.db", check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA journal_mode=WAL")
     def execute(self, sql, params=None):
+        sql = sql.replace('%s', '?')  # 兼容原始代码中的 %s 占位符
         if params:
-            vals = []
-            for p in params:
-                if isinstance(p, (int, float)):
-                    vals.append(str(p))
-                elif p is None:
-                    vals.append('NULL')
-                else:
-                    vals.append(literal(p))
-            i = 0
-            while i < len(vals):
-                if '%s' in sql:
-                    sql = sql.replace('%s', vals[i], 1)
-                elif '?' in sql:
-                    sql = sql.replace('?', vals[i], 1)
-                else:
-                    break
-                i += 1
-            rows = self.conn.run(sql)
+            cur = self.conn.execute(sql, params)
         else:
-            rows = self.conn.run(sql)
-        cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
-        return PGResult(rows, cols)
+            cur = self.conn.execute(sql)
+        cols = [d[0] for d in cur.description] if cur.description else []
+        rows = cur.fetchall()
+        if cols:
+            return PGResult([PGRow(cols, list(r)) for r in rows], cols)
+        return PGResult([], cols)
     def commit(self):
-        self.conn.run("COMMIT")
+        self.conn.commit()
     def close(self):
         self.conn.close()
     def cursor(self):
-        return self
+        return self.conn
 
 @contextmanager
 def get_db_cm():
-    conn = PGConn(reuse=True)
-    conn.execute("BEGIN")
+    conn = PGConn()
     try:
         yield conn
     except Exception:
-        try: conn.execute("ROLLBACK")
-        except: pass
+        conn.conn.rollback()
         raise
     finally:
-        # 共享连接不关闭，提交事务让下个BEGIN能正常工作
-        if "_pg_conn" in st.session_state and st.session_state._pg_conn is conn.conn:
-            try: conn.execute("COMMIT")
-            except: pass
-        else:
-            conn.close()
+        conn.close()
 
 def row_get(row, key, default=None):
     try: return row[key]
@@ -155,15 +121,15 @@ def init_db():
     with get_db_cm() as conn:
         # 建表
         sql_tables = """
-            CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
-            CREATE TABLE IF NOT EXISTS stocks(id SERIAL PRIMARY KEY, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS transactions(id SERIAL PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS kline(id SERIAL PRIMARY KEY, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
+            CREATE TABLE IF NOT EXISTS stocks(id INTEGER PRIMARY KEY, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, revenue REAL DEFAULT 100000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS kline(id INTEGER PRIMARY KEY, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, PRIMARY KEY(stock_symbol, round));
-            CREATE TABLE IF NOT EXISTS market_state(id SERIAL PRIMARY KEY, state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
-            CREATE TABLE IF NOT EXISTS audit_logs(id SERIAL PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS login_attempts(id SERIAL PRIMARY KEY, username TEXT NOT NULL, attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS order_book(id SERIAL PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY, state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS audit_logs(id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY, username TEXT NOT NULL, attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE IF NOT EXISTS order_book(id INTEGER PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         """
         for stmt in sql_tables.split(';'):
             s = stmt.strip()
@@ -290,8 +256,6 @@ def _seed(conn):
         conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0) ON CONFLICT DO NOTHING", (sym,))
     trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
     for args in trades: conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
-    # PostgreSQL: 推进 SERIAL 序列，避免后续注册因ID冲突失败
-    conn.execute("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))")
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
