@@ -12,7 +12,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pg8000
-from pg8000.native import Connection
+from pg8000.native import literal, Connection
 from kline_tradingview import page_kline_tradingview
 
 PG_USER = "neondb_owner"
@@ -71,15 +71,24 @@ class PGConn:
             st.session_state._pg_conn = self.conn
     def execute(self, sql, params=None):
         if params:
-            i = 0
-            while '%s' in sql or '?' in sql:
-                if '%s' in sql:
-                    sql = sql.replace('%s', f'${i+1}', 1)
+            vals = []
+            for p in params:
+                if isinstance(p, (int, float)):
+                    vals.append(str(p))
+                elif p is None:
+                    vals.append('NULL')
                 else:
-                    sql = sql.replace('?', f'${i+1}', 1)
+                    vals.append(literal(p))
+            i = 0
+            while i < len(vals):
+                if '%s' in sql:
+                    sql = sql.replace('%s', vals[i], 1)
+                elif '?' in sql:
+                    sql = sql.replace('?', vals[i], 1)
+                else:
+                    break
                 i += 1
-            # pg8000 $N 是 1-based，前置 None 占位使 $1 对应 params[0]
-            rows = self.conn.run(sql, None, *params)
+            rows = self.conn.run(sql)
         else:
             rows = self.conn.run(sql)
         cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
