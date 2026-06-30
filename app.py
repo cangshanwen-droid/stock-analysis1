@@ -78,7 +78,8 @@ class PGConn:
                 else:
                     sql = sql.replace('?', f'${i+1}', 1)
                 i += 1
-            rows = self.conn.run(sql, *params)
+            # pg8000 $N 是 1-based，前置 None 占位使 $1 对应 params[0]
+            rows = self.conn.run(sql, None, *params)
         else:
             rows = self.conn.run(sql)
         cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
