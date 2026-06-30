@@ -63,6 +63,32 @@ export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> 
   return res.json();
 }
 
+export async function submitOrder(token: string, order: {
+  username: string;
+  symbol: string;
+  side: "buy" | "sell";
+  price: number;
+  shares: number;
+}) {
+  if (!API_BASE || token === "demo-token") {
+    return {
+      accepted: false,
+      reason: "demo_mode",
+      detail: "演示模式未连接真实后端"
+    };
+  }
+  const res = await fetch(`${API_BASE}/orders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(order)
+  });
+  if (!res.ok) throw new Error("order_failed");
+  return res.json();
+}
+
 export function demoCandles(symbol: string): Candle[] {
   const seed = Array.from(symbol).reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i + 5), 0);
   const base = symbol === "YLIAO" ? 25 : symbol === "JGONG" ? 20 : symbol === "JXIAO" ? 15 : 10;

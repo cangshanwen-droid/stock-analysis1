@@ -51,6 +51,7 @@
 - 已支持 `/portfolio`，返回资金、总资产、持仓、未成交委托、近期成交
 - 前端已接入登录表单和账户资产面板
 - `/orders` 已要求 Bearer token，但仍返回 `order_api_not_enabled_yet`
+- `/orders` 已接入后端撮合服务；只有 `ENABLE_ORDER_WRITES=true` 时才真实写入数据库
 
 验收标准：
 
@@ -58,6 +59,14 @@
 - 选手只能操作自己的账号
 - 下单写入数据库并生成审计记录
 - 与现有 Streamlit 交易结果一致
+
+写入开关：
+
+```text
+ENABLE_ORDER_WRITES=false
+```
+
+保持 `false` 时前端可以测试提交流程，但不会改比赛数据。只有完成迁移测试后才改为 `true`。
 
 ### Phase 3：管理员端
 
@@ -117,6 +126,7 @@ NEXT_PUBLIC_API_BASE=https://api.gipfel.example.com
 DATABASE_URL=postgresql://user:password@host:5432/gipfel
 CORS_ALLOW_ORIGINS=https://gipfel.example.com
 TOKEN_SECRET=replace-with-a-long-random-secret
+ENABLE_ORDER_WRITES=false
 ```
 
 迁移旧 SQLite 数据：

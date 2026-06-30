@@ -3,22 +3,21 @@ import hashlib
 import hmac
 import json
 import os
-import sqlite3
 import time
 from datetime import date, timedelta
-from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .db import DB_PATH, DatabaseNotReady, connect, fetchall, fetchone, is_postgres, row_dict
+from .trading import place_order
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", ROOT_DIR / "data" / "stock_analysis.db"))
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
+ENABLE_ORDER_WRITES = os.environ.get("ENABLE_ORDER_WRITES", "false").lower() == "true"
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
@@ -28,6 +27,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(DatabaseNotReady)
+def database_not_ready_handler(_, exc: DatabaseNotReady):
+    return JSONResponse(status_code=503, content={"detail": "database_not_ready", "message": str(exc)})
 
 
 class TradeRequest(BaseModel):
@@ -87,7 +91,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing_token")
     payload = verify_token(authorization.removeprefix("Bearer ").strip())
-    with db() as conn:
+    with connect() as conn:
         user = row_dict(fetchone(conn,
             "SELECT username,role,status,balance FROM users WHERE username=?",
             (payload.get("sub"),),
@@ -95,39 +99,6 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     if not user or user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="inactive_user")
     return user
-
-
-def is_postgres() -> bool:
-    return bool(DATABASE_URL)
-
-
-def bind(sql: str) -> str:
-    return sql.replace("?", "%s") if is_postgres() else sql
-
-
-def db():
-    if is_postgres():
-        import psycopg
-        from psycopg.rows import dict_row
-
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
-    if not DB_PATH.exists():
-        raise HTTPException(status_code=503, detail="database_not_ready")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def fetchone(conn, sql: str, params: tuple[Any, ...] = ()):
-    return conn.execute(bind(sql), params).fetchone()
-
-
-def fetchall(conn, sql: str, params: tuple[Any, ...] = ()):
-    return conn.execute(bind(sql), params).fetchall()
-
-
-def row_dict(row: Any | None) -> dict[str, Any] | None:
-    return dict(row) if row else None
 
 
 @app.get("/health")
@@ -138,12 +109,13 @@ def health() -> dict[str, Any]:
         "backend": "postgres" if is_postgres() else "sqlite",
         "path": "" if is_postgres() else str(DB_PATH),
         "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
+        "orderWritesEnabled": ENABLE_ORDER_WRITES,
     }
 
 
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
-    with db() as conn:
+    with connect() as conn:
         user = row_dict(fetchone(conn,
             "SELECT username,password,role,status,balance FROM users WHERE username=?",
             (payload.username,),
@@ -177,7 +149,7 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/market")
 def market() -> dict[str, Any]:
-    with db() as conn:
+    with connect() as conn:
         state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
         stocks = fetchall(conn,
             "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
@@ -203,7 +175,7 @@ def market() -> dict[str, Any]:
 
 @app.get("/stocks/{symbol}/kline")
 def stock_kline(symbol: str) -> list[dict[str, Any]]:
-    with db() as conn:
+    with connect() as conn:
         rows = fetchall(conn,
             """
             SELECT round,open_price,high_price,low_price,close_price,volume,created_at
@@ -231,7 +203,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
 @app.get("/portfolio")
 def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     username = user["username"]
-    with db() as conn:
+    with connect() as conn:
         stocks = {
             row["symbol"]: row_dict(row)
             for row in fetchall(conn, "SELECT symbol,name,current_price FROM stocks WHERE is_deleted=0")
@@ -321,9 +293,24 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     if payload.username != user["username"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="cannot_trade_for_other_user")
+    if not ENABLE_ORDER_WRITES:
+        return {
+            "accepted": False,
+            "reason": "order_api_not_enabled_yet",
+            "detail": "Set ENABLE_ORDER_WRITES=true only after migration tests pass.",
+            "order": payload.model_dump(),
+        }
+    with connect() as conn:
+        result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares)
+        if result.ok:
+            conn.commit()
+        else:
+            conn.rollback()
     return {
-        "accepted": False,
-        "reason": "order_api_not_enabled_yet",
-        "detail": "Trading writes will be enabled after auth, PostgreSQL, and settlement tests are migrated.",
+        "accepted": result.ok,
+        "reason": "" if result.ok else "order_rejected",
+        "detail": result.message,
+        "matched": result.matched,
+        "round": result.round,
         "order": payload.model_dump(),
     }

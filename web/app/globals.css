@@ -250,6 +250,12 @@ button {
   font-size: 12px;
 }
 
+.hint-text {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .segmented button.buy {
   background: rgba(242, 54, 69, 0.14);
   border-color: rgba(242, 54, 69, 0.3);

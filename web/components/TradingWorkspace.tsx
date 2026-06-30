@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
-import { fetchCandles, fetchMarket, fetchPortfolio, login } from "../lib/api";
+import { fetchCandles, fetchMarket, fetchPortfolio, login, submitOrder } from "../lib/api";
 import type { Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
@@ -25,6 +25,9 @@ export function TradingWorkspace() {
   const [loginName, setLoginName] = useState("player1");
   const [loginPassword, setLoginPassword] = useState("player1");
   const [loginError, setLoginError] = useState("");
+  const [orderPrice, setOrderPrice] = useState("0.00");
+  const [orderShares, setOrderShares] = useState("100");
+  const [orderMessage, setOrderMessage] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -82,6 +85,32 @@ export function TradingWorkspace() {
     () => stocks.find((s) => s.symbol === selected) ?? stocks[0],
     [selected, stocks]
   );
+
+  useEffect(() => {
+    if (current) setOrderPrice(current.price.toFixed(2));
+  }, [current]);
+
+  async function submitTrade() {
+    if (!user || !current || !token) return;
+    setOrderMessage("");
+    try {
+      const result = await submitOrder(token, {
+        username: user.username,
+        symbol: current.symbol,
+        side,
+        price: Number(orderPrice),
+        shares: Number(orderShares)
+      });
+      setOrderMessage(result.detail || result.reason || "委托已提交");
+      if (result.accepted) {
+        const data = await fetchPortfolio(token);
+        setPortfolio(data);
+        setUser(data.user);
+      }
+    } catch {
+      setOrderMessage("委托提交失败，请稍后重试");
+    }
+  }
 
   return (
     <div className="shell">
@@ -192,13 +221,14 @@ export function TradingWorkspace() {
               </div>
               <div className="field">
                 <label>委托价格</label>
-                <input defaultValue={current?.price.toFixed(2) ?? "0.00"} />
+                <input value={orderPrice} onChange={(e) => setOrderPrice(e.target.value)} />
               </div>
               <div className="field">
                 <label>委托数量</label>
-                <input defaultValue="100" />
+                <input value={orderShares} onChange={(e) => setOrderShares(e.target.value)} />
               </div>
-              <button className="primary" disabled={!user}>{side === "buy" ? "提交买入" : "提交卖出"}</button>
+              <button className="primary" disabled={!user} onClick={submitTrade}>{side === "buy" ? "提交买入" : "提交卖出"}</button>
+              {orderMessage && <div className="hint-text">{orderMessage}</div>}
             </div>
 
             <div className="mini-table">
