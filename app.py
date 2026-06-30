@@ -16,16 +16,13 @@ from kline_tradingview import page_kline_tradingview
 
 @contextmanager
 def get_db_cm():
-    """原生 sqlite3 连接"""
-    os.makedirs("data", exist_ok=True)
-    conn = sqlite3.connect("data/stock_analysis.db", check_same_thread=False)
+    """带异常安全的数据库连接上下文管理器"""
+    conn = sqlite3.connect("data/stock_analysis.db")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     try:
         yield conn
-    except:
-        conn.rollback()
-        raise
     finally:
         conn.close()
 
@@ -349,7 +346,6 @@ def register_user(u, p, role="player"):
     except Exception:
         return False, "用户名已存在"
 
-@st.cache_data(ttl=600, show_spinner=False)
 def get_all_users():
     with get_db_cm() as conn:
         r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall()
@@ -365,7 +361,6 @@ def reset_pwd(u, np_):
         conn.execute("UPDATE users SET password=? WHERE username=?", (make_pwd(np_), u))
         conn.commit()
 
-@st.cache_data(ttl=600, show_spinner=False)
 def get_stocks():
     """缓存10分钟（修改函数会显式清缓存），跨会话共享"""
     with get_db_cm() as conn:
@@ -531,13 +526,11 @@ def get_user_balance(username):
         r = conn.execute("SELECT balance FROM users WHERE username=?", (username,)).fetchone()
     return r["balance"] if r else 0
 
-@st.cache_data(ttl=600, show_spinner=False)
 def is_market_open():
     with get_db_cm() as conn:
         r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
     return r["state"] == "open" if r else True
 
-@st.cache_data(ttl=600, show_spinner=False)
 def get_market_round():
     with get_db_cm() as conn:
         r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
@@ -825,11 +818,6 @@ def get_kline_data(symbol, include_live=False):
                 })
     return sorted(result, key=lambda x: x["round"])
 
-@st.cache_data(ttl=600, show_spinner=False)
-def _cached_kline(symbol):
-    """缓存非实时K线数据，用于行情大屏和K线展板"""
-    return get_kline_data(symbol, include_live=False)
-
 def get_market_card_data(stock):
     """Return dashboard quote data from latest K-line instead of stale stock columns."""
     symbol = stock["symbol"]
@@ -863,72 +851,10 @@ def get_market_card_data(stock):
         "round": latest_round,
     }
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=1, show_spinner=False)
 def get_public_quote_snapshot():
-    """行情大屏快照 — 单连接批量查询，避免多次网络往返到 Neon"""
-    with get_db_cm() as conn:
-        stocks_rows = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
-        stocks = [dict(x) for x in stocks_rows]
-        symbols = [s["symbol"] for s in stocks]
-        # 一次性获取所有股票的K线数据（已结算+当前轮实时）
-        all_klines = {}
-        for sym in symbols:
-            klines = conn.execute("""
-                SELECT k.* FROM kline k
-                JOIN (SELECT round, MAX(id) AS id FROM kline WHERE stock_symbol=? GROUP BY round) latest ON latest.id = k.id
-                ORDER BY k.round
-            """, (sym,)).fetchall()
-            result = [dict(x) for x in klines]
-            # 实时追加当前未结算轮次
-            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (sym,)).fetchone()
-            cr = open_r[0] if open_r and open_r[0] else 0
-            if cr:
-                stock = conn.execute("SELECT * FROM stocks WHERE symbol=?", (sym,)).fetchone()
-                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (sym, cr)).fetchall()
-                if txns and stock:
-                    prev = stock["previous_close"] or stock["current_price"]
-                    bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
-                    st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
-                    tv = sum(t["shares"] for t in txns)
-                    np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
-                    hi = max(np_, prev); lo = min(np_, prev)
-                    cpct = round((np_-prev)/prev*100,2) if prev else 0
-                    result = [x for x in result if x["round"] != cr]
-                    result.append({
-                        "stock_symbol": sym, "round": cr,
-                        "open_price": prev, "high_price": hi, "low_price": lo,
-                        "close_price": np_, "volume": tv,
-                        "buy_total": bt, "sell_total": st_amt, "change_pct": cpct,
-                    })
-            all_klines[sym] = sorted(result, key=lambda x: x["round"])
-        # 组装行情卡片数据
-        quotes = {}
-        for s in stocks:
-            symbol = s["symbol"]
-            klines = all_klines.get(symbol, [])
-            if klines:
-                latest = klines[-1]
-                ref_price = row_get(latest, "open_price", None) or s.get("previous_close") or s.get("current_price", 0)
-                price = row_get(latest, "close_price", ref_price) or ref_price
-                change = price - ref_price
-                pct = change / ref_price * 100 if ref_price else 0
-                total_vol = int(sum(row_get(d, "volume", 0) or 0 for d in klines[-5:]))
-                buy_amt = sum(row_get(d, "buy_total", 0) or 0 for d in klines[-5:])
-                sell_amt = sum(row_get(d, "sell_total", 0) or 0 for d in klines[-5:])
-                latest_round = row_get(latest, "round", "-")
-            else:
-                price = s.get("current_price", 0) or 0
-                ref_price = s.get("previous_close", price) or price
-                change = price - ref_price
-                pct = change / ref_price * 100 if ref_price else 0
-                total_vol = buy_amt = sell_amt = 0
-                latest_round = "-"
-            quotes[symbol] = {
-                "price": float(price or 0), "ref_price": float(ref_price or 0),
-                "change": float(change or 0), "pct": float(pct or 0),
-                "volume5": total_vol, "buy5": float(buy_amt or 0),
-                "sell5": float(sell_amt or 0), "round": latest_round,
-            }
+    stocks = get_stocks()
+    quotes = {s["symbol"]: get_market_card_data(s) for s in stocks}
     return stocks, quotes
 
 def get_platform_stats():
@@ -1996,7 +1922,7 @@ def page_public_dashboard():
     # K线图
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
-    data = _cached_kline(sym)
+    data = get_kline_data(sym)
     if data:
         raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
         first_open = float(raw_k.iloc[0]["open_price"])
@@ -2707,7 +2633,7 @@ def page_kline():
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
     sym = opts[sel]["symbol"]
-    data = _cached_kline(sym)
+    data = get_kline_data(sym)
 
     if not data:
         st.info("暂无行情K线数据")
