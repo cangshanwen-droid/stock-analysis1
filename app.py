@@ -2430,7 +2430,7 @@ def page_trade_hall():
             sel = st.selectbox("股票", list(opts.keys()), key="trade_sel")
             s = opts[sel]
             st.markdown(f"**当前价：{fmt_money(s['current_price'])}**")
-            direction = st.radio("方向", ["买入", "卖出"], horizontal=True)
+            direction = st.radio("方向", ["买入", "卖出"], horizontal=True, key="trade_dir")
             price = st.number_input("价格", min_value=0.01, value=float(s["current_price"]), step=0.5, format="%.2f")
             shares = st.number_input("数量(股)", min_value=1, step=100, format="%d")
             if st.form_submit_button("确认交易", type="primary", use_container_width=True):
@@ -2486,7 +2486,7 @@ def page_trade_hall():
         with cols[0]:
             m_sel = st.selectbox("股票", list(opts.keys()), label_visibility="collapsed", key="trade_mobile_sel")
         with cols[1]:
-            m_dir = st.radio("方向", ["买入", "卖出"], horizontal=True, label_visibility="collapsed")
+            m_dir = st.radio("方向", ["买入", "卖出"], horizontal=True, label_visibility="collapsed", key="trade_dir_m")
         m_s = opts[m_sel]
         with cols[2]:
             m_price = st.number_input("价格", min_value=0.01, value=float(m_s["current_price"]), step=0.5, format="%.2f", label_visibility="collapsed")
@@ -2607,7 +2607,7 @@ def page_kline():
     if not stocks: st.info("无数据"); return
     page_header("K 线展板", "轮次走势、成交量与均线观察", badge=st.session_state.username, ok=True)
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
-    sel = st.selectbox("选择股票", list(opts.keys()))
+    sel = st.selectbox("选择股票", list(opts.keys()), key="kline_stock_sel")
     sym = opts[sel]["symbol"]
     data = get_kline_data(sym)
 
