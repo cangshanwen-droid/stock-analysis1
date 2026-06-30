@@ -16,6 +16,7 @@ import sqlite3
 @contextmanager
 def get_db_cm():
     """带异常安全的数据库连接上下文管理器"""
+    os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect("data/stock_analysis.db")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
