@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pg8000
 from pg8000.native import literal, Connection
+from kline_tradingview import page_kline_tradingview
 
 PG_USER = "neondb_owner"
 PG_PASS = "npg_BWv4ZzCwfYa5"
@@ -1577,6 +1578,12 @@ div[role="radiogroup"]:has(#nav_top) input { opacity: 0.01 !important; width: 1p
     }
     .desktop-nav-spacer { flex: 1; min-height: 18px; }
 }
+
+/* 移动端导航滚动容器 */
+.mob-nav-scroll { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+.mob-nav-scroll::-webkit-scrollbar { height: 2px; }
+.mob-nav-scroll::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 2px; }
+.mob-nav-scroll div[data-testid="column"] { display: inline-block; float: none; min-width: fit-content; }
 
 @media (max-width: 430px) {
     section.main > div.block-container,
@@ -3455,12 +3462,13 @@ def page_admin_settle():
 NAV = {
     "总览": page_overview, "交易大厅": page_trade_hall,
     "我的持仓": page_portfolio, "交易记录": page_market_making,
-    "K线展板": page_kline,     "市场控制": page_admin_settle,
+    "K线展板": page_kline,     "专业K线": page_kline_tradingview,
+    "市场控制": page_admin_settle,
     "股票汇总": page_admin_stock_summary,
     "股票管理": page_admin_stock_mgmt, "用户管理": page_admin_user_mgmt,
 }
-PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "交易记录", "K线展板"]
-ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板"]
+PLAYER_NAV = ["总览", "交易大厅", "我的持仓", "交易记录", "K线展板", "专业K线"]
+ADMIN_NAV = ["市场控制", "股票汇总", "股票管理", "用户管理", "K线展板", "专业K线"]
 
 st.set_page_config(page_title="Gipfel - 智能投资分析系统", layout="wide", initial_sidebar_state="expanded")
 st.markdown(RESPONSIVE_CSS + SIDEBAR_CSS, unsafe_allow_html=True)
@@ -3534,15 +3542,17 @@ def main():
     # 移动端底部导航（仅玩家）
     sel = st.session_state.nav_current
     if st.session_state.role == "player" and sel in PLAYER_NAV:
-        short = {"总览": "总览", "交易大厅": "交易", "我的持仓": "持仓", "交易记录": "记录", "K线展板": "K线"}
+        short = {"总览": "总览", "交易大厅": "交易", "我的持仓": "持仓", "交易记录": "记录", "K线展板": "K线", "专业K线": "实时"}
         with st.container(key="mobile_nav_bar"):
-            mm = st.columns(5)
+            st.markdown('<div class="mob-nav-scroll">', unsafe_allow_html=True)
+            mm = st.columns(len(PLAYER_NAV))
             for mi, mn in enumerate(PLAYER_NAV):
                 with mm[mi]:
                     tp = "primary" if mn == sel else "secondary"
                     if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
                         st.session_state.nav_current = mn
                         st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
     else: page_overview()
