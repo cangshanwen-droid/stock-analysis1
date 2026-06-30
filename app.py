@@ -55,9 +55,20 @@ class PGResult(list):
         return list(self)
 
 class PGConn:
-    """pg8000 封装，返回 dict 格式"""
-    def __init__(self):
+    """pg8000 封装，返回 dict 格式。支持会话级连接复用。"""
+    def __init__(self, reuse=False):
+        if reuse and "_pg_conn" in st.session_state:
+            try:
+                st.session_state._pg_conn.run("SELECT 1")
+                self.conn = st.session_state._pg_conn
+                return
+            except Exception:
+                try: st.session_state._pg_conn.close()
+                except: pass
+                del st.session_state._pg_conn
         self.conn = Connection(user=PG_USER, password=PG_PASS, host=PG_HOST, database=PG_DB, port=5432)
+        if reuse:
+            st.session_state._pg_conn = self.conn
     def execute(self, sql, params=None):
         if params:
             vals = []
@@ -93,12 +104,21 @@ class PGConn:
 
 @contextmanager
 def get_db_cm():
-    conn = PGConn()
+    conn = PGConn(reuse=True)
     conn.execute("BEGIN")
     try:
         yield conn
+    except Exception:
+        try: conn.execute("ROLLBACK")
+        except: pass
+        raise
     finally:
-        conn.close()
+        # 共享连接不关闭，提交事务让下个BEGIN能正常工作
+        if "_pg_conn" in st.session_state and st.session_state._pg_conn is conn.conn:
+            try: conn.execute("COMMIT")
+            except: pass
+        else:
+            conn.close()
 
 def row_get(row, key, default=None):
     try: return row[key]
