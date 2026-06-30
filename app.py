@@ -440,6 +440,7 @@ def register_user(u, p, role="player"):
     except Exception:
         return False, "用户名已存在"
 
+@st.cache_data(ttl=30, show_spinner=False)
 def get_all_users():
     with get_db_cm() as conn:
         r = conn.execute("SELECT id,username,role,created_at,status FROM users ORDER BY id").fetchall()
@@ -455,9 +456,9 @@ def reset_pwd(u, np_):
         conn.execute("UPDATE users SET password=%s WHERE username=%s", (make_pwd(np_), u))
         conn.commit()
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def get_stocks():
-    """直接读库，短TTL缓存减少PostgreSQL连接"""
+    """直接读库，缓存30秒（修改函数会显式清缓存）"""
     with get_db_cm() as conn:
         r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
     return [dict(x) for x in r]
@@ -621,13 +622,13 @@ def get_user_balance(username):
         r = conn.execute("SELECT balance FROM users WHERE username=%s", (username,)).fetchone()
     return r["balance"] if r else 0
 
-@st.cache_data(ttl=2, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def is_market_open():
     with get_db_cm() as conn:
         r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
     return r["state"] == "open" if r else True
 
-@st.cache_data(ttl=2, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def get_market_round():
     with get_db_cm() as conn:
         r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
@@ -915,7 +916,7 @@ def get_kline_data(symbol, include_live=False):
                 })
     return sorted(result, key=lambda x: x["round"])
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def _cached_kline(symbol):
     """缓存非实时K线数据，用于行情大屏和K线展板"""
     return get_kline_data(symbol, include_live=False)
@@ -953,7 +954,7 @@ def get_market_card_data(stock):
         "round": latest_round,
     }
 
-@st.cache_data(ttl=3, show_spinner=False)
+@st.cache_data(ttl=10, show_spinner=False)
 def get_public_quote_snapshot():
     """行情大屏快照 — 单连接批量查询，避免多次网络往返到 Neon"""
     with get_db_cm() as conn:
