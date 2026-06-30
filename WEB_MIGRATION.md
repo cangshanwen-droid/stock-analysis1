@@ -52,6 +52,7 @@
 - 前端已接入登录表单和账户资产面板
 - `/orders` 已要求 Bearer token，但仍返回 `order_api_not_enabled_yet`
 - `/orders` 已接入后端撮合服务；只有 `ENABLE_ORDER_WRITES=true` 时才真实写入数据库
+- `/admin/market/close` 和 `/admin/market/open` 已接入后端市场控制服务；只有 `ENABLE_MARKET_WRITES=true` 时才真实写入数据库
 
 验收标准：
 
@@ -64,6 +65,7 @@
 
 ```text
 ENABLE_ORDER_WRITES=false
+ENABLE_MARKET_WRITES=false
 ```
 
 保持 `false` 时前端可以测试提交流程，但不会改比赛数据。只有完成迁移测试后才改为 `true`。
@@ -127,6 +129,7 @@ DATABASE_URL=postgresql://user:password@host:5432/gipfel
 CORS_ALLOW_ORIGINS=https://gipfel.example.com
 TOKEN_SECRET=replace-with-a-long-random-secret
 ENABLE_ORDER_WRITES=false
+ENABLE_MARKET_WRITES=false
 ```
 
 迁移旧 SQLite 数据：

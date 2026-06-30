@@ -89,6 +89,22 @@ export async function submitOrder(token: string, order: {
   return res.json();
 }
 
+export async function marketControl(token: string, action: "open" | "close") {
+  if (!API_BASE || token === "demo-token") {
+    return {
+      accepted: false,
+      reason: "demo_mode",
+      detail: "演示模式未连接真实后端"
+    };
+  }
+  const res = await fetch(`${API_BASE}/admin/market/${action}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error("market_control_failed");
+  return res.json();
+}
+
 export function demoCandles(symbol: string): Candle[] {
   const seed = Array.from(symbol).reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i + 5), 0);
   const base = symbol === "YLIAO" ? 25 : symbol === "JGONG" ? 20 : symbol === "JXIAO" ? 15 : 10;

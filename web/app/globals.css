@@ -314,6 +314,20 @@ button {
   gap: 8px;
 }
 
+.admin-box {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.admin-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .section-caption {
   color: var(--muted);
   font-size: 12px;

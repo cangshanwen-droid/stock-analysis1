@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
-import { fetchCandles, fetchMarket, fetchPortfolio, login, submitOrder } from "../lib/api";
+import { fetchCandles, fetchMarket, fetchPortfolio, login, marketControl, submitOrder } from "../lib/api";
 import type { Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
@@ -28,6 +28,7 @@ export function TradingWorkspace() {
   const [orderPrice, setOrderPrice] = useState("0.00");
   const [orderShares, setOrderShares] = useState("100");
   const [orderMessage, setOrderMessage] = useState("");
+  const [adminMessage, setAdminMessage] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -109,6 +110,19 @@ export function TradingWorkspace() {
       }
     } catch {
       setOrderMessage("委托提交失败，请稍后重试");
+    }
+  }
+
+  async function submitMarketAction(action: "open" | "close") {
+    if (!token) return;
+    setAdminMessage("");
+    try {
+      const result = await marketControl(token, action);
+      setAdminMessage(result.detail || result.reason || "操作完成");
+      const nextMarket = await fetchMarket();
+      setMarket(nextMarket);
+    } catch {
+      setAdminMessage("市场控制失败，请检查管理员权限");
     }
   }
 
@@ -248,6 +262,16 @@ export function TradingWorkspace() {
                     <div className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</div>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {user?.role === "admin" ? (
+              <div className="admin-box">
+                <div className="section-caption">市场控制</div>
+                <div className="admin-actions">
+                  <button className="ghost" onClick={() => submitMarketAction("close")}>收盘结算</button>
+                  <button className="ghost" onClick={() => submitMarketAction("open")}>开启下一轮</button>
+                </div>
+                {adminMessage && <div className="hint-text">{adminMessage}</div>}
               </div>
             ) : null}
           </aside>

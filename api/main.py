@@ -13,11 +13,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, connect, fetchall, fetchone, is_postgres, row_dict
+from .market_ops import close_market, open_market
 from .trading import place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
 ENABLE_ORDER_WRITES = os.environ.get("ENABLE_ORDER_WRITES", "false").lower() == "true"
+ENABLE_MARKET_WRITES = os.environ.get("ENABLE_MARKET_WRITES", "false").lower() == "true"
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
@@ -110,6 +112,7 @@ def health() -> dict[str, Any]:
         "path": "" if is_postgres() else str(DB_PATH),
         "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
         "orderWritesEnabled": ENABLE_ORDER_WRITES,
+        "marketWritesEnabled": ENABLE_MARKET_WRITES,
     }
 
 
@@ -313,4 +316,57 @@ def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_u
         "matched": result.matched,
         "round": result.round,
         "order": payload.model_dump(),
+    }
+
+
+def require_admin(user: dict[str, Any]) -> None:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="admin_required")
+
+
+@app.post("/admin/market/close")
+def close_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_MARKET_WRITES:
+        return {
+            "accepted": False,
+            "reason": "market_api_not_enabled_yet",
+            "detail": "Set ENABLE_MARKET_WRITES=true only after settlement tests pass.",
+        }
+    with connect() as conn:
+        result = close_market(conn)
+        if result.ok:
+            conn.commit()
+        else:
+            conn.rollback()
+    return {
+        "accepted": result.ok,
+        "detail": result.message,
+        "round": result.round,
+        "settledStocks": result.settled_stocks,
+        "matchedShares": result.matched_shares,
+    }
+
+
+@app.post("/admin/market/open")
+def open_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_MARKET_WRITES:
+        return {
+            "accepted": False,
+            "reason": "market_api_not_enabled_yet",
+            "detail": "Set ENABLE_MARKET_WRITES=true only after settlement tests pass.",
+        }
+    with connect() as conn:
+        result = open_market(conn)
+        if result.ok:
+            conn.commit()
+        else:
+            conn.rollback()
+    return {
+        "accepted": result.ok,
+        "detail": result.message,
+        "round": result.round,
+        "settledStocks": result.settled_stocks,
+        "matchedShares": result.matched_shares,
     }
