@@ -2242,11 +2242,11 @@ def render_competition_strip():
         <div class="competition-cell primary {state_cls}">
             <div class="label">竞赛状态</div>
             <div class="value">第 {snap["round"]} 轮 · {esc(snap["state"])}</div>
-            <div class="sub">实时撮合 · 轮次结算 · 赛程监控</div>
+            <div class="sub">操作员代表公司交易 · 轮次结算</div>
         </div>
-        <div class="competition-cell"><div class="label">参赛队伍</div><div class="value">{fmt_num(snap["active_players"])}/{fmt_num(snap["players"])}</div><div class="sub">有效/总数</div></div>
-        <div class="competition-cell"><div class="label">交易标的</div><div class="value">{fmt_num(snap["stocks"])}</div><div class="sub">上市公司</div></div>
-        <div class="competition-cell"><div class="label">本轮成交</div><div class="value">{fmt_num(snap["round_trades"])}</div><div class="sub">选手委托成交</div></div>
+        <div class="competition-cell"><div class="label">操作员账号</div><div class="value">{fmt_num(snap["active_players"])}/{fmt_num(snap["players"])}</div><div class="sub">有效/总数</div></div>
+        <div class="competition-cell"><div class="label">参赛公司</div><div class="value">{fmt_num(snap["stocks"])}</div><div class="sub">股票/公司</div></div>
+        <div class="competition-cell"><div class="label">本轮成交</div><div class="value">{fmt_num(snap["round_trades"])}</div><div class="sub">操作员委托成交</div></div>
         <div class="competition-cell"><div class="label">累计成交</div><div class="value">{fmt_num(snap["total_trades"])}</div><div class="sub">全赛程记录</div></div>
     </div>
     """, unsafe_allow_html=True)
@@ -2494,7 +2494,7 @@ def page_trade_hall():
     if not stocks: st.error("无股票"); return
     mkt_open = is_market_open()
     mkt_round = get_market_round()
-    page_header("交易大厅", f"第 {mkt_round} 轮 · {'可提交买卖委托' if mkt_open else '等待管理员开市'}", badge=("交易中" if mkt_open else "已闭市"), ok=mkt_open)
+    page_header("交易大厅", f"第 {mkt_round} 轮 · {'操作员可提交买卖委托' if mkt_open else '等待管理员开市'}", badge=("交易中" if mkt_open else "已闭市"), ok=mkt_open)
 
     if not mkt_open:
         st.markdown(f"""
