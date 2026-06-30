@@ -314,7 +314,7 @@ def auth_user(u, p):
         conn.execute("DELETE FROM login_attempts WHERE username=? AND attempt_time < datetime('now', '-30 seconds')", (u,))
         # 检查最近失败次数
         recent = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()
-if recent and recent[0] >= 5:
+        if recent and recent[0] >= 5:
             return False, ""
         r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
     if not r or not check_pwd(r["password"], p):
