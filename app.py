@@ -11,7 +11,14 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import sqlite3
+import pg8000
+from pg8000.native import literal, Connection
+
+# Neon PostgreSQL 连接（优先从 st.secrets 读取，其次是环境变量）
+_PG_USER = os.environ.get("PG_USER") or getattr(st.secrets, "PG_USER", "neondb_owner")
+_PG_PASS = os.environ.get("PG_PASS") or getattr(st.secrets, "PG_PASS", "npg_BWv4ZzCwfYa5")
+_PG_HOST = os.environ.get("PG_HOST") or getattr(st.secrets, "PG_HOST", "ep-raspy-field-aohzm3n2-pooler.c-2.ap-southeast-1.aws.neon.tech")
+_PG_DB = os.environ.get("PG_DB") or getattr(st.secrets, "PG_DB", "neondb")
 
 @contextmanager
 def get_db_cm():
@@ -908,7 +915,9 @@ html, body, .stApp {
 }
 #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
 [data-testid="stDecoration"], [data-testid="stToolbar"],
-[data-testid="manage-app-button"] { display: none !important; }
+[data-testid="manage-app-button"], [data-testid="stAppUserItem"],
+[data-testid="stHeader"] { display: none !important; }
+.stApp > header { height: 0 !important; overflow: hidden; }
 
 /* 全局 — 深色交易终端 */
 .stApp { background: #070b13 !important; }
@@ -1618,7 +1627,9 @@ SIDEBAR_CSS = """
     [data-testid="stSidebarNav"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     .stDeployButton, footer, #MainMenu, [data-testid="stToolbar"],
-    [data-testid="stDecoration"], [data-testid="manage-app-button"] { display: none !important; }
+    [data-testid="stDecoration"], [data-testid="manage-app-button"],
+    [data-testid="stAppUserItem"], [data-testid="stHeader"] { display: none !important; }
+    .stApp > header { height: 0 !important; overflow: hidden; }
     section[data-testid="stSidebar"]::-webkit-scrollbar { width: 3px; background: transparent; }
     section[data-testid="stSidebar"]::-webkit-scrollbar-thumb { background: #1e2a3a; border-radius: 3px; }
 
@@ -1719,7 +1730,9 @@ DASHBOARD_CSS = """
     section.main > div.block-container,
     [data-testid="stMainBlockContainer"] { padding: 0 14px 0 14px !important; max-width: 1400px !important; margin: 0 auto !important; }
     #MainMenu, .stDeployButton, footer, [data-testid="stStatusWidget"],
-    [data-testid="stDecoration"], [data-testid="stToolbar"], header { display: none !important; }
+    [data-testid="stDecoration"], [data-testid="stToolbar"], header,
+    [data-testid="manage-app-button"], [data-testid="stAppUserItem"],
+    [data-testid="stHeader"] { display: none !important; }
     .stApp > header { height: 0 !important; overflow: hidden; }
 
     .dash-top { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px 0; }
@@ -2014,7 +2027,9 @@ def page_login():
         }
         section[data-testid="stSidebar"] { display: none !important; }
         .stApp > header { height: 0 !important; overflow: hidden; }
-        div[data-testid="stToolbar"] { visibility: hidden; }
+        div[data-testid="stToolbar"],
+        [data-testid="manage-app-button"], [data-testid="stAppUserItem"],
+        [data-testid="stHeader"] { display: none !important; }
         section.main > div.block-container,
         [data-testid="stMainBlockContainer"] { padding: 0 !important; }
         div[data-testid="stTextInput"] input {
