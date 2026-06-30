@@ -915,6 +915,11 @@ def get_kline_data(symbol, include_live=False):
                 })
     return sorted(result, key=lambda x: x["round"])
 
+@st.cache_data(ttl=5, show_spinner=False)
+def _cached_kline(symbol):
+    """缓存非实时K线数据，用于行情大屏和K线展板"""
+    return get_kline_data(symbol, include_live=False)
+
 def get_market_card_data(stock):
     """Return dashboard quote data from latest K-line instead of stale stock columns."""
     symbol = stock["symbol"]
@@ -2083,7 +2088,7 @@ def page_public_dashboard():
     # K线图
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
-    data = get_kline_data(sym)
+    data = _cached_kline(sym)
     if data:
         raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
         first_open = float(raw_k.iloc[0]["open_price"])
@@ -2101,42 +2106,6 @@ def page_public_dashboard():
         vol_line = [RED_UP if u else GREEN_DN for u in up_mask]
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.75, 0.25])
-        for is_up, color in [(True, RED_UP), (False, GREEN_DN)]:
-            wick_x, wick_y = [], []
-            for _, r in df_k[up_mask == is_up].iterrows():
-                wick_x.extend([r["x_pos"], r["x_pos"], None])
-                wick_y.extend([r["low_price"], r["high_price"], None])
-            fig.add_trace(go.Scatter(x=wick_x, y=wick_y, mode="lines",
-                line=dict(color=color, width=1.05), hoverinfo="skip", showlegend=False), row=1, col=1)
-
-        body_base = df_k[["open_price", "close_price"]].min(axis=1)
-        body_height = (df_k["close_price"] - df_k["open_price"]).abs()
-        min_body = max((df_k["high_price"].max() - df_k["low_price"].min()) * 0.008, float(df_k.iloc[-1]["close_price"]) * 0.001, 0.01)
-        body_height = body_height.where(body_height > min_body, min_body)
-        fig.add_trace(go.Bar(x=x_values, y=body_height, base=body_base, width=0.42,
-            marker=dict(color=body_fill, line=dict(color=candle_line, width=1.15)),
-            name="K线", showlegend=False,
-            customdata=np.stack([df_k["display_round"], df_k["source_round"].fillna(0), df_k["open_price"], df_k["high_price"], df_k["low_price"], df_k["close_price"], df_k["change_pct"], df_k["volume"]], axis=-1),
-            hovertemplate="轮次 %{customdata[0]}<br>数据轮次 %{customdata[1]:.0f}<br>开盘 %{customdata[2]:,.2f}<br>最高 %{customdata[3]:,.2f}<br>最低 %{customdata[4]:,.2f}<br>收盘 %{customdata[5]:,.2f}<br>涨跌 %{customdata[6]:+.2f}%<br>成交量 %{customdata[7]:,.0f}<extra></extra>"), row=1, col=1)
-
-        for col, color, name in [("upper", "#6b9ec7", "UPPER"), ("mid", "#d6a11d", "MID"), ("lower", "#d957a8", "LOWER")]:
-            if df_k[col].notna().any():
-                fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
-                    line=dict(color=color, width=1.25), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
-        for col, color, name in [("ma5", "#f59e0b", "MA5"), ("ma10", "#4c8fbd", "MA10")]:
-            if col in df_k and df_k[col].notna().any():
-                fig.add_trace(go.Scatter(x=x_values, y=df_k[col], mode="lines",
-                    line=dict(color=color, width=1.0), name=name, hovertemplate=f"{name} %{{y:,.2f}}<extra></extra>"), row=1, col=1)
-
-        fig.add_trace(go.Bar(x=x_values, y=df_k["volume"], width=0.42,
-            marker=dict(color=vol_fill, line=dict(color=vol_line, width=1.05)),
-            name="成交量", showlegend=False, hovertemplate="量 %{y:,.0f}<extra></extra>"), row=2, col=1)
-        for period, color, name in [(5, "#d6a11d", "VOL5"), (10, "#4c8fbd", "VOL10")]:
-            vol_ma = df_k["volume"].rolling(period, min_periods=2).mean()
-            fig.add_trace(go.Scatter(x=x_values, y=vol_ma, mode="lines",
-                line=dict(color=color, width=1), showlegend=False, hovertemplate=f"{name} %{{y:,.0f}}<extra></extra>"), row=2, col=1)
-
-        latest_mid = float(df_k["mid"].dropna().iloc[-1]) if df_k["mid"].notna().any() else float(df_k.iloc[-1]["close_price"])
         latest_upper = float(df_k["upper"].dropna().iloc[-1]) if df_k["upper"].notna().any() else float(df_k["high_price"].max())
         latest_lower = float(df_k["lower"].dropna().iloc[-1]) if df_k["lower"].notna().any() else float(df_k["low_price"].min())
         latest_close = float(df_k.iloc[-1]["close_price"])
@@ -2830,7 +2799,7 @@ def page_kline():
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()))
     sym = opts[sel]["symbol"]
-    data = get_kline_data(sym)
+    data = _cached_kline(sym)
 
     if not data:
         st.info("暂无行情K线数据")
