@@ -20,8 +20,9 @@
 
 - `web/`：Next.js 正式网页前端骨架
 - `api/`：FastAPI 后端骨架
-- `api/main.py`：健康检查、行情、K线只读接口
+- `api/main.py`：健康检查、登录认证、账户组合、行情、K线只读接口
 - `.gitignore`：屏蔽数据库、缓存、依赖、环境变量
+- 下单接口已预留，但生产写入仍保持关闭，等待认证、数据库和结算测试完成后再启用
 
 ## 迁移阶段
 
@@ -39,6 +40,14 @@
 ### Phase 2：认证和选手端交易
 
 迁移登录、角色、选手交易、持仓、记录。下单 API 需要通过认证后才允许写入。
+
+当前进度：
+
+- 已支持 `/auth/login`，兼容 Streamlit 旧密码格式 `salt:sha256(password+salt)`
+- 已支持 `/auth/me`
+- 已支持 `/portfolio`，返回资金、总资产、持仓、未成交委托、近期成交
+- 前端已接入登录表单和账户资产面板
+- `/orders` 已要求 Bearer token，但仍返回 `order_api_not_enabled_yet`
 
 验收标准：
 

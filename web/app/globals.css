@@ -229,6 +229,27 @@ button {
   color: var(--text);
 }
 
+.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.login-box,
+.account-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: #0b1220;
+  border-radius: 7px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.error-text {
+  color: #ff7b88;
+  font-size: 12px;
+}
+
 .segmented button.buy {
   background: rgba(242, 54, 69, 0.14);
   border-color: rgba(242, 54, 69, 0.3);
@@ -279,6 +300,33 @@ button {
   gap: 10px;
   color: #cbd5e1;
   font-size: 13px;
+}
+
+.positions {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.section-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.position-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 @media (max-width: 980px) {

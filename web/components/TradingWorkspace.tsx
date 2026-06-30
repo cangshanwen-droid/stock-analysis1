@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
-import { fetchCandles, fetchMarket } from "../lib/api";
-import type { Candle, MarketSnapshot, StockQuote } from "../lib/types";
+import { fetchCandles, fetchMarket, fetchPortfolio, login } from "../lib/api";
+import type { Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
 function fmtMoney(value: number) {
@@ -19,6 +19,12 @@ export function TradingWorkspace() {
   const [selected, setSelected] = useState("JGONG");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [token, setToken] = useState<string>("");
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
+  const [loginName, setLoginName] = useState("player1");
+  const [loginPassword, setLoginPassword] = useState("player1");
+  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -41,6 +47,35 @@ export function TradingWorkspace() {
       alive = false;
     };
   }, [selected]);
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    fetchPortfolio(token)
+      .then((data) => {
+        if (!alive) return;
+        setPortfolio(data);
+        setUser(data.user);
+      })
+      .catch(() => {
+        if (alive) setPortfolio(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  async function submitLogin() {
+    setLoginError("");
+    try {
+      const data = await login(loginName.trim(), loginPassword);
+      setToken(data.accessToken);
+      setUser(data.user);
+      setPortfolio(null);
+    } catch {
+      setLoginError("账号或密码不正确");
+    }
+  }
 
   const stocks = market?.stocks ?? [];
   const current: StockQuote | undefined = useMemo(
@@ -70,7 +105,13 @@ export function TradingWorkspace() {
             <div className="meta">Trading Arena</div>
             <strong>股票交易竞赛平台</strong>
           </div>
-          <button className="ghost">登录交易</button>
+          {user ? (
+            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); }}>
+              {user.username} · 退出
+            </button>
+          ) : (
+            <button className="ghost" onClick={submitLogin}>登录交易</button>
+          )}
         </div>
 
         <section className="status-strip">
@@ -113,6 +154,29 @@ export function TradingWorkspace() {
 
           <aside className="ticket">
             <h2>交易委托</h2>
+            {!user && (
+              <div className="login-box">
+                <div className="field">
+                  <label>账号</label>
+                  <input value={loginName} onChange={(e) => setLoginName(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>密码</label>
+                  <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                </div>
+                <button className="primary" onClick={submitLogin}>登录交易</button>
+                {loginError && <div className="error-text">{loginError}</div>}
+              </div>
+            )}
+            {user && (
+              <div className="account-box">
+                <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
+                <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "选手"}</strong></div>
+                <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
+                <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+              </div>
+            )}
             <div className="segmented">
               <button className={side === "buy" ? "buy" : ""} onClick={() => setSide("buy")}>买入</button>
               <button onClick={() => setSide("sell")}>卖出</button>
@@ -134,15 +198,28 @@ export function TradingWorkspace() {
                 <label>委托数量</label>
                 <input defaultValue="100" />
               </div>
-              <button className="primary">{side === "buy" ? "提交买入" : "提交卖出"}</button>
+              <button className="primary" disabled={!user}>{side === "buy" ? "提交买入" : "提交卖出"}</button>
             </div>
 
             <div className="mini-table">
-              <div className="row"><span>可用资金</span><strong>¥1,000,000</strong></div>
               <div className="row"><span>当前价格</span><strong>{current ? fmtMoney(current.price) : "--"}</strong></div>
               <div className="row"><span>委托模式</span><strong>限价撮合</strong></div>
               <div className="row"><span>数据源</span><strong>API / Demo fallback</strong></div>
             </div>
+            {portfolio?.positions.length ? (
+              <div className="positions">
+                <div className="section-caption">当前持仓</div>
+                {portfolio.positions.map((pos) => (
+                  <div className="position-row" key={pos.symbol}>
+                    <div>
+                      <strong>{pos.name}</strong>
+                      <span>{pos.shares} 股 · 成本 {fmtMoney(pos.avgCost)}</span>
+                    </div>
+                    <div className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </aside>
         </section>
       </main>

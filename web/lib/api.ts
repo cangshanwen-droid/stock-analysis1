@@ -1,4 +1,4 @@
-import type { Candle, MarketSnapshot } from "./types";
+import type { Candle, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
@@ -24,6 +24,42 @@ export async function fetchCandles(symbol: string): Promise<Candle[]> {
   if (!API_BASE) return demoCandles(symbol);
   const res = await fetch(`${API_BASE}/stocks/${symbol}/kline`, { cache: "no-store" });
   if (!res.ok) return demoCandles(symbol);
+  return res.json();
+}
+
+export async function login(username: string, password: string): Promise<LoginResult> {
+  if (!API_BASE) {
+    return {
+      accessToken: "demo-token",
+      tokenType: "bearer",
+      expiresIn: 28800,
+      user: { username, role: username === "admin" ? "admin" : "player", balance: 1000000 }
+    };
+  }
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  if (!res.ok) throw new Error("login_failed");
+  return res.json();
+}
+
+export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> {
+  if (!API_BASE || token === "demo-token") {
+    return {
+      user: { username: "player1", role: "player", balance: 1000000 },
+      summary: { marketValue: 0, totalAssets: 1000000, totalPnl: 0, pnlRatio: 0 },
+      positions: [],
+      orders: [],
+      recentTrades: []
+    };
+  }
+  const res = await fetch(`${API_BASE}/portfolio`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error("portfolio_failed");
   return res.json();
 }
 
