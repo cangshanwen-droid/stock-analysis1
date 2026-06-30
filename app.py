@@ -1908,21 +1908,20 @@ def page_public_dashboard():
         </div>"""
     st.markdown(f'<div class="stock-grid">{cards}</div>', unsafe_allow_html=True)
 
-    # 股票选择 + K线图
-    st.markdown('<div class="tab-row">', unsafe_allow_html=True)
-    cols = st.columns([1] * len(stocks))
-    if "dash_sym" not in st.session_state:
-        st.session_state.dash_sym = stocks[0]["symbol"]
-    for i, s in enumerate(stocks):
-        active = "active" if st.session_state.dash_sym == s["symbol"] else ""
-        btn_type = "primary" if active else "secondary"
-        if cols[i].button(f"{s['name']}", key=f"tab_{s['symbol']}", type=btn_type, use_container_width=True):
-            st.session_state.dash_sym = s["symbol"]
-    st.markdown('</div>', unsafe_allow_html=True)
     _render_dash_chart(stocks)
 
 @st.fragment
 def _render_dash_chart(stocks):
+    st.markdown('<div class="tab-row">', unsafe_allow_html=True)
+    __cols = st.columns([1] * len(stocks))
+    if "dash_sym" not in st.session_state:
+        st.session_state.dash_sym = stocks[0]["symbol"]
+    for __i, __s in enumerate(stocks):
+        __active = "active" if st.session_state.dash_sym == __s["symbol"] else ""
+        __btn_type = "primary" if __active else "secondary"
+        if __cols[__i].button(__s["name"], key=f"ftab_{__s['symbol']}", type=__btn_type, use_container_width=True):
+            st.session_state.dash_sym = __s["symbol"]
+    st.markdown('</div>', unsafe_allow_html=True)
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
     data = get_kline_data(sym)
