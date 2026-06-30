@@ -1,4 +1,4 @@
-import type { Candle, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
+import type { AdminStock, AdminUser, AuditLog, Candle, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
@@ -103,6 +103,28 @@ export async function marketControl(token: string, action: "open" | "close") {
   });
   if (!res.ok) throw new Error("market_control_failed");
   return res.json();
+}
+
+export async function fetchAdminOverview(token: string): Promise<{
+  users: AdminUser[];
+  stocks: AdminStock[];
+  auditLogs: AuditLog[];
+}> {
+  if (!API_BASE || token === "demo-token") {
+    return { users: [], stocks: [], auditLogs: [] };
+  }
+  const headers = { Authorization: `Bearer ${token}` };
+  const [usersRes, stocksRes, logsRes] = await Promise.all([
+    fetch(`${API_BASE}/admin/users`, { headers, cache: "no-store" }),
+    fetch(`${API_BASE}/admin/stocks`, { headers, cache: "no-store" }),
+    fetch(`${API_BASE}/admin/audit-logs?limit=12`, { headers, cache: "no-store" })
+  ]);
+  if (!usersRes.ok || !stocksRes.ok || !logsRes.ok) throw new Error("admin_overview_failed");
+  return {
+    users: await usersRes.json(),
+    stocks: await stocksRes.json(),
+    auditLogs: await logsRes.json()
+  };
 }
 
 export function demoCandles(symbol: string): Candle[] {

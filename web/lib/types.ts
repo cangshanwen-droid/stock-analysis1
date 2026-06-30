@@ -57,3 +57,32 @@ export type PortfolioSnapshot = {
   orders: Array<Record<string, unknown>>;
   recentTrades: Array<Record<string, unknown>>;
 };
+
+export type AdminUser = {
+  id: number;
+  username: string;
+  role: "admin" | "player";
+  status: string;
+  balance: number;
+  createdAt: string;
+};
+
+export type AdminStock = {
+  id: number;
+  symbol: string;
+  name: string;
+  price: number;
+  previousClose: number;
+  isDeleted: boolean;
+  totalShares: number;
+  revenue: number;
+  industryPe: number;
+};
+
+export type AuditLog = {
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
+  createdAt: string;
+};

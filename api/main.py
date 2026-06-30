@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .db import DB_PATH, DatabaseNotReady, connect, fetchall, fetchone, is_postgres, row_dict
+from .db import DB_PATH, DatabaseNotReady, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market
 from .trading import place_order
 
@@ -20,6 +20,7 @@ TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
 ENABLE_ORDER_WRITES = os.environ.get("ENABLE_ORDER_WRITES", "false").lower() == "true"
 ENABLE_MARKET_WRITES = os.environ.get("ENABLE_MARKET_WRITES", "false").lower() == "true"
+ENABLE_ADMIN_WRITES = os.environ.get("ENABLE_ADMIN_WRITES", "false").lower() == "true"
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
@@ -49,6 +50,23 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=120)
 
 
+class UserStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|disabled)$")
+
+
+class PasswordResetRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=120)
+
+
+class StockUpdateRequest(BaseModel):
+    revenue: float | None = Field(default=None, gt=0)
+    total_shares: float | None = Field(default=None, gt=0)
+    industry_pe: float | None = Field(default=None, gt=0)
+    carbon_price: float | None = None
+    industry_carbon_mean: float | None = Field(default=None, gt=0)
+    premium_rate: float | None = None
+
+
 def b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
@@ -60,6 +78,11 @@ def unb64url(data: str) -> bytes:
 
 def hash_pwd(password: str, salt: str = "") -> str:
     return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
+
+
+def make_pwd(password: str) -> str:
+    salt = b64url(os.urandom(8))
+    return f"{salt}:{hash_pwd(password, salt)}"
 
 
 def check_pwd(stored: str, plain: str) -> bool:
@@ -113,6 +136,7 @@ def health() -> dict[str, Any]:
         "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
         "orderWritesEnabled": ENABLE_ORDER_WRITES,
         "marketWritesEnabled": ENABLE_MARKET_WRITES,
+        "adminWritesEnabled": ENABLE_ADMIN_WRITES,
     }
 
 
@@ -370,3 +394,142 @@ def open_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[s
         "settledStocks": result.settled_stocks,
         "matchedShares": result.matched_shares,
     }
+
+
+@app.get("/admin/users")
+def admin_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_admin(user)
+    with connect() as conn:
+        rows = fetchall(conn, """
+            SELECT id,username,role,status,balance,created_at
+            FROM users
+            ORDER BY id
+        """)
+    return [
+        {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "status": row["status"],
+            "balance": float(row["balance"] or 0),
+            "createdAt": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+@app.patch("/admin/users/{username}/status")
+def admin_update_user_status(username: str, payload: UserStatusRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if username == user["username"]:
+        raise HTTPException(status_code=400, detail="cannot_disable_self")
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    with connect() as conn:
+        execute_user = fetchone(conn, "SELECT username FROM users WHERE username=? AND role='player'", (username,))
+        if not execute_user:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        execute(conn, "UPDATE users SET status=? WHERE username=? AND role='player'", (payload.status, username))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "user_status", username, payload.status))
+        conn.commit()
+    return {"accepted": True, "username": username, "status": payload.status}
+
+
+@app.patch("/admin/users/{username}/password")
+def admin_reset_user_password(username: str, payload: PasswordResetRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    with connect() as conn:
+        target = fetchone(conn, "SELECT username FROM users WHERE username=?", (username,))
+        if not target:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        execute(conn, "UPDATE users SET password=? WHERE username=?", (make_pwd(payload.password), username))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "reset_password", username, "password reset from web api"))
+        conn.commit()
+    return {"accepted": True, "username": username}
+
+
+@app.get("/admin/stocks")
+def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_admin(user)
+    with connect() as conn:
+        rows = fetchall(conn, """
+            SELECT id,symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
+                   carbon_price,industry_carbon_mean,premium_rate,init_funds,last_update
+            FROM stocks
+            ORDER BY symbol
+        """)
+    return [
+        {
+            "id": row["id"],
+            "symbol": row["symbol"],
+            "name": row["name"],
+            "price": float(row["current_price"] or 0),
+            "previousClose": float(row["previous_close"] or 0),
+            "isDeleted": bool(row["is_deleted"]),
+            "totalShares": float(row["total_shares"] or 0),
+            "revenue": float(row["revenue"] or 0),
+            "industryPe": float(row["industry_pe"] or 0),
+            "carbonPrice": float(row["carbon_price"] or 0),
+            "industryCarbonMean": float(row["industry_carbon_mean"] or 0),
+            "premiumRate": float(row["premium_rate"] or 0),
+            "initFunds": float(row["init_funds"] or 0),
+            "lastUpdate": str(row["last_update"]),
+        }
+        for row in rows
+    ]
+
+
+@app.patch("/admin/stocks/{symbol}")
+def admin_update_stock(symbol: str, payload: StockUpdateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    safe = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
+    column_map = {
+        "revenue": "revenue",
+        "total_shares": "total_shares",
+        "industry_pe": "industry_pe",
+        "carbon_price": "carbon_price",
+        "industry_carbon_mean": "industry_carbon_mean",
+        "premium_rate": "premium_rate",
+    }
+    if not safe:
+        return {"accepted": False, "reason": "no_fields"}
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    sets = ", ".join(f"{column_map[key]}=?" for key in safe)
+    vals = tuple(safe.values()) + (symbol.upper(),)
+    with connect() as conn:
+        target = fetchone(conn, "SELECT symbol FROM stocks WHERE symbol=?", (symbol.upper(),))
+        if not target:
+            raise HTTPException(status_code=404, detail="stock_not_found")
+        execute(conn, f"UPDATE stocks SET {sets} WHERE symbol=?", vals)
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "update_stock", symbol.upper(), json.dumps(safe, ensure_ascii=False)))
+        conn.commit()
+    return {"accepted": True, "symbol": symbol.upper(), "updated": safe}
+
+
+@app.get("/admin/audit-logs")
+def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    require_admin(user)
+    limit = min(max(limit, 1), 200)
+    with connect() as conn:
+        rows = fetchall(conn, """
+            SELECT actor,action,target,detail,created_at
+            FROM audit_logs
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+    return [
+        {
+            "actor": row["actor"],
+            "action": row["action"],
+            "target": row["target"],
+            "detail": row["detail"],
+            "createdAt": str(row["created_at"]),
+        }
+        for row in rows
+    ]

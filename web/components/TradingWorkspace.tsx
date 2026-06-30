@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
-import { fetchCandles, fetchMarket, fetchPortfolio, login, marketControl, submitOrder } from "../lib/api";
-import type { Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
+import { fetchAdminOverview, fetchCandles, fetchMarket, fetchPortfolio, login, marketControl, submitOrder } from "../lib/api";
+import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
 function fmtMoney(value: number) {
@@ -19,7 +19,7 @@ export function TradingWorkspace() {
   const [selected, setSelected] = useState("JGONG");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [token, setToken] = useState<string>("");
+  const [token, setToken] = useState("");
   const [user, setUser] = useState<UserSession | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
   const [loginName, setLoginName] = useState("player1");
@@ -29,6 +29,9 @@ export function TradingWorkspace() {
   const [orderShares, setOrderShares] = useState("100");
   const [orderMessage, setOrderMessage] = useState("");
   const [adminMessage, setAdminMessage] = useState("");
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -68,6 +71,27 @@ export function TradingWorkspace() {
       alive = false;
     };
   }, [token]);
+
+  useEffect(() => {
+    if (!token || user?.role !== "admin") return;
+    let alive = true;
+    fetchAdminOverview(token)
+      .then((data) => {
+        if (!alive) return;
+        setAdminUsers(data.users);
+        setAdminStocks(data.stocks);
+        setAuditLogs(data.auditLogs);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAdminUsers([]);
+        setAdminStocks([]);
+        setAuditLogs([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token, user?.role]);
 
   async function submitLogin() {
     setLoginError("");
@@ -272,6 +296,21 @@ export function TradingWorkspace() {
                   <button className="ghost" onClick={() => submitMarketAction("open")}>开启下一轮</button>
                 </div>
                 {adminMessage && <div className="hint-text">{adminMessage}</div>}
+                <div className="admin-stats">
+                  <div><span>用户</span><strong>{adminUsers.length}</strong></div>
+                  <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
+                </div>
+                {auditLogs.length ? (
+                  <div className="audit-list">
+                    <div className="section-caption">最近审计</div>
+                    {auditLogs.slice(0, 5).map((log, idx) => (
+                      <div className="audit-row" key={`${log.createdAt}-${idx}`}>
+                        <span>{log.actor} · {log.action}</span>
+                        <strong>{log.target || "-"}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </aside>

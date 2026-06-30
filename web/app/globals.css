@@ -328,6 +328,60 @@ button {
   gap: 8px;
 }
 
+.admin-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.admin-stats div {
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0b1220;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-stats span,
+.audit-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-stats strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.audit-row {
+  min-height: 34px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.audit-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-row strong {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .section-caption {
   color: var(--muted);
   font-size: 12px;
