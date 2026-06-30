@@ -11,14 +11,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pg8000
-from pg8000.native import literal, Connection
-
-# Neon PostgreSQL 连接（优先从 st.secrets 读取，其次是环境变量）
-_PG_USER = os.environ.get("PG_USER") or getattr(st.secrets, "PG_USER", "neondb_owner")
-_PG_PASS = os.environ.get("PG_PASS") or getattr(st.secrets, "PG_PASS", "npg_BWv4ZzCwfYa5")
-_PG_HOST = os.environ.get("PG_HOST") or getattr(st.secrets, "PG_HOST", "ep-raspy-field-aohzm3n2-pooler.c-2.ap-southeast-1.aws.neon.tech")
-_PG_DB = os.environ.get("PG_DB") or getattr(st.secrets, "PG_DB", "neondb")
+import sqlite3
 
 @contextmanager
 def get_db_cm():
