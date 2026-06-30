@@ -53,8 +53,16 @@ class PGConn:
         self.conn = Connection(user=PG_USER, password=PG_PASS, host=PG_HOST, database=PG_DB, port=5432)
     def execute(self, sql, params=None):
         if params:
-            # 把 %s 占位符替换为 literal 转义后的值，避免 pg8000 的 $N 索引问题
-            vals = [literal(p) if not isinstance(p, (int, float)) else str(p) for p in params]
+            vals = []
+            for p in params:
+                if isinstance(p, int):
+                    vals.append(str(p))
+                elif isinstance(p, float):
+                    vals.append(str(p))
+                elif p is None:
+                    vals.append('NULL')
+                else:
+                    vals.append(literal(p))
             i = 0
             while '%s' in sql and i < len(vals):
                 sql = sql.replace('%s', vals[i], 1)
