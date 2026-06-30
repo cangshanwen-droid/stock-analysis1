@@ -311,10 +311,10 @@ def auth_user(u, p):
     """SQLite 持久化限速：5 次失败 / 30 秒"""
     with get_db_cm() as conn:
         # 清理过期记录（超过30秒）
-        conn.execute("DELETE FROM login_attempts WHERE username=? AND attempt_time < NOW() - INTERVAL '30 seconds'", (u,))
+        conn.execute("DELETE FROM login_attempts WHERE username=? AND attempt_time < datetime('now', '-30 seconds')", (u,))
         # 检查最近失败次数
-        recent = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > NOW() - INTERVAL '30 seconds'", (u,)).fetchone()
-        if recent and recent[0] >= 5:
+        recent = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()
+if recent and recent[0] >= 5:
             return False, ""
         r = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
     if not r or not check_pwd(r["password"], p):
@@ -2201,7 +2201,7 @@ def page_login():
                     log_action(u, "login", "auth", "success")
                 else:
                     with get_db_cm() as conn:
-                        cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > NOW() - INTERVAL '30 seconds'", (u,)).fetchone()[0]
+                        cnt = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND attempt_time > datetime('now', '-30 seconds')", (u,)).fetchone()[0]
                     if cnt >= 5: st.session_state.login_error = "密码错误次数过多，请30秒后再试"
                     else: st.session_state.login_error = f"用户名或密码错误（剩余{5-cnt}次）"
             st.rerun()
