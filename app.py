@@ -32,6 +32,12 @@ class PGRow:
         return self._map[key]
     def __contains__(self, key):
         return key in self._map
+    def keys(self):
+        return self._cols
+    def __iter__(self):
+        return iter(self._cols)
+    def __len__(self):
+        return len(self._cols)
     def get(self, key, default=None):
         return self._map.get(key, default)
     def __repr__(self):
