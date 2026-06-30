@@ -1837,6 +1837,7 @@ def page_public_dashboard():
         st.markdown(f'<div style="text-align:right;"><span class="dash-clock" id="liveClock"></span></div>', unsafe_allow_html=True)
         if st.button("登录交易", key="dash_login_btn", type="primary", use_container_width=True):
             st.session_state.show_login = True
+            st.rerun()
 
     # 市场状态条
     st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round" id="liveClockMkt"></span></div>', unsafe_allow_html=True)
