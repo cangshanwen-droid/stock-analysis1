@@ -1,0 +1,17 @@
+data/*.db
+data/*.db-*
+data/*.backup.db
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+!web/.env.example
+!api/.env.example
+node_modules/
+.next/
+*.tsbuildinfo
+dist/
+build/
+.venv/
+venv/
