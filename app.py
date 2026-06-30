@@ -3415,6 +3415,7 @@ def main():
             tp = "primary" if is_active else "secondary"
             if st.button(n, key=f"ns_{n}", type=tp, use_container_width=True):
                 st.session_state.nav_current = n
+                st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
             st.session_state.logged_in = False
@@ -3440,6 +3441,7 @@ def main():
             tp = "primary" if n == st.session_state.nav_current else "secondary"
             if st.button(n, key=f"dn_{n}", type=tp, use_container_width=True):
                 st.session_state.nav_current = n
+                st.rerun()
         st.markdown('<div class="desktop-nav-spacer"></div>', unsafe_allow_html=True)
         if st.button("退出登录", key="dn_exit", use_container_width=True):
             st.session_state.logged_in = False
@@ -3457,6 +3459,7 @@ def main():
                     tp = "primary" if mn == sel else "secondary"
                     if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
                         st.session_state.nav_current = mn
+                        st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
