@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", ROOT_DIR / "data" / "stock_analysis.db"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
 
@@ -87,16 +88,29 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
         raise HTTPException(status_code=401, detail="missing_token")
     payload = verify_token(authorization.removeprefix("Bearer ").strip())
     with db() as conn:
-        user = row_dict(conn.execute(
+        user = row_dict(fetchone(conn,
             "SELECT username,role,status,balance FROM users WHERE username=?",
             (payload.get("sub"),),
-        ).fetchone())
+        ))
     if not user or user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="inactive_user")
     return user
 
 
-def db() -> sqlite3.Connection:
+def is_postgres() -> bool:
+    return bool(DATABASE_URL)
+
+
+def bind(sql: str) -> str:
+    return sql.replace("?", "%s") if is_postgres() else sql
+
+
+def db():
+    if is_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+
+        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
     if not DB_PATH.exists():
         raise HTTPException(status_code=503, detail="database_not_ready")
     conn = sqlite3.connect(DB_PATH)
@@ -104,7 +118,15 @@ def db() -> sqlite3.Connection:
     return conn
 
 
-def row_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+def fetchone(conn, sql: str, params: tuple[Any, ...] = ()):
+    return conn.execute(bind(sql), params).fetchone()
+
+
+def fetchall(conn, sql: str, params: tuple[Any, ...] = ()):
+    return conn.execute(bind(sql), params).fetchall()
+
+
+def row_dict(row: Any | None) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
@@ -112,8 +134,9 @@ def row_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
 def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "database": DB_PATH.exists(),
-        "path": str(DB_PATH),
+        "database": True if is_postgres() else DB_PATH.exists(),
+        "backend": "postgres" if is_postgres() else "sqlite",
+        "path": "" if is_postgres() else str(DB_PATH),
         "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
     }
 
@@ -121,10 +144,10 @@ def health() -> dict[str, Any]:
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
     with db() as conn:
-        user = row_dict(conn.execute(
+        user = row_dict(fetchone(conn,
             "SELECT username,password,role,status,balance FROM users WHERE username=?",
             (payload.username,),
-        ).fetchone())
+        ))
     if not user or not check_pwd(str(user["password"]), payload.password):
         raise HTTPException(status_code=401, detail="invalid_credentials")
     if user.get("status") == "disabled":
@@ -155,10 +178,10 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 @app.get("/market")
 def market() -> dict[str, Any]:
     with db() as conn:
-        state = row_dict(conn.execute("SELECT state, round FROM market_state WHERE id=1").fetchone())
-        stocks = conn.execute(
+        state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
+        stocks = fetchall(conn,
             "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
-        ).fetchall()
+        )
     return {
         "round": int((state or {}).get("round") or 1),
         "state": (state or {}).get("state") or "open",
@@ -181,7 +204,7 @@ def market() -> dict[str, Any]:
 @app.get("/stocks/{symbol}/kline")
 def stock_kline(symbol: str) -> list[dict[str, Any]]:
     with db() as conn:
-        rows = conn.execute(
+        rows = fetchall(conn,
             """
             SELECT round,open_price,high_price,low_price,close_price,volume,created_at
             FROM kline
@@ -189,7 +212,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
             ORDER BY round
             """,
             (symbol.upper(),),
-        ).fetchall()
+        )
     start = date(2026, 1, 1)
     return [
         {
@@ -211,9 +234,9 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     with db() as conn:
         stocks = {
             row["symbol"]: row_dict(row)
-            for row in conn.execute("SELECT symbol,name,current_price FROM stocks WHERE is_deleted=0").fetchall()
+            for row in fetchall(conn, "SELECT symbol,name,current_price FROM stocks WHERE is_deleted=0")
         }
-        buys = conn.execute(
+        buys = fetchall(conn,
             """
             SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
             FROM transactions
@@ -221,8 +244,8 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
             GROUP BY stock_symbol
             """,
             (username,),
-        ).fetchall()
-        sells = conn.execute(
+        )
+        sells = fetchall(conn,
             """
             SELECT stock_symbol,SUM(shares) AS shares
             FROM transactions
@@ -230,8 +253,8 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
             GROUP BY stock_symbol
             """,
             (username,),
-        ).fetchall()
-        orders = conn.execute(
+        )
+        orders = fetchall(conn,
             """
             SELECT stock_symbol,trade_type,price,shares,round,created_at
             FROM order_book
@@ -240,8 +263,8 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
             LIMIT 20
             """,
             (username,),
-        ).fetchall()
-        recent = conn.execute(
+        )
+        recent = fetchall(conn,
             """
             SELECT stock_symbol,trade_type,price,shares,round,trade_date
             FROM transactions
@@ -250,7 +273,7 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
             LIMIT 20
             """,
             (username,),
-        ).fetchall()
+        )
     sold = {row["stock_symbol"]: row["shares"] or 0 for row in sells}
     positions = []
     total_market_value = 0.0

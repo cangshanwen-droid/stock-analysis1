@@ -23,6 +23,9 @@
 - `api/main.py`：健康检查、登录认证、账户组合、行情、K线只读接口
 - `.gitignore`：屏蔽数据库、缓存、依赖、环境变量
 - 下单接口已预留，但生产写入仍保持关闭，等待认证、数据库和结算测试完成后再启用
+- 后端已支持 `DATABASE_URL`。配置后走 PostgreSQL；未配置时继续读取旧 SQLite
+- `api/schema.postgres.sql`：PostgreSQL 建表脚本
+- `api/migrate_sqlite_to_postgres.py`：SQLite 到 PostgreSQL 数据迁移脚本
 
 ## 迁移阶段
 
@@ -70,6 +73,13 @@
 
 SQLite 切换为 PostgreSQL，配置备份、域名、HTTPS、监控。
 
+当前进度：
+
+- 已准备 PostgreSQL schema
+- 已准备 SQLite 数据迁移脚本
+- FastAPI 已能根据 `DATABASE_URL` 自动切换 PostgreSQL
+- `/health` 会返回当前数据库后端和 `TOKEN_SECRET` 是否已配置
+
 验收标准：
 
 - 数据库重启不丢数据
@@ -104,8 +114,19 @@ NEXT_PUBLIC_API_BASE=https://api.gipfel.example.com
 后端：
 
 ```text
-DATABASE_URL=postgresql://...
+DATABASE_URL=postgresql://user:password@host:5432/gipfel
 CORS_ALLOW_ORIGINS=https://gipfel.example.com
+TOKEN_SECRET=replace-with-a-long-random-secret
 ```
 
-当前 `api/main.py` 仍支持 `SQLITE_DB_PATH` 读取旧 SQLite，方便过渡。
+迁移旧 SQLite 数据：
+
+```bash
+cd api
+pip install -r requirements.txt
+set DATABASE_URL=postgresql://user:password@host:5432/gipfel
+set SQLITE_DB_PATH=../data/stock_analysis.db
+python migrate_sqlite_to_postgres.py
+```
+
+当前 `api/main.py` 同时支持 `DATABASE_URL` 和 `SQLITE_DB_PATH`，方便灰度过渡。
