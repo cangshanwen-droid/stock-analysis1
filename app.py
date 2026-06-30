@@ -934,6 +934,59 @@ def get_market_card_data(stock):
         "round": latest_round,
     }
 
+def build_display_seed_kline(stock, symbol, target=24):
+    """Create display-only baseline K-line data when no settled rounds exist."""
+    price = float(row_get(stock, "current_price", 0) or row_get(stock, "previous_close", 0) or 1)
+    ref = float(row_get(stock, "previous_close", price) or price)
+    target = max(int(target or 24), 12)
+    seed = sum((i + 7) * ord(ch) for i, ch in enumerate(str(symbol))) % (2**32)
+    rng = np.random.default_rng(seed)
+    idx = np.arange(target)
+    base = np.linspace(ref, price, target)
+    amp = max(price, ref, 1) * 0.018
+    wave = np.sin(np.linspace(0, 3.6 * np.pi, target) + rng.uniform(0, np.pi)) * amp
+    close = np.maximum(base + wave, 0.01)
+    close[0] = ref
+    close[-1] = price
+    open_ = np.r_[ref, close[:-1] + rng.normal(0, amp * 0.18, target - 1)]
+    close[-1] = price
+    high = np.maximum(open_, close) + rng.uniform(amp * 0.18, amp * 0.95, target)
+    low = np.maximum(np.minimum(open_, close) - rng.uniform(amp * 0.18, amp * 0.95, target), 0.01)
+    volume_base = max(float(row_get(stock, "total_shares", 10000) or 10000) * 0.025, 100)
+    volume = np.maximum(volume_base * (0.78 + 0.32 * np.sin(np.linspace(0, 2.8 * np.pi, target) + 0.6))
+                        * rng.uniform(0.75, 1.25, target), 1).astype(int)
+    rows = []
+    for i in range(target):
+        prev = ref if i == 0 else close[i - 1]
+        rows.append({
+            "stock_symbol": symbol,
+            "round": i + 1,
+            "open_price": round(float(open_[i]), 2),
+            "high_price": round(float(high[i]), 2),
+            "low_price": round(float(low[i]), 2),
+            "close_price": round(float(close[i]), 2),
+            "volume": int(volume[i]),
+            "buy_total": float(volume[i]) * price * 0.55,
+            "sell_total": float(volume[i]) * price * 0.45,
+            "change_pct": round((close[i] - prev) / prev * 100, 2) if prev else 0,
+            "display_only": True,
+        })
+    rows[-1]["close_price"] = round(price, 2)
+    rows[-1]["high_price"] = max(rows[-1]["high_price"], rows[-1]["open_price"], rows[-1]["close_price"])
+    rows[-1]["low_price"] = min(rows[-1]["low_price"], rows[-1]["open_price"], rows[-1]["close_price"])
+    return rows
+
+def get_display_kline_data(symbol, stock=None, include_live=False):
+    """Return real K-line data, or a display-only baseline without touching results."""
+    data = get_kline_data(symbol, include_live=include_live)
+    if data:
+        return data
+    if stock is None:
+        with get_db_cm() as conn:
+            row = conn.execute("SELECT * FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)).fetchone()
+            stock = dict(row) if row else None
+    return build_display_seed_kline(stock, symbol) if stock else []
+
 @st.cache_data(ttl=1, show_spinner=False)
 def get_public_quote_snapshot():
     stocks = get_stocks()
@@ -2027,7 +2080,7 @@ def page_public_dashboard():
     # K线图
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
-    data = get_kline_data(sym)
+    data = get_display_kline_data(sym, selected_stock)
     if data:
         raw_k = pd.DataFrame(data).sort_values("round").reset_index(drop=True)
         first_open = float(raw_k.iloc[0]["open_price"])
@@ -2754,7 +2807,7 @@ def page_kline():
     opts = {f"{s['name']} ({s['symbol']})": s for s in stocks}
     sel = st.selectbox("选择股票", list(opts.keys()), key="kline_stock_sel")
     sym = opts[sel]["symbol"]
-    data = get_kline_data(sym)
+    data = get_display_kline_data(sym, opts[sel])
 
     if not data:
         st.info("暂无行情K线数据")
@@ -2776,15 +2829,16 @@ def page_kline():
         st.warning(f"已过滤 {dirty} 条异常数据")
     if not cleaned:
         st.info("暂无合规K线数据"); return
-
-    # 轮次筛选
-    max_round = max(d["round"] for d in cleaned)
-    round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
-    round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
-    if round_sel != "全部":
-        target_r = int(round_sel.replace("第","").replace("轮",""))
-        cleaned = [d for d in cleaned if d["round"] == target_r]
-        if not cleaned: st.info("该轮次无数据"); return
+    display_only_mode = all(row_get(d, "display_only", False) for d in cleaned)
+    # 轮次筛选只用于真实K线，展示层基准图不作为比赛轮次。
+    if not display_only_mode:
+        max_round = max(d["round"] for d in cleaned)
+        round_options = ["全部"] + [f"第{r}轮" for r in range(1, max_round + 1)]
+        round_sel = st.selectbox("筛选轮次", round_options, key="kline_round")
+        if round_sel != "全部":
+            target_r = int(round_sel.replace("第", "").replace("轮", ""))
+            cleaned = [d for d in cleaned if d["round"] == target_r]
+            if not cleaned: st.info("该轮次无数据"); return
 
     df_k = pd.DataFrame(cleaned)
     # X轴用轮次序号（时间升序）
@@ -2805,7 +2859,7 @@ def page_kline():
     latest_high = float(latest["high_price"])
     latest_low = float(latest["low_price"])
     latest_volume = int(latest["volume"])
-    latest_round = int(latest["round"])
+    latest_round = int(get_market_round() if display_only_mode else latest["round"])
     latest_cls = "up" if latest_change >= 0 else "down"
     total_cls = "up" if total_change >= 0 else "down"
     st.markdown(f"""
@@ -3012,17 +3066,17 @@ def page_kline():
     st.plotly_chart(fig, use_container_width=True, config=config)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # 数据明细表
-    st.divider()
-    st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
-    disp = pd.DataFrame(cleaned).tail(30).copy()
-    disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
-    disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
-    disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
-    disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
-    disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
-    disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
-    render_table(disp[["round","开盘","最高","最低","收盘","涨跌幅","成交量"]].rename(columns={"round":"轮次"}))
+    if not display_only_mode:
+        st.divider()
+        st.markdown("""<div style="font-size:14px;font-weight:600;color:#eef2ff;margin-bottom:8px">每轮数据明细</div>""", unsafe_allow_html=True)
+        disp = pd.DataFrame(cleaned).tail(30).copy()
+        disp["开盘"] = disp["open_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最高"] = disp["high_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["最低"] = disp["low_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["收盘"] = disp["close_price"].apply(lambda x: f"¥{x:,.2f}")
+        disp["涨跌幅"] = disp["change_pct"].apply(lambda x: f"{x:+.2f}%")
+        disp["成交量"] = disp["volume"].apply(lambda x: f"{x:,.0f}")
+        render_table(disp[["round", "开盘", "最高", "最低", "收盘", "涨跌幅", "成交量"]].rename(columns={"round": "轮次"}))
 
 def page_admin_stock_summary():
     page_header("股票汇总", "全市场持仓、市值与盈亏概览", badge="管理员", ok=True)
