@@ -14,72 +14,23 @@ from plotly.subplots import make_subplots
 import sqlite3
 from kline_tradingview import page_kline_tradingview
 
-class PGRow:
-    """兼容 sqlite3.Row：同时支持 row['col'] 和 row[0] 访问"""
-    def __init__(self, cols, vals):
-        self._cols = list(cols)
-        self._vals = list(vals)
-        self._map = dict(zip(cols, vals))
-    def __getitem__(self, key):
-        if isinstance(key, (int, slice)):
-            return self._vals[key]
-        return self._map[key]
-    def __contains__(self, key):
-        return key in self._map
-    def keys(self):
-        return self._cols
-    def __iter__(self):
-        return iter(self._cols)
-    def __len__(self):
-        return len(self._cols)
-    def get(self, key, default=None):
-        return self._map.get(key, default)
-    def __repr__(self):
-        return str(self._map)
-
-class PGResult(list):
-    """带列名的查询结果，支持 .fetchone() / .fetchall()"""
-    def __init__(self, rows, cols):
-        items = [PGRow(cols, r) for r in rows] if cols else []
-        super().__init__(items)
-        self._cols = cols
-    def fetchone(self):
-        return self[0] if self else None
-    def fetchall(self):
-        return list(self)
-
-class PGConn:
-    """sqlite3 封装（类名保留PGConn是为了最小化改动）"""
-    def __init__(self):
-        os.makedirs("data", exist_ok=True)
-        self.conn = sqlite3.connect("data/stock_analysis.db", check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-    def execute(self, sql, params=None):
-        sql = sql.replace('%s', '?')  # 兼容原始代码中的 %s 占位符
-        if params:
-            cur = self.conn.execute(sql, params)
-        else:
-            cur = self.conn.execute(sql)
-        cols = [d[0] for d in cur.description] if cur.description else []
-        rows = cur.fetchall()
-        if cols:
-            return PGResult([PGRow(cols, list(r)) for r in rows], cols)
-        return PGResult([], cols)
-    def commit(self):
-        self.conn.commit()
-    def close(self):
-        self.conn.close()
-    def cursor(self):
-        return self.conn
-
 @contextmanager
 def get_db_cm():
-    conn = PGConn()
+    """原生 sqlite3 连接"""
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect("data/stock_analysis.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    _orig_exec = conn.execute
+    def _exec(sql, params=None):
+        if params is None:
+            return _orig_exec(sql.replace("%s", "?"))
+        return _orig_exec(sql.replace("%s", "?"), params)
+    conn.execute = _exec
     try:
         yield conn
-    except Exception:
-        conn.conn.rollback()
+    except:
+        conn.rollback()
         raise
     finally:
         conn.close()
