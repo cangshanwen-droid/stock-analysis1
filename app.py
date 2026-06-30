@@ -1862,7 +1862,6 @@ def page_public_dashboard():
         st.markdown(f'<div style="text-align:right;"><span class="dash-clock" id="liveClock"></span></div>', unsafe_allow_html=True)
         if st.button("登录交易", key="dash_login_btn", type="primary", use_container_width=True):
             st.session_state.show_login = True
-            st.rerun()
 
     # 市场状态条
     st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round" id="liveClockMkt"></span></div>', unsafe_allow_html=True)
@@ -3416,13 +3415,11 @@ def main():
             tp = "primary" if is_active else "secondary"
             if st.button(n, key=f"ns_{n}", type=tp, use_container_width=True):
                 st.session_state.nav_current = n
-                st.rerun()
         st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
         if st.button("退出登录", key="sb_exit", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
-            st.rerun()
     # 桌面端固定导航：不依赖 Streamlit 原生 sidebar，避免部署端折叠后找不到导航
     role_text = "管理员" if st.session_state.role == "admin" else "选手"
     bal = get_user_balance(st.session_state.username)
@@ -3443,13 +3440,11 @@ def main():
             tp = "primary" if n == st.session_state.nav_current else "secondary"
             if st.button(n, key=f"dn_{n}", type=tp, use_container_width=True):
                 st.session_state.nav_current = n
-                st.rerun()
         st.markdown('<div class="desktop-nav-spacer"></div>', unsafe_allow_html=True)
         if st.button("退出登录", key="dn_exit", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
-            st.rerun()
     # 移动端底部导航（仅玩家）
     sel = st.session_state.nav_current
     if st.session_state.role == "player" and sel in PLAYER_NAV:
@@ -3462,7 +3457,6 @@ def main():
                     tp = "primary" if mn == sel else "secondary"
                     if st.button(short.get(mn,mn), key=f"mb_{mn}", type=tp, use_container_width=True):
                         st.session_state.nav_current = mn
-                        st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     sel = st.session_state.nav_current
     if sel in NAV: NAV[sel]()
