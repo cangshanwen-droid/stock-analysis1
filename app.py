@@ -263,47 +263,7 @@ def get_holding_shares(username, symbol, conn=None):
                 FROM transactions
                 WHERE username=? AND stock_symbol=?
             """, (username, symbol)).fetchone()
-    return int((r["bought"] or 0) - (r["sold"] or 0)) if r else 0
-
-def settle_round(symbol):
-    with get_db_cm() as conn:
-        stock = dict(conn.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone())
-        r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,)).fetchone()
-        cr = r[0] if r and r[0] else 0
-        if cr == 0: return None, False, 0, 0, 0, 0, 0
-        txns = conn.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, cr)).fetchall()
-        buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
-        sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
-        hb = max(o[0] for o in buys) if buys else 0
-        ls_ = min(o[0] for o in sells) if sells else 0
-        matched = hb >= ls_ if buys and sells else False
-        mp = round((hb + ls_) / 2, 2) if matched else 0
-        bq = sum(o[1] for o in buys); sq = sum(o[1] for o in sells)
-        mv_ = min(bq, sq) if matched else 0
-        bt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "buy")
-        st_amt = sum(t["price"] * t["shares"] for t in txns if t["trade_type"] == "sell")
-        tv = sum(t["shares"] for t in txns)
-        pf = round(1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50, 4)
-        icm = max(row_get(stock, "industry_carbon_mean", 50), 1)
-        cf = round(1 - 0.5 * (row_get(stock, "carbon_price", 50) - icm) / icm, 4)
-        np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
-        raw = round((stock["previous_close"] or stock["current_price"]), 2) * (bt / max(st_amt, 1)) * pf * cf
-        pc = stock["previous_close"] or stock["current_price"]
-        cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
-        hi = max(np_, pc); lo = min(np_, pc)
-        conn.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, cr))
-        conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(?,?,?,?,?,?,?,?,?,?)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
-        nr = cr + 1
-        conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
-        conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
-        conn.commit()
-    try: get_stocks.clear()
-    except: pass
-    try: get_public_quote_snapshot.clear()
-    except: pass
-    return np_, matched, mp, mv_, pf, cf, round(raw, 2)
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    return int((r["bought"] or 0) - (r["sold"] or 0)) if r else 0# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 用户 / 股票 / 持仓 / 汇总（保持原逻辑）
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def auth_user(u, p):
@@ -508,7 +468,7 @@ def add_trade(username, symbol, tt, price, shares):
             if bal["balance"] < price * shares:
                 max_b = int(bal["balance"] / price)
                 if max_b <= 0:
-                    return False, f"余额不足，最多可买 {int(bal['balance']/price)} 股"
+                    return False, f"余额不足，当前最多可买 0 股（资金 {bal['balance']:,.0f}，单价 {price:.2f}）"
                 msg, m = _match_buy(conn, username, symbol, price, max_b, r, nm, bal)
             else:
                 msg, m = _match_buy(conn, username, symbol, price, shares, r, nm, bal)
@@ -3302,7 +3262,7 @@ def page_admin_settle():
                     log_action(st.session_state.username, "market_close", "round", current_round)
                     st.session_state.cf_close = False; st.session_state.cf_open = False; st.rerun()
             with cc2:
-                if st.button("取消", use_container_width=True):
+                if st.button("取消", key="cx_close", use_container_width=True):
                     st.session_state.cf_close = False; st.rerun()
 
     with c2:
@@ -3318,7 +3278,7 @@ def page_admin_settle():
                     log_action(st.session_state.username, "market_open", "round", current_round + 1)
                     st.session_state.cf_open = False; st.rerun()
             with cc2:
-                if st.button("取消", use_container_width=True):
+                if st.button("取消", key="cx_open", use_container_width=True):
                     st.session_state.cf_open = False; st.rerun()
 
     with c3:
@@ -3334,7 +3294,7 @@ def page_admin_settle():
                     log_action(st.session_state.username, "market_undo", "round", f"{current_round} -> {current_round - 1}")
                     st.session_state.cf_undo = False; st.rerun()
             with cc2:
-                if st.button("取消", use_container_width=True):
+                if st.button("取消", key="cx_undo", use_container_width=True):
                     st.session_state.cf_undo = False; st.rerun()
 
     with c4:
@@ -3354,7 +3314,7 @@ def page_admin_settle():
                             del st.session_state[k]
                     st.success("已重置赛局，所有数据已清空"); st.rerun()
             with cc2:
-                if st.button("取消", use_container_width=True):
+                if st.button("取消", key="cx_r1", use_container_width=True):
                     st.session_state.cf_r1 = False; st.rerun()
 
     # 数据库备份
