@@ -552,7 +552,6 @@ def _match_sell(conn, username, symbol, price, shares, cr, stock_name):
 def add_trade(username, symbol, tt, price, shares):
     u"""订单簿撮合：可立即成交则成交，否则挂单"""
     with get_db_cm() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         cr = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (symbol,)).fetchone()
         r = cr[0] if cr and cr[0] else 0
         if r == 0: return False, "市场已闭市，无法交易"
@@ -599,7 +598,6 @@ def get_market_round():
 
 def close_market():
     with get_db_cm() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
         if r and r["state"] == "closed": return
 
@@ -666,7 +664,6 @@ def close_market():
 
 def open_market():
     with get_db_cm() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
         if not r or r["state"] == "open": return
         new_round = r["round"] + 1
@@ -684,7 +681,6 @@ def open_market():
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
     with get_db_cm() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         r = conn.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
         if not r or r["round"] <= 1: return
         # 检查市场是否为 closed 状态才允许撤销
@@ -708,7 +704,6 @@ def undo_market():
 def reset_to_round1():
     """重开赛局：清空交易/K线/轮次，价格和资金回到初始状态，从第1轮重新开始。"""
     with get_db_cm() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         stocks = conn.execute("SELECT * FROM stocks WHERE is_deleted=0").fetchall()
         conn.execute("DELETE FROM transactions")
         conn.execute("DELETE FROM order_book")
