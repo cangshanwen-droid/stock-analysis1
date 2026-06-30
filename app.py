@@ -78,8 +78,10 @@ def init_db():
                 conn.execute(s + ';')
         conn.commit()
         # 迁移：revenue 字段
-        try: conn.execute("ALTER TABLE stocks ADD COLUMN IF NOT EXISTS revenue DOUBLE PRECISION DEFAULT 100000")
-        except: pass
+        try:
+            conn.execute("ALTER TABLE stocks ADD COLUMN revenue REAL DEFAULT 100000")
+        except:
+            pass
         conn.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
         conn.execute("INSERT INTO market_state(state,round) SELECT 'open',1 WHERE NOT EXISTS(SELECT 1 FROM market_state)")
         first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
@@ -295,7 +297,8 @@ def settle_round(symbol):
         conn.execute("UPDATE stocks SET previous_close=?,current_price=? WHERE symbol=?", (np_, np_, symbol))
         conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, cr))
         conn.commit()
-    get_stocks.clear()
+    try: get_stocks.clear()
+    except: pass
     try: get_public_quote_snapshot.clear()
     except: pass
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
@@ -383,7 +386,8 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,1) ON CONFLICT DO NOTHING", (sym.upper(),))
             conn.commit()
-        get_stocks.clear()
+        try: get_stocks.clear()
+        except: pass
         try: get_public_quote_snapshot.clear()
         except: pass
         return True, f"添加成功，初始价={price}"
@@ -400,7 +404,8 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
         conn.commit()
-    get_stocks.clear()
+    try: get_stocks.clear()
+    except: pass
     try: get_public_quote_snapshot.clear()
     except: pass
 
@@ -408,7 +413,8 @@ def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=?", (sid,))
         conn.commit()
-    get_stocks.clear()
+    try: get_stocks.clear()
+    except: pass
     try: get_public_quote_snapshot.clear()
     except: pass
 
@@ -514,7 +520,8 @@ def add_trade(username, symbol, tt, price, shares):
             msg, m = _match_sell(conn, username, symbol, price, shares, r, nm)
         log_action(username, f"trade_{tt}", symbol, f"round={r}, price={price}, shares={shares}, matched={m}", conn)
         conn.commit()
-    get_stocks.clear()
+    try: get_stocks.clear()
+    except: pass
     try: get_public_quote_snapshot.clear()
     except: pass
     return True, msg
@@ -600,9 +607,12 @@ def close_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
-    get_stocks.clear()
-    is_market_open.clear()
-    get_market_round.clear()
+    try: get_stocks.clear()
+    except: pass
+    try: is_market_open.clear()
+    except: pass
+    try: get_market_round.clear()
+    except: pass
 
 def open_market():
     with get_db_cm() as conn:
@@ -619,9 +629,12 @@ def open_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
-    get_stocks.clear()
-    is_market_open.clear()
-    get_market_round.clear()
+    try: get_stocks.clear()
+    except: pass
+    try: is_market_open.clear()
+    except: pass
+    try: get_market_round.clear()
+    except: pass
 
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
@@ -645,9 +658,12 @@ def undo_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
-    get_stocks.clear()
-    is_market_open.clear()
-    get_market_round.clear()
+    try: get_stocks.clear()
+    except: pass
+    try: is_market_open.clear()
+    except: pass
+    try: get_market_round.clear()
+    except: pass
 
 def reset_to_round1():
     """重开赛局：清空交易/K线/轮次，价格和资金回到初始状态，从第1轮重新开始。"""
@@ -2272,8 +2288,8 @@ def render_admin_risk_panel():
             render_table(losses[["选手", "浮动盈亏", "收益率", "集中度"]], compact=True)
 
 def download_db_button():
-    """数据导出（PostgreSQL 不支持文件下载，改为表数据导出）"""
-    st.caption("数据库已迁移到 PostgreSQL，数据持久保存。如需备份可在 Neon 控制台操作。")
+    """数据备份提示"""
+    st.caption("数据库为本地 SQLite 文件，定期备份 data/stock_analysis.db 即可。")
 
 GREEN = "#16a34a"; RED = "#ef4444"
 
@@ -2450,7 +2466,7 @@ def page_trade_hall():
     col_trade, col_factor = st.columns([1, 1])
     with col_trade:
         with st.form("trade_form_desk"):
-            sel = st.selectbox("股票", list(opts.keys()))
+            sel = st.selectbox("股票", list(opts.keys()), key="trade_sel")
             s = opts[sel]
             st.markdown(f"**当前价：{fmt_money(s['current_price'])}**")
             direction = st.radio("方向", ["买入", "卖出"], horizontal=True)
@@ -2507,7 +2523,7 @@ def page_trade_hall():
     with st.form("trade_form_mobile"):
         cols = st.columns([2, 1, 1, 1])
         with cols[0]:
-            m_sel = st.selectbox("股票", list(opts.keys()), label_visibility="collapsed")
+            m_sel = st.selectbox("股票", list(opts.keys()), label_visibility="collapsed", key="trade_mobile_sel")
         with cols[1]:
             m_dir = st.radio("方向", ["买入", "卖出"], horizontal=True, label_visibility="collapsed")
         m_s = opts[m_sel]
