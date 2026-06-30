@@ -52,14 +52,16 @@ class PGConn:
     def __init__(self):
         self.conn = Connection(user=PG_USER, password=PG_PASS, host=PG_HOST, database=PG_DB, port=5432)
     def execute(self, sql, params=None):
-        pg_sql = sql
         if params:
-            for i, p in enumerate(params):
-                pg_sql = pg_sql.replace("%s", f"${i+1}", 1)
-            # pg8000 使用 1-based 索引，前面加 None 偏移
-            rows = self.conn.run(pg_sql, [None] + list(params))
+            # 把 %s 占位符替换为 literal 转义后的值，避免 pg8000 的 $N 索引问题
+            vals = [literal(p) if not isinstance(p, (int, float)) else str(p) for p in params]
+            i = 0
+            while '%s' in sql and i < len(vals):
+                sql = sql.replace('%s', vals[i], 1)
+                i += 1
+            rows = self.conn.run(sql)
         else:
-            rows = self.conn.run(pg_sql)
+            rows = self.conn.run(sql)
         cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
         return PGResult(rows, cols)
     def commit(self):
