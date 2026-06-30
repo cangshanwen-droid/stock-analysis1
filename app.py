@@ -372,6 +372,9 @@ def settle_round(symbol):
         conn.execute("UPDATE stocks SET previous_close=%s,current_price=%s WHERE symbol=%s", (np_, np_, symbol))
         conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=%s AND round=%s", (symbol, cr))
         conn.commit()
+    get_stocks.clear()
+    try: get_public_quote_snapshot.clear()
+    except: pass
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -434,8 +437,9 @@ def reset_pwd(u, np_):
         conn.execute("UPDATE users SET password=%s WHERE username=%s", (make_pwd(np_), u))
         conn.commit()
 
+@st.cache_data(ttl=5, show_spinner=False)
 def get_stocks():
-    """直接读库，WAL模式+缓存已足够支撑高并发"""
+    """直接读库，短TTL缓存减少PostgreSQL连接"""
     with get_db_cm() as conn:
         r = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
     return [dict(x) for x in r]
@@ -457,6 +461,7 @@ def add_stock(sym, name, total_shares, revenue, industry_pe):
                 (sym.upper(), name, price, price, funds, total_shares, revenue, industry_pe))
             conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,1) ON CONFLICT DO NOTHING", (sym.upper(),))
             conn.commit()
+        get_stocks.clear()
         try: get_public_quote_snapshot.clear()
         except: pass
         return True, f"添加成功，初始价={price}"
@@ -473,11 +478,15 @@ def update_stock_params(sid, **kw):
         vals = list(safe.values()) + [sid]
         conn.execute(f"UPDATE stocks SET {sets} WHERE id=%s", vals)
         conn.commit()
+    get_stocks.clear()
+    try: get_public_quote_snapshot.clear()
+    except: pass
 
 def delete_stock(sid):
     with get_db_cm() as conn:
         conn.execute("UPDATE stocks SET is_deleted=1 WHERE id=%s", (sid,))
         conn.commit()
+    get_stocks.clear()
     try: get_public_quote_snapshot.clear()
     except: pass
 
@@ -583,6 +592,7 @@ def add_trade(username, symbol, tt, price, shares):
             msg, m = _match_sell(conn, username, symbol, price, shares, r, nm)
         log_action(username, f"trade_{tt}", symbol, f"round={r}, price={price}, shares={shares}, matched={m}", conn)
         conn.commit()
+    get_stocks.clear()
     try: get_public_quote_snapshot.clear()
     except: pass
     return True, msg
@@ -593,11 +603,13 @@ def get_user_balance(username):
         r = conn.execute("SELECT balance FROM users WHERE username=%s", (username,)).fetchone()
     return r["balance"] if r else 0
 
+@st.cache_data(ttl=2, show_spinner=False)
 def is_market_open():
     with get_db_cm() as conn:
         r = conn.execute("SELECT state FROM market_state WHERE id=1").fetchone()
     return r["state"] == "open" if r else True
 
+@st.cache_data(ttl=2, show_spinner=False)
 def get_market_round():
     with get_db_cm() as conn:
         r = conn.execute("SELECT round FROM market_state WHERE id=1").fetchone()
@@ -668,6 +680,9 @@ def close_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
+    get_stocks.clear()
+    is_market_open.clear()
+    get_market_round.clear()
 
 def open_market():
     with get_db_cm() as conn:
@@ -684,6 +699,9 @@ def open_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
+    get_stocks.clear()
+    is_market_open.clear()
+    get_market_round.clear()
 
 def undo_market():
     """撤销上一轮：回退到闭市前状态"""
@@ -707,6 +725,9 @@ def undo_market():
         get_public_quote_snapshot.clear()
     except Exception:
         pass
+    get_stocks.clear()
+    is_market_open.clear()
+    get_market_round.clear()
 
 def reset_to_round1():
     """重开赛局：清空交易/K线/轮次，价格和资金回到初始状态，从第1轮重新开始。"""
