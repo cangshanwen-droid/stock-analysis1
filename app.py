@@ -1919,7 +1919,10 @@ def page_public_dashboard():
         if cols[i].button(f"{s['name']}", key=f"tab_{s['symbol']}", type=btn_type, use_container_width=True):
             st.session_state.dash_sym = s["symbol"]
     st.markdown('</div>', unsafe_allow_html=True)
-    # K线图
+    _render_dash_chart(stocks)
+
+@st.fragment
+def _render_dash_chart(stocks):
     sym = st.session_state.dash_sym
     selected_stock = next((s for s in stocks if s["symbol"] == sym), stocks[0])
     data = get_kline_data(sym)
