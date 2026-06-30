@@ -11,15 +11,67 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import pg8000
+from pg8000.native import literal, Connection
 
-PG_URL = "postgresql://neondb_owner:npg_BWv4ZzCwfYa5@ep-raspy-field-aohzm3n2-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+PG_USER = "neondb_owner"
+PG_PASS = "npg_BWv4ZzCwfYa5"
+PG_HOST = "ep-raspy-field-aohzm3n2-pooler.c-2.ap-southeast-1.aws.neon.tech"
+PG_DB = "neondb"
+
+class PGRow:
+    """兼容 sqlite3.Row：同时支持 row['col'] 和 row[0] 访问"""
+    def __init__(self, cols, vals):
+        self._cols = list(cols)
+        self._vals = list(vals)
+        self._map = dict(zip(cols, vals))
+    def __getitem__(self, key):
+        if isinstance(key, (int, slice)):
+            return self._vals[key]
+        return self._map[key]
+    def __contains__(self, key):
+        return key in self._map
+    def get(self, key, default=None):
+        return self._map.get(key, default)
+    def __repr__(self):
+        return str(self._map)
+
+class PGResult(list):
+    """带列名的查询结果，支持 .fetchone() / .fetchall()"""
+    def __init__(self, rows, cols):
+        items = [PGRow(cols, r) for r in rows] if cols else []
+        super().__init__(items)
+        self._cols = cols
+    def fetchone(self):
+        return self[0] if self else None
+    def fetchall(self):
+        return list(self)
+
+class PGConn:
+    """pg8000 封装，返回 dict 格式"""
+    def __init__(self):
+        self.conn = Connection(user=PG_USER, password=PG_PASS, host=PG_HOST, database=PG_DB, port=5432)
+    def execute(self, sql, params=None):
+        pg_sql = sql
+        if params:
+            for i, p in enumerate(params):
+                pg_sql = pg_sql.replace("%s", f"${i+1}", 1)
+            rows = self.conn.run(pg_sql, params)
+        else:
+            rows = self.conn.run(pg_sql)
+        cols = [c["name"] for c in self.conn.columns] if self.conn.columns else []
+        return PGResult(rows, cols)
+    def commit(self):
+        self.conn.run("COMMIT")
+    def close(self):
+        self.conn.close()
+    def cursor(self):
+        return self
 
 @contextmanager
 def get_db_cm():
-    """PostgreSQL 数据库连接"""
-    conn = psycopg2.connect(PG_URL, cursor_factory=RealDictCursor)
+    conn = PGConn()
+    conn.execute("BEGIN")
     try:
         yield conn
     finally:
@@ -60,24 +112,28 @@ def get_admin_password():
 
 def init_db():
     with get_db_cm() as conn:
-        cur = conn.cursor()
-        cur.executescript("""
+        # 建表
+        sql_tables = """
             CREATE TABLE IF NOT EXISTS users(id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT DEFAULT 'player', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'active', balance REAL DEFAULT 1000000);
             CREATE TABLE IF NOT EXISTS stocks(id SERIAL PRIMARY KEY, symbol TEXT UNIQUE NOT NULL, name TEXT NOT NULL, current_price REAL DEFAULT 0, previous_close REAL DEFAULT 0, is_deleted INTEGER DEFAULT 0, total_shares REAL DEFAULT 10000, industry_pe REAL DEFAULT 20, carbon_price REAL DEFAULT 50, industry_carbon_mean REAL DEFAULT 50, premium_rate REAL DEFAULT 50, init_funds REAL DEFAULT 5000, last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS transactions(id SERIAL PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, trade_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS kline(id SERIAL PRIMARY KEY, stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, open_price REAL DEFAULT 0, high_price REAL DEFAULT 0, low_price REAL DEFAULT 0, close_price REAL DEFAULT 0, volume REAL DEFAULT 0, buy_total REAL DEFAULT 0, sell_total REAL DEFAULT 0, change_pct REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS rounds(stock_symbol TEXT NOT NULL, round INTEGER DEFAULT 0, is_settled INTEGER DEFAULT 0, PRIMARY KEY(stock_symbol, round));
-            CREATE TABLE IF NOT EXISTS market_state(id INTEGER PRIMARY KEY CHECK(id=1), state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
+            CREATE TABLE IF NOT EXISTS market_state(id SERIAL PRIMARY KEY, state TEXT DEFAULT 'open', round INTEGER DEFAULT 1);
             CREATE TABLE IF NOT EXISTS audit_logs(id SERIAL PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT DEFAULT '', detail TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS login_attempts(id SERIAL PRIMARY KEY, username TEXT NOT NULL, attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS order_book(id SERIAL PRIMARY KEY, username TEXT NOT NULL, stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL, shares INTEGER NOT NULL, round INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-        """)
+        """
+        for stmt in sql_tables.split(';'):
+            s = stmt.strip()
+            if s:
+                conn.execute(s + ';')
         conn.commit()
         # 迁移：revenue 字段
-        try: cur.execute("ALTER TABLE stocks ADD COLUMN IF NOT EXISTS revenue DOUBLE PRECISION DEFAULT 100000")
+        try: conn.execute("ALTER TABLE stocks ADD COLUMN IF NOT EXISTS revenue DOUBLE PRECISION DEFAULT 100000")
         except: pass
-        cur.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
-        conn.execute("INSERT INTO market_state(id,state,round) VALUES(%s,%s,%s) ON CONFLICT DO NOTHING", (1, 'open', 1))
+        conn.execute("UPDATE stocks SET revenue=100000 WHERE revenue IS NULL OR revenue=0")
+        conn.execute("INSERT INTO market_state(state,round) SELECT 'open',1 WHERE NOT EXISTS(SELECT 1 FROM market_state)")
         first_boot = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
         if first_boot:
             _seed(conn)
@@ -175,11 +231,10 @@ def init_db():
                 conn.commit()
 
 def _seed(conn):
-    cur = conn.cursor()
     admin_pw = get_admin_password() or "admin123"
-    cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
+    conn.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'admin',CURRENT_TIMESTAMP,'active',1000000)", (1, "admin", make_pwd(admin_pw)))
     for i, u in enumerate(["player1", "player2", "player3"], 2):
-        cur.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
+        conn.execute("INSERT INTO users(id,username,password,role,created_at,status,balance) VALUES(%s,%s,%s,'player',CURRENT_TIMESTAMP,'active',1000000)", (i, u, make_pwd(u)))
     for sym, name, ts_, rev, ipe, cp, icm, pr, funds in [
         ("WULIU", "物流1公司", 10000, 200, 20, 50, 50, 50, 2000),
         ("JXIAO", "经销1公司", 10000, 300, 20, 50, 50, 50, 3000),
@@ -187,13 +242,13 @@ def _seed(conn):
         ("YLIAO", "原料1公司", 10000, 500, 20, 50, 50, 50, 5000),
     ]:
         price = calc_initial_price(rev, ts_, ipe, sym)
-        cur.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
+        conn.execute("""INSERT INTO stocks(symbol,name,current_price,previous_close,init_funds,
             total_shares,revenue,industry_pe,carbon_price,industry_carbon_mean,premium_rate)
             VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (sym, name, price, price, funds, ts_, rev, ipe, cp, icm, pr))
-        cur.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0) ON CONFLICT DO NOTHING", (sym,))
+        conn.execute("INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(%s,1,0) ON CONFLICT DO NOTHING", (sym,))
     trades = [("player1", "WULIU", "buy", 9.5, 200, 1), ("player1", "JXIAO", "sell", 14.0, 100, 1), ("player1", "WULIU", "sell", 10.5, 80, 1), ("player2", "JGONG", "buy", 19.0, 150, 1), ("player2", "JXIAO", "sell", 16.0, 60, 1), ("player3", "WULIU", "buy", 10.0, 100, 1), ("player3", "YLIAO", "buy", 24.0, 80, 1), ("player2", "YLIAO", "buy", 26.0, 50, 1), ("player3", "JGONG", "sell", 21.0, 40, 1)]
-    for args in trades: cur.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
+    for args in trades: conn.execute("INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(%s,%s,%s,%s,%s,%s)", args)
     conn.commit()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -262,12 +317,11 @@ def get_holding_shares(username, symbol, conn=None):
 
 def settle_round(symbol):
     with get_db_cm() as conn:
-        cur = conn.cursor()
-        stock = dict(cur.execute("SELECT * FROM stocks WHERE symbol=%s", (symbol,)).fetchone())
-        r = cur.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (symbol,)).fetchone()
+        stock = dict(conn.execute("SELECT * FROM stocks WHERE symbol=%s", (symbol,)).fetchone())
+        r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (symbol,)).fetchone()
         cr = r[0] if r and r[0] else 0
         if cr == 0: return None, False, 0, 0, 0, 0, 0
-        txns = cur.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=%s AND round=%s", (symbol, cr)).fetchall()
+        txns = conn.execute("SELECT trade_type, price, shares FROM transactions WHERE stock_symbol=%s AND round=%s", (symbol, cr)).fetchall()
         buys = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "buy"]
         sells = [(t["price"], t["shares"]) for t in txns if t["trade_type"] == "sell"]
         hb = max(o[0] for o in buys) if buys else 0
@@ -287,11 +341,11 @@ def settle_round(symbol):
         pc = stock["previous_close"] or stock["current_price"]
         cpct = round((np_ - pc) / pc * 100, 2) if pc else 0
         hi = max(np_, pc); lo = min(np_, pc)
-        cur.execute("DELETE FROM kline WHERE stock_symbol=%s AND round=%s", (symbol, cr))
-        cur.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
+        conn.execute("DELETE FROM kline WHERE stock_symbol=%s AND round=%s", (symbol, cr))
+        conn.execute("INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", (symbol, cr, pc, hi, lo, np_, tv, bt, st_amt, cpct))
         nr = cr + 1
-        cur.execute("UPDATE stocks SET previous_close=%s,current_price=%s WHERE symbol=%s", (np_, np_, symbol))
-        cur.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=%s AND round=%s", (symbol, cr))
+        conn.execute("UPDATE stocks SET previous_close=%s,current_price=%s WHERE symbol=%s", (np_, np_, symbol))
+        conn.execute("UPDATE rounds SET is_settled=1 WHERE stock_symbol=%s AND round=%s", (symbol, cr))
         conn.commit()
     return np_, matched, mp, mv_, pf, cf, round(raw, 2)
 
@@ -390,9 +444,9 @@ def update_stock_params(sid, **kw):
     safe = {k: v for k, v in kw.items() if k in allowed}
     if not safe: return
     with get_db_cm() as conn:
-        sets = ", ".join(f"{k}=?" for k in safe)
+        sets = ", ".join(f"{k}=%s" for k in safe)
         vals = list(safe.values()) + [sid]
-        conn.execute(f"UPDATE stocks SET {sets} WHERE id=?", vals)
+        conn.execute(f"UPDATE stocks SET {sets} WHERE id=%s", vals)
         conn.commit()
 
 def delete_stock(sid):
