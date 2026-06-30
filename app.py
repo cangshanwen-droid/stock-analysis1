@@ -865,6 +865,26 @@ def get_platform_stats():
         cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
     return {"total_mv": round((s["当前价"] * s["总持仓量"]).sum(), 2), "total_pnl": round(s["总盈亏"].sum(), 2), "active_users": cnt}
 
+def get_competition_snapshot():
+    mkt_open = is_market_open()
+    mkt_round = get_market_round()
+    with get_db_cm() as conn:
+        player_cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player'").fetchone()[0]
+        active_cnt = conn.execute("SELECT COUNT(*) FROM users WHERE role='player' AND status!='disabled'").fetchone()[0]
+        stock_cnt = conn.execute("SELECT COUNT(*) FROM stocks WHERE is_deleted=0").fetchone()[0]
+        round_trades = conn.execute("SELECT COUNT(*) FROM transactions WHERE round=? AND username NOT LIKE '[系统]'", (mkt_round,)).fetchone()[0]
+        total_trades = conn.execute("SELECT COUNT(*) FROM transactions WHERE username NOT LIKE '[系统]'").fetchone()[0]
+    return {
+        "state": "交易中" if mkt_open else "已闭市",
+        "ok": mkt_open,
+        "round": int(mkt_round or 1),
+        "players": int(player_cnt or 0),
+        "active_players": int(active_cnt or 0),
+        "stocks": int(stock_cnt or 0),
+        "round_trades": int(round_trades or 0),
+        "total_trades": int(total_trades or 0),
+    }
+
 def get_admin_risk_overview():
     current_round = get_market_round()
     with get_db_cm() as conn:
@@ -1101,6 +1121,49 @@ div[data-testid="stVerticalBlock"] { gap: 6px !important; }
 }
 .stock-audit-metric .value.pos { color: #f23645; }
 .stock-audit-metric .value.neg { color: #089981; }
+.competition-strip {
+    display: grid;
+    grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 10px 0 14px;
+}
+.competition-cell {
+    min-width: 0;
+    background: rgba(15,23,36,.82);
+    border: 1px solid #1e2a3a;
+    border-radius: 8px;
+    padding: 11px 13px;
+}
+.competition-cell.primary {
+    background: linear-gradient(90deg, rgba(242,54,69,.16), rgba(15,23,36,.86));
+    border-color: rgba(242,54,69,.24);
+}
+.competition-cell.ok {
+    background: linear-gradient(90deg, rgba(16,185,129,.12), rgba(15,23,36,.86));
+    border-color: rgba(16,185,129,.22);
+}
+.competition-cell .label {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: .4px;
+    margin-bottom: 5px;
+}
+.competition-cell .value {
+    color: #f8fafc;
+    font-size: 17px;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.competition-cell .sub {
+    margin-top: 3px;
+    color: #94a3b8;
+    font-size: 11px;
+    white-space: nowrap;
+}
 .risk-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -1144,6 +1207,8 @@ div[data-testid="stForm"] {
     .data-table th, .data-table td { padding: 9px 10px; font-size: 12px; }
     .stock-audit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .stock-audit-head { align-items: flex-start; }
+    .competition-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .competition-cell.primary { grid-column: span 2; }
     .risk-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .risk-card { padding: 12px; }
     .risk-card .value { font-size: 18px; }
@@ -1812,6 +1877,7 @@ def page_public_dashboard():
 
     # 市场状态条
     st.markdown(f'<div class="mkt-bar"><span class="mkt-dot {mkt_cls}"></span><span class="mkt-text">市场 <strong>{mkt_text}</strong> ｜ 第 <strong>{mkt_round}</strong> 轮</span><span class="mkt-round" id="liveClockMkt"></span></div>', unsafe_allow_html=True)
+    render_competition_strip()
 
     # JS 实时时钟（每秒更新，不依赖服务端）
     st.markdown("""
@@ -2168,6 +2234,23 @@ def kpi_card(label, value, delta=None, up=True):
         delta_html = f'<div class="delta {delta_cls}">{esc(delta)}</div>'
     return f'<div class="kpi-card"><div class="label">{esc(label)}</div><div class="value">{esc(value)}</div>{delta_html}</div>'
 
+def render_competition_strip():
+    snap = get_competition_snapshot()
+    state_cls = "ok" if snap["ok"] else ""
+    st.markdown(f"""
+    <div class="competition-strip">
+        <div class="competition-cell primary {state_cls}">
+            <div class="label">竞赛状态</div>
+            <div class="value">第 {snap["round"]} 轮 · {esc(snap["state"])}</div>
+            <div class="sub">实时撮合 · 轮次结算 · 赛程监控</div>
+        </div>
+        <div class="competition-cell"><div class="label">参赛队伍</div><div class="value">{fmt_num(snap["active_players"])}/{fmt_num(snap["players"])}</div><div class="sub">有效/总数</div></div>
+        <div class="competition-cell"><div class="label">交易标的</div><div class="value">{fmt_num(snap["stocks"])}</div><div class="sub">上市公司</div></div>
+        <div class="competition-cell"><div class="label">本轮成交</div><div class="value">{fmt_num(snap["round_trades"])}</div><div class="sub">选手委托成交</div></div>
+        <div class="competition-cell"><div class="label">累计成交</div><div class="value">{fmt_num(snap["total_trades"])}</div><div class="sub">全赛程记录</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
 def render_table(df, columns=None, compact=False):
     if df is None or len(df) == 0:
         st.info("暂无数据")
@@ -2268,6 +2351,7 @@ def page_overview():
     mv = data["total_assets"]
     total = mv + bal
     page_header("总览", "资产、余额与收益状态", badge=st.session_state.username, ok=True)
+    render_competition_strip()
 
     # KPI卡片：总资产拆明细
     css_col2 = "grid-template-columns:repeat(2,1fr)!important;" if st.session_state.get('mobile', False) else ""
@@ -3236,6 +3320,7 @@ def page_admin_settle():
     status = "交易中" if market_open else "已闭市"
     color = "#16a34a" if market_open else "#ef4444"
     page_header("市场控制", f"当前第 {current_round} 轮 · 开闭市、撤销与重置", badge=status, ok=market_open)
+    render_competition_strip()
 
     # 初始化确认状态
     for k in ["cf_close", "cf_open", "cf_undo", "cf_r1"]:
@@ -3243,9 +3328,9 @@ def page_admin_settle():
 
     st.markdown(f"""
     <div style="background:rgba(10,20,42,.7);border:1px solid rgba(255,255,255,.04);border-radius:12px;padding:24px;text-align:center;margin-bottom:20px;">
-        <div style="font-size:13px;color:#94a3b8;">当前市场状态</div>
+        <div style="font-size:13px;color:#94a3b8;">赛程控制状态</div>
         <div style="font-size:36px;font-weight:700;color:{color};margin:8px 0;">{status}</div>
-        <div style="font-size:14px;color:#8b949e;">第 {current_round} 轮</div>
+        <div style="font-size:14px;color:#8b949e;">第 {current_round} 轮 · {'选手可提交委托' if market_open else '等待下一轮开市'}</div>
     </div>""", unsafe_allow_html=True)
 
     # 开关按钮 + 防误触确认
