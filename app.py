@@ -948,10 +948,72 @@ def get_market_card_data(stock):
         "round": latest_round,
     }
 
-@st.cache_data(ttl=1, show_spinner=False)
+@st.cache_data(ttl=3, show_spinner=False)
 def get_public_quote_snapshot():
-    stocks = get_stocks()
-    quotes = {s["symbol"]: get_market_card_data(s) for s in stocks}
+    """行情大屏快照 — 单连接批量查询，避免多次网络往返到 Neon"""
+    with get_db_cm() as conn:
+        stocks_rows = conn.execute("SELECT * FROM stocks WHERE is_deleted=0 ORDER BY symbol").fetchall()
+        stocks = [dict(x) for x in stocks_rows]
+        symbols = [s["symbol"] for s in stocks]
+        # 一次性获取所有股票的K线数据（已结算+当前轮实时）
+        all_klines = {}
+        for sym in symbols:
+            klines = conn.execute("""
+                SELECT k.* FROM kline k
+                JOIN (SELECT round, MAX(id) AS id FROM kline WHERE stock_symbol=%s GROUP BY round) latest ON latest.id = k.id
+                ORDER BY k.round
+            """, (sym,)).fetchall()
+            result = [dict(x) for x in klines]
+            # 实时追加当前未结算轮次
+            open_r = conn.execute("SELECT MIN(round) FROM rounds WHERE stock_symbol=%s AND is_settled=0", (sym,)).fetchone()
+            cr = open_r[0] if open_r and open_r[0] else 0
+            if cr:
+                stock = conn.execute("SELECT * FROM stocks WHERE symbol=%s", (sym,)).fetchone()
+                txns = conn.execute("SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=%s AND round=%s", (sym, cr)).fetchall()
+                if txns and stock:
+                    prev = stock["previous_close"] or stock["current_price"]
+                    bt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="buy")
+                    st_amt = sum(t["price"]*t["shares"] for t in txns if t["trade_type"]=="sell")
+                    tv = sum(t["shares"] for t in txns)
+                    np_ = compute_price(dict(stock, buy_total=bt, sell_total=st_amt))
+                    hi = max(np_, prev); lo = min(np_, prev)
+                    cpct = round((np_-prev)/prev*100,2) if prev else 0
+                    result = [x for x in result if x["round"] != cr]
+                    result.append({
+                        "stock_symbol": sym, "round": cr,
+                        "open_price": prev, "high_price": hi, "low_price": lo,
+                        "close_price": np_, "volume": tv,
+                        "buy_total": bt, "sell_total": st_amt, "change_pct": cpct,
+                    })
+            all_klines[sym] = sorted(result, key=lambda x: x["round"])
+        # 组装行情卡片数据
+        quotes = {}
+        for s in stocks:
+            symbol = s["symbol"]
+            klines = all_klines.get(symbol, [])
+            if klines:
+                latest = klines[-1]
+                ref_price = row_get(latest, "open_price", None) or s.get("previous_close") or s.get("current_price", 0)
+                price = row_get(latest, "close_price", ref_price) or ref_price
+                change = price - ref_price
+                pct = change / ref_price * 100 if ref_price else 0
+                total_vol = int(sum(row_get(d, "volume", 0) or 0 for d in klines[-5:]))
+                buy_amt = sum(row_get(d, "buy_total", 0) or 0 for d in klines[-5:])
+                sell_amt = sum(row_get(d, "sell_total", 0) or 0 for d in klines[-5:])
+                latest_round = row_get(latest, "round", "-")
+            else:
+                price = s.get("current_price", 0) or 0
+                ref_price = s.get("previous_close", price) or price
+                change = price - ref_price
+                pct = change / ref_price * 100 if ref_price else 0
+                total_vol = buy_amt = sell_amt = 0
+                latest_round = "-"
+            quotes[symbol] = {
+                "price": float(price or 0), "ref_price": float(ref_price or 0),
+                "change": float(change or 0), "pct": float(pct or 0),
+                "volume5": total_vol, "buy5": float(buy_amt or 0),
+                "sell5": float(sell_amt or 0), "round": latest_round,
+            }
     return stocks, quotes
 
 def get_platform_stats():
@@ -1982,7 +2044,7 @@ def page_public_dashboard():
     # 四只股票行情卡片
     cards = ""
     for s in stocks:
-        q = quotes.get(s["symbol"]) or get_market_card_data(s)
+        q = quotes.get(s["symbol"]) or {"price": s["current_price"], "ref_price": s["previous_close"] or s["current_price"], "change": 0, "pct": 0, "volume5": 0, "buy5": 0, "sell5": 0, "round": "-"}
         p = q["price"]
         prev = q["ref_price"]
         chg = q["change"]
