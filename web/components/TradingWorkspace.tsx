@@ -18,6 +18,7 @@ import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, Portfolio
 import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
+type MarketAction = "open" | "close";
 
 function fmtMoney(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
@@ -68,6 +69,8 @@ export function TradingWorkspace() {
   const [newOperatorPassword, setNewOperatorPassword] = useState("");
   const [resetTarget, setResetTarget] = useState("");
   const [resetPassword, setResetPassword] = useState("");
+  const [pendingMarketAction, setPendingMarketAction] = useState<MarketAction | null>(null);
+  const [marketConfirmText, setMarketConfirmText] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -195,14 +198,16 @@ export function TradingWorkspace() {
     }
   }
 
-  async function submitMarketAction(action: "open" | "close") {
+  async function submitMarketAction(action: MarketAction) {
     if (!token) return;
     setAdminMessage("");
     try {
-      const result = await marketControl(token, action);
+      const result = await marketControl(token, action, action === "close" ? "确认收盘" : "确认开盘");
       setAdminMessage(result.detail || result.reason || "操作完成");
       const nextMarket = await fetchMarket();
       setMarket(nextMarket);
+      setPendingMarketAction(null);
+      setMarketConfirmText("");
     } catch {
       setAdminMessage("市场控制失败，请检查管理员权限");
     }
@@ -241,6 +246,8 @@ export function TradingWorkspace() {
 
   async function submitUserStatus(username: string, status: "active" | "disabled") {
     if (!token || user?.role !== "admin") return;
+    const actionText = status === "active" ? "启用" : "停用";
+    if (!window.confirm(`确认${actionText}操作员账号「${username}」？`)) return;
     setAdminMessage("");
     try {
       await updateAdminUserStatus(token, username, status);
@@ -250,6 +257,11 @@ export function TradingWorkspace() {
       setAdminMessage("账号状态更新失败");
     }
   }
+
+  const marketActionText = pendingMarketAction === "close" ? "收盘结算" : "开启下一轮";
+  const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : "确认开盘";
+  const canCloseMarket = market?.state === "open";
+  const canOpenMarket = market?.state === "closed";
 
   const navItems = user
     ? [
@@ -459,31 +471,6 @@ export function TradingWorkspace() {
                 })}
               </div>
             ) : null}
-            {user?.role === "admin" ? (
-              <div className="admin-box">
-                <div className="section-caption">市场控制</div>
-                <div className="admin-actions">
-                  <button className="ghost" onClick={() => submitMarketAction("close")}>收盘结算</button>
-                  <button className="ghost" onClick={() => submitMarketAction("open")}>开启下一轮</button>
-                </div>
-                {adminMessage && <div className="hint-text">{adminMessage}</div>}
-                <div className="admin-stats">
-                  <div><span>用户</span><strong>{adminUsers.length}</strong></div>
-                  <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
-                </div>
-                {auditLogs.length ? (
-                  <div className="audit-list">
-                    <div className="section-caption">最近审计</div>
-                    {auditLogs.slice(0, 5).map((log, idx) => (
-                      <div className="audit-row" key={`${log.createdAt}-${idx}`}>
-                        <span>{log.actor} · {log.action}</span>
-                        <strong>{log.target || "-"}</strong>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
               </>
             )}
             </aside>
@@ -589,9 +576,38 @@ export function TradingWorkspace() {
                 <div className="empty-state">请使用管理员账号登录后查看管理控制台。</div>
               ) : (
                 <>
-                  <div className="admin-actions wide">
-                    <button className="ghost" onClick={() => submitMarketAction("close")}>收盘结算</button>
-                    <button className="ghost" onClick={() => submitMarketAction("open")}>开启下一轮</button>
+                  <div className="danger-zone">
+                    <div className="danger-copy">
+                      <strong>市场轮次控制</strong>
+                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。收盘会结算本轮成交并生成K线；开启下一轮会推进轮次。</span>
+                    </div>
+                    <div className="admin-actions">
+                      <button className="danger-button" disabled={!canCloseMarket} onClick={() => { setPendingMarketAction("close"); setMarketConfirmText(""); }}>
+                        收盘结算
+                      </button>
+                      <button className="ghost" disabled={!canOpenMarket} onClick={() => { setPendingMarketAction("open"); setMarketConfirmText(""); }}>
+                        开启下一轮
+                      </button>
+                    </div>
+                    {pendingMarketAction ? (
+                      <div className="confirm-box">
+                        <div>
+                          <strong>确认执行：{marketActionText}</strong>
+                          <span>请输入「{marketActionKeyword}」后才能继续。</span>
+                        </div>
+                        <input value={marketConfirmText} onChange={(e) => setMarketConfirmText(e.target.value)} />
+                        <div className="confirm-actions">
+                          <button className="ghost" onClick={() => { setPendingMarketAction(null); setMarketConfirmText(""); }}>取消</button>
+                          <button
+                            className="danger-button"
+                            disabled={marketConfirmText !== marketActionKeyword}
+                            onClick={() => submitMarketAction(pendingMarketAction)}
+                          >
+                            确认执行
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   {adminMessage && <div className="hint-text">{adminMessage}</div>}
                   <div className="admin-stats wide">

@@ -360,8 +360,13 @@ def require_admin(user: dict[str, Any]) -> None:
 
 
 @app.post("/admin/market/close")
-def close_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+def close_market_endpoint(
+    user: dict[str, Any] = Depends(current_user),
+    x_confirm_action: str = Header(default=""),
+) -> dict[str, Any]:
     require_admin(user)
+    if x_confirm_action != "确认收盘":
+        raise HTTPException(status_code=400, detail="confirm_close_required")
     if not ENABLE_MARKET_WRITES:
         return {
             "accepted": False,
@@ -384,8 +389,13 @@ def close_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[
 
 
 @app.post("/admin/market/open")
-def open_market_endpoint(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+def open_market_endpoint(
+    user: dict[str, Any] = Depends(current_user),
+    x_confirm_action: str = Header(default=""),
+) -> dict[str, Any]:
     require_admin(user)
+    if x_confirm_action != "确认开盘":
+        raise HTTPException(status_code=400, detail="confirm_open_required")
     if not ENABLE_MARKET_WRITES:
         return {
             "accepted": False,
