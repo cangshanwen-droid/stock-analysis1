@@ -326,10 +326,8 @@ export function TradingWorkspace() {
             <span className="status-dot" />
             <div>
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
-              <div className="meta">行情给选手研判 · 操作员登录代为下单 · 管理员维护账号</div>
             </div>
           </div>
-          <div className="meta">PostgreSQL API Ready</div>
         </section>
 
         {(view === "market" || view === "trade") ? (
@@ -353,7 +351,6 @@ export function TradingWorkspace() {
               <div className="chart-head">
                 <div>
                   <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
-                  <div className="meta">红涨绿跌 · 十字光标 · 成交量</div>
                 </div>
                 <div className={cls(current?.change ?? 0)}>
                   {current ? fmtMoney(current.price) : "--"}
@@ -417,7 +414,6 @@ export function TradingWorkspace() {
             <div className="mini-table">
               <div className="row"><span>当前价格</span><strong>{current ? fmtMoney(current.price) : "--"}</strong></div>
               <div className="row"><span>委托模式</span><strong>限价撮合</strong></div>
-              <div className="row"><span>数据源</span><strong>PostgreSQL 实时数据</strong></div>
             </div>
             {portfolio?.positions.length ? (
               <div className="positions">
