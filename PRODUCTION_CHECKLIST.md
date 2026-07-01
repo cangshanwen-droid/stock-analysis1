@@ -2,6 +2,14 @@
 
 ## 1. 数据库
 
+上线前先运行一次本地预检，不启动本地服务器：
+
+```powershell
+.\scripts\preflight.ps1
+```
+
+预检会检查关键部署文件、Python 编译、前端类型检查、前端生产构建和 Git 工作区状态。
+
 - 在 Neon 或 Supabase 创建 PostgreSQL 数据库。
 - 执行 `api/schema.postgres.sql`。
 - 从 Streamlit 当前 SQLite 迁移数据：
