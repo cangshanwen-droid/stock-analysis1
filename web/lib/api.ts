@@ -13,18 +13,42 @@ const fallbackMarket: MarketSnapshot = {
   ]
 };
 
+async function fetchWithRetry(input: string, init?: RequestInit, attempts = 3): Promise<Response> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const res = await fetch(input, init);
+      if (res.ok || i === attempts - 1) return res;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 800 * (i + 1)));
+  }
+  throw lastError instanceof Error ? lastError : new Error("request_failed");
+}
+
 export async function fetchMarket(): Promise<MarketSnapshot> {
   if (!API_BASE) return fallbackMarket;
-  const res = await fetch(`${API_BASE}/market`, { cache: "no-store" });
-  if (!res.ok) return fallbackMarket;
-  return res.json();
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/market`, { cache: "no-store" });
+    if (!res.ok) return fallbackMarket;
+    const data = await res.json();
+    return Array.isArray(data.stocks) && data.stocks.length > 0 ? data : fallbackMarket;
+  } catch {
+    return fallbackMarket;
+  }
 }
 
 export async function fetchCandles(symbol: string): Promise<Candle[]> {
   if (!API_BASE) return demoCandles(symbol);
-  const res = await fetch(`${API_BASE}/stocks/${symbol}/kline`, { cache: "no-store" });
-  if (!res.ok) return demoCandles(symbol);
-  return res.json();
+  try {
+    const res = await fetchWithRetry(`${API_BASE}/stocks/${symbol}/kline`, { cache: "no-store" });
+    if (!res.ok) return demoCandles(symbol);
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0 ? data : demoCandles(symbol);
+  } catch {
+    return demoCandles(symbol);
+  }
 }
 
 export async function login(username: string, password: string): Promise<LoginResult> {
