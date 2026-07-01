@@ -6,6 +6,8 @@ import { fetchAdminOverview, fetchCandles, fetchMarket, fetchPortfolio, login, m
 import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
+type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
+
 function fmtMoney(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
 }
@@ -33,6 +35,7 @@ function tradeSide(value: string) {
 
 export function TradingWorkspace() {
   const [market, setMarket] = useState<MarketSnapshot | null>(null);
+  const [view, setView] = useState<ViewKey>("market");
   const [selected, setSelected] = useState("JGONG");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -167,6 +170,33 @@ export function TradingWorkspace() {
     }
   }
 
+  const navItems = [
+    { key: "market" as const, label: "行情面板", icon: BarChart3 },
+    { key: "trade" as const, label: "交易大厅", icon: Activity },
+    { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
+    { key: "records" as const, label: "委托记录", icon: ClipboardList },
+    { key: "admin" as const, label: "管理控制", icon: Shield }
+  ];
+
+  function renderNav(className: string) {
+    return (
+      <div className={className}>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              className={view === item.key ? "active" : ""}
+              key={item.key}
+              onClick={() => setView(item.key)}
+            >
+              <Icon size={17} /> {item.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -174,13 +204,7 @@ export function TradingWorkspace() {
           <strong>Gipfel</strong>
           <span>双镜智能投资竞赛平台</span>
         </div>
-        <div className="nav">
-          <button className="active"><BarChart3 size={17} /> 行情面板</button>
-          <button><Activity size={17} /> 交易大厅</button>
-          <button><Wallet size={17} /> 持仓资产</button>
-          <button><ClipboardList size={17} /> 委托记录</button>
-          <button><Shield size={17} /> 管理控制</button>
-        </div>
+        {renderNav("nav")}
       </aside>
 
       <main className="main">
@@ -209,34 +233,37 @@ export function TradingWorkspace() {
           <div className="meta">PostgreSQL API Ready</div>
         </section>
 
-        <section className="quote-grid">
-          {stocks.map((stock) => (
-            <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
-              <div className="symbol">{stock.symbol}</div>
-              <div className="name">{stock.name}</div>
-              <div className={`price ${cls(stock.change)}`}>{fmtMoney(stock.price)}</div>
-              <div className={cls(stock.change)}>
-                {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePct.toFixed(2)}%)
-              </div>
-            </button>
-          ))}
-        </section>
+        {(view === "market" || view === "trade") ? (
+          <section className="quote-grid">
+            {stocks.map((stock) => (
+              <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
+                <div className="symbol">{stock.symbol}</div>
+                <div className="name">{stock.name}</div>
+                <div className={`price ${cls(stock.change)}`}>{fmtMoney(stock.price)}</div>
+                <div className={cls(stock.change)}>
+                  {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePct.toFixed(2)}%)
+                </div>
+              </button>
+            ))}
+          </section>
+        ) : null}
 
-        <section className="workspace">
-          <div className="chart-card">
-            <div className="chart-head">
-              <div>
-                <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
-                <div className="meta">红涨绿跌 · 十字光标 · 成交量</div>
+        {(view === "market" || view === "trade") ? (
+          <section className="workspace">
+            <div className="chart-card">
+              <div className="chart-head">
+                <div>
+                  <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
+                  <div className="meta">红涨绿跌 · 十字光标 · 成交量</div>
+                </div>
+                <div className={cls(current?.change ?? 0)}>
+                  {current ? fmtMoney(current.price) : "--"}
+                </div>
               </div>
-              <div className={cls(current?.change ?? 0)}>
-                {current ? fmtMoney(current.price) : "--"}
-              </div>
+              <KlineChart candles={candles} />
             </div>
-            <KlineChart candles={candles} />
-          </div>
 
-          <aside className="ticket">
+            <aside className="ticket">
             <h2>交易委托</h2>
             {!user && (
               <div className="login-box">
@@ -368,9 +395,133 @@ export function TradingWorkspace() {
                 ) : null}
               </div>
             ) : null}
-          </aside>
-        </section>
+            </aside>
+          </section>
+        ) : null}
+
+        {view === "portfolio" ? (
+          <section className="panel-grid">
+            <div className="chart-card compact-panel">
+              <div className="chart-head">
+                <div>
+                  <strong>持仓资产</strong>
+                  <div className="meta">资金、持仓、市值和浮动盈亏</div>
+                </div>
+                <div className={cls(portfolio?.summary.totalPnl ?? 0)}>
+                  {fmtMoney(portfolio?.summary.totalAssets ?? user?.balance ?? 0)}
+                </div>
+              </div>
+              {!user ? (
+                <div className="empty-state">请先登录交易账号查看资产。</div>
+              ) : (
+                <div className="asset-grid">
+                  <div><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                  <div><span>持仓市值</span><strong>{fmtMoney(portfolio?.summary.marketValue ?? 0)}</strong></div>
+                  <div><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
+                  <div><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                </div>
+              )}
+              {portfolio?.positions.length ? (
+                <div className="data-table">
+                  <div className="table-row table-head"><span>公司</span><span>数量</span><span>成本</span><span>市值</span><span>盈亏</span></div>
+                  {portfolio.positions.map((pos) => (
+                    <div className="table-row" key={pos.symbol}>
+                      <span>{pos.name}</span>
+                      <span>{pos.shares}</span>
+                      <span>{fmtMoney(pos.avgCost)}</span>
+                      <span>{fmtMoney(pos.marketValue)}</span>
+                      <span className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {view === "records" ? (
+          <section className="panel-grid two">
+            <div className="chart-card compact-panel">
+              <div className="chart-head"><strong>委托记录</strong><div className="meta">最近 20 条委托</div></div>
+              {!portfolio?.orders.length ? <div className="empty-state">暂无委托记录。</div> : (
+                <div className="data-table">
+                  <div className="table-row table-head"><span>公司</span><span>方向</span><span>价格</span><span>数量</span><span>轮次</span></div>
+                  {portfolio.orders.map((order, idx) => (
+                    <div className="table-row" key={`${textField(order, "created_at")}-${idx}`}>
+                      <span>{textField(order, "stock_symbol")}</span>
+                      <span>{tradeSide(textField(order, "trade_type"))}</span>
+                      <span>{fmtMoney(numberField(order, "price"))}</span>
+                      <span>{numberField(order, "shares")}</span>
+                      <span>{textField(order, "round")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="chart-card compact-panel">
+              <div className="chart-head"><strong>成交记录</strong><div className="meta">最近 20 条成交</div></div>
+              {!portfolio?.recentTrades.length ? <div className="empty-state">暂无成交记录。</div> : (
+                <div className="data-table">
+                  <div className="table-row table-head"><span>公司</span><span>方向</span><span>价格</span><span>数量</span><span>轮次</span></div>
+                  {portfolio.recentTrades.map((trade, idx) => (
+                    <div className="table-row" key={`${textField(trade, "trade_date")}-${idx}`}>
+                      <span>{textField(trade, "stock_symbol")}</span>
+                      <span>{tradeSide(textField(trade, "trade_type"))}</span>
+                      <span>{fmtMoney(numberField(trade, "price"))}</span>
+                      <span>{numberField(trade, "shares")}</span>
+                      <span>{textField(trade, "round")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {view === "admin" ? (
+          <section className="panel-grid">
+            <div className="chart-card compact-panel">
+              <div className="chart-head">
+                <div>
+                  <strong>管理控制</strong>
+                  <div className="meta">市场轮次、账号概览、股票概览和审计日志</div>
+                </div>
+                <div className="meta">{user?.role === "admin" ? "管理员已登录" : "需要管理员权限"}</div>
+              </div>
+              {user?.role !== "admin" ? (
+                <div className="empty-state">请使用管理员账号登录后查看管理控制台。</div>
+              ) : (
+                <>
+                  <div className="admin-actions wide">
+                    <button className="ghost" onClick={() => submitMarketAction("close")}>收盘结算</button>
+                    <button className="ghost" onClick={() => submitMarketAction("open")}>开启下一轮</button>
+                  </div>
+                  {adminMessage && <div className="hint-text">{adminMessage}</div>}
+                  <div className="admin-stats wide">
+                    <div><span>用户</span><strong>{adminUsers.length}</strong></div>
+                    <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
+                  </div>
+                  {auditLogs.length ? (
+                    <div className="data-table">
+                      <div className="table-row four-col table-head"><span>操作者</span><span>动作</span><span>对象</span><span>时间</span></div>
+                      {auditLogs.map((log, idx) => (
+                        <div className="table-row four-col" key={`${log.createdAt}-${idx}`}>
+                          <span>{log.actor}</span>
+                          <span>{log.action}</span>
+                          <span>{log.target || "-"}</span>
+                          <span>{log.createdAt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </section>
+        ) : null}
       </main>
+
+      {renderNav("mobile-nav")}
     </div>
   );
 }
