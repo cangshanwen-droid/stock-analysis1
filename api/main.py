@@ -533,3 +533,6 @@ def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_use
         }
         for row in rows
     ]
+
+
+print("GIPFEL_API_ROUTES", __file__, [getattr(route, "path", "") for route in app.routes])
