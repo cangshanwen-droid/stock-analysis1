@@ -63,6 +63,12 @@ class PasswordResetRequest(BaseModel):
     password: str = Field(min_length=1, max_length=120)
 
 
+class CreateUserRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=1, max_length=120)
+    role: str = Field(default="player", pattern="^(player|admin)$")
+
+
 class StockUpdateRequest(BaseModel):
     revenue: float | None = Field(default=None, gt=0)
     total_shares: float | None = Field(default=None, gt=0)
@@ -421,6 +427,29 @@ def admin_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, 
         }
         for row in rows
     ]
+
+
+@app.post("/admin/users")
+def admin_create_user(payload: CreateUserRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="empty_username")
+    with connect() as conn:
+        existing = fetchone(conn, "SELECT username FROM users WHERE username=?", (username,))
+        if existing:
+            raise HTTPException(status_code=409, detail="user_exists")
+        execute(
+            conn,
+            "INSERT INTO users(username,password,role,status,balance) VALUES(?,?,?,?,1000000)",
+            (username, make_pwd(payload.password), payload.role, "active"),
+        )
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "create_user", username, payload.role))
+        conn.commit()
+    return {"accepted": True, "username": username, "role": payload.role}
 
 
 @app.patch("/admin/users/{username}/status")

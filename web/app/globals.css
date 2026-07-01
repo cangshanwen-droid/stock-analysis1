@@ -424,10 +424,37 @@ button {
   margin: 0 14px 14px;
 }
 
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 14px 14px;
+}
+
 .management-panel {
   min-width: 0;
   display: grid;
   gap: 8px;
+}
+
+.inline-form {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1220;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.mini-action {
+  height: 28px;
+  min-width: 54px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #131d2c;
+  color: var(--text);
+  font-size: 12px;
 }
 
 .admin-table {
@@ -543,7 +570,7 @@ button {
 }
 
 .table-row.user-col {
-  grid-template-columns: 1fr 0.8fr 0.8fr 1.2fr;
+  grid-template-columns: 1fr 0.8fr 0.8fr 1.1fr 0.8fr;
 }
 
 .table-row.stock-col {
@@ -628,6 +655,10 @@ button {
   .panel-grid.two,
   .asset-grid,
   .management-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form-grid {
     grid-template-columns: 1fr;
   }
 

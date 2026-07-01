@@ -151,6 +151,49 @@ export async function fetchAdminOverview(token: string): Promise<{
   };
 }
 
+export async function createAdminUser(token: string, payload: {
+  username: string;
+  password: string;
+  role: "admin" | "player";
+}) {
+  const res = await fetch(`${API_BASE}/admin/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("create_user_failed");
+  return res.json();
+}
+
+export async function updateAdminUserStatus(token: string, username: string, status: "active" | "disabled") {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}/status`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ status })
+  });
+  if (!res.ok) throw new Error("update_user_status_failed");
+  return res.json();
+}
+
+export async function resetAdminUserPassword(token: string, username: string, password: string) {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}/password`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ password })
+  });
+  if (!res.ok) throw new Error("reset_user_password_failed");
+  return res.json();
+}
+
 export function demoCandles(symbol: string): Candle[] {
   const seed = Array.from(symbol).reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i + 5), 0);
   const base = symbol === "YLIAO" ? 25 : symbol === "JGONG" ? 20 : symbol === "JXIAO" ? 15 : 10;

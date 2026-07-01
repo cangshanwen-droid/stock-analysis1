@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
-import { fetchAdminOverview, fetchCandles, fetchMarket, fetchPortfolio, login, marketControl, submitOrder } from "../lib/api";
+import {
+  createAdminUser,
+  fetchAdminOverview,
+  fetchCandles,
+  fetchMarket,
+  fetchPortfolio,
+  login,
+  marketControl,
+  resetAdminUserPassword,
+  submitOrder,
+  updateAdminUserStatus
+} from "../lib/api";
 import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
@@ -52,6 +63,10 @@ export function TradingWorkspace() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [newOperatorName, setNewOperatorName] = useState("");
+  const [newOperatorPassword, setNewOperatorPassword] = useState("");
+  const [resetTarget, setResetTarget] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -91,6 +106,21 @@ export function TradingWorkspace() {
       alive = false;
     };
   }, [token]);
+
+  async function refreshAdminOverview() {
+    if (!token || user?.role !== "admin") return;
+    fetchAdminOverview(token)
+      .then((data) => {
+        setAdminUsers(data.users);
+        setAdminStocks(data.stocks);
+        setAuditLogs(data.auditLogs);
+      })
+      .catch(() => {
+        setAdminUsers([]);
+        setAdminStocks([]);
+        setAuditLogs([]);
+      });
+  }
 
   useEffect(() => {
     if (!token || user?.role !== "admin") return;
@@ -170,12 +200,55 @@ export function TradingWorkspace() {
     }
   }
 
+  async function submitCreateOperator() {
+    if (!token || user?.role !== "admin") return;
+    setAdminMessage("");
+    try {
+      await createAdminUser(token, {
+        username: newOperatorName.trim(),
+        password: newOperatorPassword,
+        role: "player"
+      });
+      setNewOperatorName("");
+      setNewOperatorPassword("");
+      setAdminMessage("操作员账号已创建");
+      await refreshAdminOverview();
+    } catch {
+      setAdminMessage("创建账号失败，请检查用户名是否已存在");
+    }
+  }
+
+  async function submitResetPassword() {
+    if (!token || user?.role !== "admin") return;
+    setAdminMessage("");
+    try {
+      await resetAdminUserPassword(token, resetTarget, resetPassword);
+      setResetPassword("");
+      setAdminMessage("密码已重置");
+      await refreshAdminOverview();
+    } catch {
+      setAdminMessage("重置密码失败，请检查账号和密码");
+    }
+  }
+
+  async function submitUserStatus(username: string, status: "active" | "disabled") {
+    if (!token || user?.role !== "admin") return;
+    setAdminMessage("");
+    try {
+      await updateAdminUserStatus(token, username, status);
+      setAdminMessage(status === "active" ? "账号已启用" : "账号已停用");
+      await refreshAdminOverview();
+    } catch {
+      setAdminMessage("账号状态更新失败");
+    }
+  }
+
   const navItems = [
     { key: "market" as const, label: "行情面板", icon: BarChart3 },
-    { key: "trade" as const, label: "交易大厅", icon: Activity },
+    { key: "trade" as const, label: "操作员交易台", icon: Activity },
     { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
     { key: "records" as const, label: "委托记录", icon: ClipboardList },
-    { key: "admin" as const, label: "管理控制", icon: Shield }
+    { key: "admin" as const, label: "管理员控制台", icon: Shield }
   ];
 
   function renderNav(className: string) {
@@ -218,7 +291,7 @@ export function TradingWorkspace() {
               {user.username} · 退出
             </button>
           ) : (
-            <button className="ghost" onClick={submitLogin}>登录交易</button>
+            <button className="ghost" onClick={submitLogin}>操作员登录</button>
           )}
         </div>
 
@@ -227,7 +300,7 @@ export function TradingWorkspace() {
             <span className="status-dot" />
             <div>
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
-              <div className="meta">实时撮合 · 收盘结算 · 专业行情展示</div>
+              <div className="meta">行情给选手研判 · 操作员登录代为下单 · 管理员维护账号</div>
             </div>
           </div>
           <div className="meta">PostgreSQL API Ready</div>
@@ -264,25 +337,25 @@ export function TradingWorkspace() {
             </div>
 
             <aside className="ticket">
-            <h2>交易委托</h2>
+            <h2>操作员交易</h2>
             {!user && (
               <div className="login-box">
                 <div className="field">
-                  <label>账号</label>
+                  <label>操作员账号</label>
                   <input value={loginName} onChange={(e) => setLoginName(e.target.value)} />
                 </div>
                 <div className="field">
                   <label>密码</label>
                   <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                 </div>
-                <button className="primary" onClick={submitLogin}>登录交易</button>
+                <button className="primary" onClick={submitLogin}>操作员登录</button>
                 {loginError && <div className="error-text">{loginError}</div>}
               </div>
             )}
             {user && (
               <div className="account-box">
                 <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "选手"}</strong></div>
+                <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
                 <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
                 <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
                 <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
@@ -316,7 +389,7 @@ export function TradingWorkspace() {
             <div className="mini-table">
               <div className="row"><span>当前价格</span><strong>{current ? fmtMoney(current.price) : "--"}</strong></div>
               <div className="row"><span>委托模式</span><strong>限价撮合</strong></div>
-              <div className="row"><span>数据源</span><strong>API / Demo fallback</strong></div>
+              <div className="row"><span>数据源</span><strong>PostgreSQL 实时数据</strong></div>
             </div>
             {portfolio?.positions.length ? (
               <div className="positions">
@@ -484,7 +557,7 @@ export function TradingWorkspace() {
               <div className="chart-head">
                 <div>
                   <strong>管理控制</strong>
-                  <div className="meta">市场轮次、账号概览、股票概览和审计日志</div>
+                  <div className="meta">市场轮次、操作员账号、公司股票和审计日志</div>
                 </div>
                 <div className="meta">{user?.role === "admin" ? "管理员已登录" : "需要管理员权限"}</div>
               </div>
@@ -498,20 +571,69 @@ export function TradingWorkspace() {
                   </div>
                   {adminMessage && <div className="hint-text">{adminMessage}</div>}
                   <div className="admin-stats wide">
-                    <div><span>用户</span><strong>{adminUsers.length}</strong></div>
+                    <div><span>操作员/管理员</span><strong>{adminUsers.length}</strong></div>
                     <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
+                  </div>
+                  <div className="admin-form-grid">
+                    <div className="management-panel">
+                      <div className="section-caption">注册操作员账号</div>
+                      <div className="inline-form">
+                        <div className="field">
+                          <label>用户名</label>
+                          <input value={newOperatorName} onChange={(e) => setNewOperatorName(e.target.value)} placeholder="例如 player4" />
+                        </div>
+                        <div className="field">
+                          <label>初始密码</label>
+                          <input type="password" value={newOperatorPassword} onChange={(e) => setNewOperatorPassword(e.target.value)} placeholder="给操作员使用" />
+                        </div>
+                        <button className="primary" onClick={submitCreateOperator} disabled={!newOperatorName.trim() || !newOperatorPassword}>
+                          创建账号
+                        </button>
+                      </div>
+                    </div>
+                    <div className="management-panel">
+                      <div className="section-caption">重置账号密码</div>
+                      <div className="inline-form">
+                        <div className="field">
+                          <label>账号</label>
+                          <select value={resetTarget} onChange={(e) => setResetTarget(e.target.value)}>
+                            <option value="">选择账号</option>
+                            {adminUsers.map((account) => (
+                              <option key={account.id} value={account.username}>{account.username}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>新密码</label>
+                          <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+                        </div>
+                        <button className="primary" onClick={submitResetPassword} disabled={!resetTarget || !resetPassword}>
+                          重置密码
+                        </button>
+                      </div>
+                    </div>
                   </div>
                   <div className="management-grid">
                     <div className="management-panel">
                       <div className="section-caption">操作员账号</div>
                       <div className="data-table admin-table">
-                        <div className="table-row user-col table-head"><span>用户名</span><span>角色</span><span>状态</span><span>余额</span></div>
+                        <div className="table-row user-col table-head"><span>用户名</span><span>角色</span><span>状态</span><span>余额</span><span>操作</span></div>
                         {adminUsers.map((account) => (
                           <div className="table-row user-col" key={account.id}>
                             <span>{account.username}</span>
-                            <span>{account.role === "admin" ? "管理员" : "选手"}</span>
+                            <span>{account.role === "admin" ? "管理员" : "操作员"}</span>
                             <span className={account.status === "active" ? "up" : "down"}>{account.status === "active" ? "有效" : "停用"}</span>
                             <span>{fmtMoney(account.balance)}</span>
+                            <span>
+                              {account.role === "player" ? (
+                                <button
+                                  className="mini-action"
+                                  onClick={() => submitUserStatus(account.username, account.status === "active" ? "disabled" : "active")}
+                                >
+                                  {account.status === "active" ? "停用" : "启用"}
+                                </button>
+                              ) : "-"}
+                            </span>
                           </div>
                         ))}
                       </div>
