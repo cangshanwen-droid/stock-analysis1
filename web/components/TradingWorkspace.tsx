@@ -289,7 +289,7 @@ export function TradingWorkspace() {
         <div className="topbar">
           <div>
             <div className="meta">Trading Arena</div>
-            <strong>股票交易竞赛平台</strong>
+            <strong>Gipfel 股票交易竞赛平台</strong>
           </div>
           {user ? (
             <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); }}>
