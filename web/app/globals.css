@@ -314,6 +314,42 @@ button {
   gap: 8px;
 }
 
+.record-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.record-row {
+  min-height: 42px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.record-row strong,
+.record-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-row span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.record-row > div:last-child {
+  color: #cbd5e1;
+  font-variant-numeric: tabular-nums;
+}
+
 .admin-box {
   margin-top: 16px;
   display: grid;

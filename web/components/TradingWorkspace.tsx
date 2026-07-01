@@ -14,6 +14,23 @@ function cls(value: number) {
   return value >= 0 ? "up" : "down";
 }
 
+function textField(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return value === null || value === undefined ? "-" : String(value);
+}
+
+function numberField(row: Record<string, unknown>, key: string) {
+  const value = Number(row[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function tradeSide(value: string) {
+  if (value === "buy") return "买入";
+  if (value === "sell") return "卖出";
+  if (value === "force_close") return "强平";
+  return value || "-";
+}
+
 export function TradingWorkspace() {
   const [market, setMarket] = useState<MarketSnapshot | null>(null);
   const [selected, setSelected] = useState("JGONG");
@@ -286,6 +303,44 @@ export function TradingWorkspace() {
                     <div className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</div>
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {portfolio?.orders.length ? (
+              <div className="record-list">
+                <div className="section-caption">最近委托</div>
+                {portfolio.orders.slice(0, 4).map((order, idx) => {
+                  const sideText = tradeSide(textField(order, "trade_type"));
+                  const price = numberField(order, "price");
+                  const shares = numberField(order, "shares");
+                  return (
+                    <div className="record-row" key={`${textField(order, "created_at")}-${idx}`}>
+                      <div>
+                        <strong>{textField(order, "stock_symbol")} · {sideText}</strong>
+                        <span>第 {textField(order, "round")} 轮 · {shares} 股</span>
+                      </div>
+                      <div>{fmtMoney(price)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {portfolio?.recentTrades.length ? (
+              <div className="record-list">
+                <div className="section-caption">最近成交</div>
+                {portfolio.recentTrades.slice(0, 4).map((trade, idx) => {
+                  const sideText = tradeSide(textField(trade, "trade_type"));
+                  const price = numberField(trade, "price");
+                  const shares = numberField(trade, "shares");
+                  return (
+                    <div className="record-row" key={`${textField(trade, "trade_date")}-${idx}`}>
+                      <div>
+                        <strong>{textField(trade, "stock_symbol")} · {sideText}</strong>
+                        <span>第 {textField(trade, "round")} 轮 · {shares} 股</span>
+                      </div>
+                      <div>{fmtMoney(price * shares)}</div>
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
             {user?.role === "admin" ? (
