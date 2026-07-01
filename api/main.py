@@ -37,6 +37,11 @@ def database_not_ready_handler(_, exc: DatabaseNotReady):
     return JSONResponse(status_code=503, content={"detail": "database_not_ready", "message": str(exc)})
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"service": "Gipfel Trading API", "status": "ok", "health": "/health"}
+
+
 class TradeRequest(BaseModel):
     username: str = Field(min_length=1, max_length=40)
     symbol: str = Field(min_length=1, max_length=16)
@@ -533,6 +538,3 @@ def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_use
         }
         for row in rows
     ]
-
-
-print("GIPFEL_API_ROUTES", __file__, [getattr(route, "path", "") for route in app.routes])
