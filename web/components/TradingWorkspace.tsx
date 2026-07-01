@@ -63,6 +63,7 @@ export function TradingWorkspace() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [newOperatorName, setNewOperatorName] = useState("");
   const [newOperatorPassword, setNewOperatorPassword] = useState("");
   const [resetTarget, setResetTarget] = useState("");
@@ -109,22 +110,25 @@ export function TradingWorkspace() {
 
   async function refreshAdminOverview() {
     if (!token || user?.role !== "admin") return;
-    fetchAdminOverview(token)
-      .then((data) => {
-        setAdminUsers(data.users);
-        setAdminStocks(data.stocks);
-        setAuditLogs(data.auditLogs);
-      })
-      .catch(() => {
-        setAdminUsers([]);
-        setAdminStocks([]);
-        setAuditLogs([]);
-      });
+    setAdminLoading(true);
+    try {
+      const data = await fetchAdminOverview(token);
+      setAdminUsers(data.users);
+      setAdminStocks(data.stocks);
+      setAuditLogs(data.auditLogs);
+    } catch {
+      setAdminUsers([]);
+      setAdminStocks([]);
+      setAuditLogs([]);
+    } finally {
+      setAdminLoading(false);
+    }
   }
 
   useEffect(() => {
     if (!token || user?.role !== "admin") return;
     let alive = true;
+    setAdminLoading(true);
     fetchAdminOverview(token)
       .then((data) => {
         if (!alive) return;
@@ -137,6 +141,9 @@ export function TradingWorkspace() {
         setAdminUsers([]);
         setAdminStocks([]);
         setAuditLogs([]);
+      })
+      .finally(() => {
+        if (alive) setAdminLoading(false);
       });
     return () => {
       alive = false;
@@ -250,7 +257,9 @@ export function TradingWorkspace() {
         { key: "trade" as const, label: "操作员交易台", icon: Activity },
         { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
         { key: "records" as const, label: "委托记录", icon: ClipboardList },
-        { key: "admin" as const, label: "管理员控制台", icon: Shield }
+        ...(user.role === "admin"
+          ? [{ key: "admin" as const, label: "管理员控制台", icon: Shield }]
+          : [])
       ]
     : [
         { key: "market" as const, label: "行情面板", icon: BarChart3 }
@@ -346,6 +355,7 @@ export function TradingWorkspace() {
             <h2>操作员交易</h2>
             {!user && (
               <div className="login-box">
+                <div className="section-caption">仅操作员和管理员登录后可下单。选手请留在行情面板查看走势。</div>
                 <div className="field">
                   <label>操作员账号</label>
                   <input value={loginName} onChange={(e) => setLoginName(e.target.value)} />
@@ -359,6 +369,7 @@ export function TradingWorkspace() {
               </div>
             )}
             {user && (
+              <>
               <div className="account-box">
                 <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
                 <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
@@ -366,7 +377,6 @@ export function TradingWorkspace() {
                 <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
                 <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
               </div>
-            )}
             <div className="segmented">
               <button className={side === "buy" ? "buy" : ""} onClick={() => setSide("buy")}>买入</button>
               <button onClick={() => setSide("sell")}>卖出</button>
@@ -474,6 +484,8 @@ export function TradingWorkspace() {
                 ) : null}
               </div>
             ) : null}
+              </>
+            )}
             </aside>
             ) : null}
           </section>
@@ -566,7 +578,12 @@ export function TradingWorkspace() {
                   <strong>管理控制</strong>
                   <div className="meta">市场轮次、操作员账号、公司股票和审计日志</div>
                 </div>
-                <div className="meta">{user?.role === "admin" ? "管理员已登录" : "需要管理员权限"}</div>
+                <div className="admin-head-actions">
+                  <span className="meta">{adminLoading ? "正在同步" : "管理员已登录"}</span>
+                  {user?.role === "admin" ? (
+                    <button className="mini-action" onClick={refreshAdminOverview}>刷新</button>
+                  ) : null}
+                </div>
               </div>
               {user?.role !== "admin" ? (
                 <div className="empty-state">请使用管理员账号登录后查看管理控制台。</div>
@@ -578,8 +595,8 @@ export function TradingWorkspace() {
                   </div>
                   {adminMessage && <div className="hint-text">{adminMessage}</div>}
                   <div className="admin-stats wide">
-                    <div><span>操作员/管理员</span><strong>{adminUsers.length}</strong></div>
-                    <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
+                    <div><span>操作员/管理员</span><strong>{adminLoading ? "同步中" : adminUsers.length}</strong></div>
+                    <div><span>股票/公司</span><strong>{adminLoading ? "同步中" : adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
                   </div>
                   <div className="admin-form-grid">
                     <div className="management-panel">

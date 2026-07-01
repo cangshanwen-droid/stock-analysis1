@@ -461,6 +461,13 @@ button {
   font-size: 12px;
 }
 
+.admin-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .admin-table {
   margin: 0;
 }
@@ -620,7 +627,7 @@ button {
     z-index: 20;
     height: 58px;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
     gap: 4px;
     padding: 6px;
     border: 1px solid var(--line);
@@ -675,7 +682,7 @@ button {
   }
 
   .table-row.user-col {
-    grid-template-columns: 1fr 0.8fr 0.8fr 1fr;
+    grid-template-columns: 1fr 0.8fr 0.8fr 1fr 0.7fr;
   }
 
   .table-row.stock-col {
