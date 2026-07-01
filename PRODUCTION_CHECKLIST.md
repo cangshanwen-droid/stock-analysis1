@@ -35,6 +35,7 @@ python migrate_sqlite_to_postgres.py
 - Blueprint 文件：`render.yaml`
 - Dockerfile：`api/Dockerfile`
 - 健康检查：`/health`
+- 如果使用 GitHub Actions 部署，需要在 Render 服务里创建 Deploy Hook，并把地址填到 GitHub Secret：`RENDER_DEPLOY_HOOK_URL`
 
 环境变量：
 
@@ -62,6 +63,11 @@ ENABLE_ADMIN_WRITES=false
 - Root Directory：`web`
 - Install Command：`npm ci`
 - Build Command：`npm run build`
+- 如果使用 GitHub Actions 部署，需要在 GitHub Secrets 填：
+  - `VERCEL_TOKEN`
+  - `VERCEL_ORG_ID`
+  - `VERCEL_PROJECT_ID`
+  - `NEXT_PUBLIC_API_BASE`
 
 环境变量：
 
@@ -75,6 +81,15 @@ NEXT_PUBLIC_API_BASE=https://api.your-domain.com
 - `player1/player1` 能登录并查看资产、委托、成交。
 - `admin` 管理员能看到管理控制台。
 - 电脑端侧边导航和移动端底部导航都能切换。
+
+## 3.1 GitHub Actions 自动化
+
+如果要把预检和部署接到 GitHub Actions，需要当前 GitHub Token 拥有 `workflow` 权限，然后再提交：
+
+- `.github/workflows/preflight.yml`：每次 push 和 PR 自动编译检查。
+- `.github/workflows/deploy.yml`：手动触发生产部署，前端部署到 Vercel，后端触发 Render Deploy Hook。
+
+第一次部署仍需要先在 Vercel 和 Render 创建项目/服务，并把上面的 Secrets 填好。
 
 ## 4. 开启真实写入
 
