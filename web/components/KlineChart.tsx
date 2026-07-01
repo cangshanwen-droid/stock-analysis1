@@ -28,7 +28,8 @@ export function KlineChart({ candles }: Props) {
       layout: {
         background: { type: ColorType.Solid, color: "#0b1220" },
         textColor: "#94a3b8",
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        attributionLogo: false
       },
       grid: {
         vertLines: { color: "#162235" },
@@ -45,8 +46,8 @@ export function KlineChart({ candles }: Props) {
       },
       timeScale: {
         borderColor: "#1e2a3a",
-        rightOffset: 4,
-        barSpacing: 8
+        rightOffset: 8,
+        barSpacing: 10
       },
       handleScale: true,
       handleScroll: true
@@ -104,7 +105,14 @@ export function KlineChart({ candles }: Props) {
       value: c.volume,
       color: c.close >= c.open ? "rgba(242,54,69,.36)" : "rgba(8,153,129,.36)"
     })));
-    chartRef.current.timeScale().fitContent();
+    if (candles.length <= 12) {
+      chartRef.current.timeScale().setVisibleLogicalRange({
+        from: -6,
+        to: Math.max(18, candles.length + 8)
+      });
+    } else {
+      chartRef.current.timeScale().fitContent();
+    }
   }, [candles]);
 
   return <div className="chart-host" ref={ref} />;
