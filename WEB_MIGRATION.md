@@ -21,6 +21,10 @@
 - `web/`：Next.js 正式网页前端骨架
 - `api/`：FastAPI 后端骨架
 - `api/main.py`：健康检查、登录认证、账户组合、行情、K 线、下单、市场控制、管理员只读概览接口
+- `api/Dockerfile`：后端容器部署配置，支持 Render 的 `PORT` 环境变量
+- `render.yaml`：Render Blueprint 示例
+- `web/vercel.json`：Vercel 前端部署配置
+- `PRODUCTION_CHECKLIST.md`：正式上线检查清单
 - `api/schema.postgres.sql`：PostgreSQL 建表脚本
 - `api/migrate_sqlite_to_postgres.py`：SQLite 到 PostgreSQL 数据迁移脚本
 - `.gitignore`：屏蔽数据库、缓存、依赖、环境变量
@@ -97,6 +101,9 @@ SQLite 切换为 PostgreSQL，配置备份、域名、HTTPS、监控。
 - 已准备 SQLite 数据迁移脚本
 - FastAPI 已能根据 `DATABASE_URL` 自动切换 PostgreSQL
 - `/health` 会返回当前数据库后端、`TOKEN_SECRET` 是否配置、写入开关状态
+- 已准备 Render Docker 部署配置
+- 已准备 Vercel 前端部署配置
+- 已准备正式上线检查清单
 
 验收标准：
 

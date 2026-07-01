@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: gipfel-trading-api
+    runtime: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: ./api/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: TOKEN_SECRET
+        generateValue: true
+      - key: TOKEN_TTL_SECONDS
+        value: "28800"
+      - key: ENABLE_ORDER_WRITES
+        value: "false"
+      - key: ENABLE_MARKET_WRITES
+        value: "false"
+      - key: ENABLE_ADMIN_WRITES
+        value: "false"
