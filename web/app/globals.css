@@ -188,6 +188,10 @@ button {
   gap: 14px;
 }
 
+.workspace.market-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel-grid {
   display: grid;
   gap: 14px;

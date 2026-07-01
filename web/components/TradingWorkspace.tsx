@@ -150,6 +150,7 @@ export function TradingWorkspace() {
       setToken(data.accessToken);
       setUser(data.user);
       setPortfolio(null);
+      setView(data.user.role === "admin" ? "admin" : "trade");
     } catch {
       setLoginError("账号或密码不正确");
     }
@@ -243,13 +244,17 @@ export function TradingWorkspace() {
     }
   }
 
-  const navItems = [
-    { key: "market" as const, label: "行情面板", icon: BarChart3 },
-    { key: "trade" as const, label: "操作员交易台", icon: Activity },
-    { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
-    { key: "records" as const, label: "委托记录", icon: ClipboardList },
-    { key: "admin" as const, label: "管理员控制台", icon: Shield }
-  ];
+  const navItems = user
+    ? [
+        { key: "market" as const, label: "行情面板", icon: BarChart3 },
+        { key: "trade" as const, label: "操作员交易台", icon: Activity },
+        { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
+        { key: "records" as const, label: "委托记录", icon: ClipboardList },
+        { key: "admin" as const, label: "管理员控制台", icon: Shield }
+      ]
+    : [
+        { key: "market" as const, label: "行情面板", icon: BarChart3 }
+      ];
 
   function renderNav(className: string) {
     return (
@@ -275,7 +280,7 @@ export function TradingWorkspace() {
       <aside className="sidebar">
         <div className="brand">
           <strong>Gipfel</strong>
-          <span>双镜智能投资竞赛平台</span>
+          <span>Gipfel 投资竞赛平台</span>
         </div>
         {renderNav("nav")}
       </aside>
@@ -287,11 +292,11 @@ export function TradingWorkspace() {
             <strong>股票交易竞赛平台</strong>
           </div>
           {user ? (
-            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); }}>
+            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); }}>
               {user.username} · 退出
             </button>
           ) : (
-            <button className="ghost" onClick={submitLogin}>操作员登录</button>
+            <button className="ghost" onClick={() => setView("trade")}>操作员入口</button>
           )}
         </div>
 
@@ -322,7 +327,7 @@ export function TradingWorkspace() {
         ) : null}
 
         {(view === "market" || view === "trade") ? (
-          <section className="workspace">
+          <section className={`workspace ${view === "market" ? "market-only" : ""}`}>
             <div className="chart-card">
               <div className="chart-head">
                 <div>
@@ -336,6 +341,7 @@ export function TradingWorkspace() {
               <KlineChart candles={candles} />
             </div>
 
+            {view === "trade" ? (
             <aside className="ticket">
             <h2>操作员交易</h2>
             {!user && (
@@ -469,6 +475,7 @@ export function TradingWorkspace() {
               </div>
             ) : null}
             </aside>
+            ) : null}
           </section>
         ) : null}
 

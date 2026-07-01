@@ -1,5 +1,5 @@
 """
-双镜 · TradingView 风格专业K线页面
+Gipfel · TradingView 风格专业K线页面
 基于 streamlit-lightweight-charts-v5 实现
 依赖: pip install streamlit-lightweight-charts-v5 yfinance pandas
 """
@@ -125,7 +125,7 @@ def page_kline_tradingview():
             '<span style="font-size:26px;font-weight:800;letter-spacing:4px;'
             'background:linear-gradient(135deg,#f0e6d3,#d4a853);'
             '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
-            'background-clip:text;">双镜 · K线</span>',
+            'background-clip:text;">Gipfel · K线</span>',
             unsafe_allow_html=True,
         )
     with c2:
@@ -238,7 +238,7 @@ def page_kline_tradingview():
         },
         "watermark": {
             "visible": True,
-            "text": f"{ticker} · 双镜",
+            "text": f"{ticker} · Gipfel",
             "color": COLORS["watermark"],
             "fontSize": 48,
             "fontFamily": "monospace",
@@ -339,7 +339,7 @@ def page_kline_tradingview():
 
     # ── 渲染图表 ──
     result = lightweight_charts_v5_component(
-        name=f"{ticker} - 双镜专业K线",
+        name=f"{ticker} - Gipfel专业K线",
         charts=[main_chart, volume_chart],
         height=640,
         zoom_level=len(chart_data),
@@ -368,7 +368,7 @@ def page_kline_tradingview():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if __name__ == "__main__":
     st.set_page_config(
-        page_title="双镜 · TradingView K线",
+        page_title="Gipfel · TradingView K线",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
