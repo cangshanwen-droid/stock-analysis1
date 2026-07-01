@@ -501,6 +501,37 @@ export function TradingWorkspace() {
                     <div><span>用户</span><strong>{adminUsers.length}</strong></div>
                     <div><span>股票/公司</span><strong>{adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
                   </div>
+                  <div className="management-grid">
+                    <div className="management-panel">
+                      <div className="section-caption">操作员账号</div>
+                      <div className="data-table admin-table">
+                        <div className="table-row user-col table-head"><span>用户名</span><span>角色</span><span>状态</span><span>余额</span></div>
+                        {adminUsers.map((account) => (
+                          <div className="table-row user-col" key={account.id}>
+                            <span>{account.username}</span>
+                            <span>{account.role === "admin" ? "管理员" : "选手"}</span>
+                            <span className={account.status === "active" ? "up" : "down"}>{account.status === "active" ? "有效" : "停用"}</span>
+                            <span>{fmtMoney(account.balance)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="management-panel">
+                      <div className="section-caption">参赛公司股票</div>
+                      <div className="data-table admin-table">
+                        <div className="table-row stock-col table-head"><span>代码</span><span>公司</span><span>现价</span><span>营收</span><span>PE</span></div>
+                        {adminStocks.map((stock) => (
+                          <div className="table-row stock-col" key={stock.id}>
+                            <span>{stock.symbol}</span>
+                            <span>{stock.name}</span>
+                            <span className={cls(stock.price - stock.previousClose)}>{fmtMoney(stock.price)}</span>
+                            <span>{fmtMoney(stock.revenue)}</span>
+                            <span>{stock.industryPe.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                   {auditLogs.length ? (
                     <div className="data-table">
                       <div className="table-row four-col table-head"><span>操作者</span><span>动作</span><span>对象</span><span>时间</span></div>

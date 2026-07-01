@@ -417,6 +417,23 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 14px 14px;
+}
+
+.management-panel {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-table {
+  margin: 0;
+}
+
 .audit-list {
   display: grid;
   gap: 8px;
@@ -525,6 +542,14 @@ button {
   grid-template-columns: 1fr 1fr 1fr 1.4fr;
 }
 
+.table-row.user-col {
+  grid-template-columns: 1fr 0.8fr 0.8fr 1.2fr;
+}
+
+.table-row.stock-col {
+  grid-template-columns: 0.9fr 1.4fr 1fr 1fr 0.7fr;
+}
+
 .table-row:first-child {
   border-top: 0;
 }
@@ -601,7 +626,8 @@ button {
   }
 
   .panel-grid.two,
-  .asset-grid {
+  .asset-grid,
+  .management-grid {
     grid-template-columns: 1fr;
   }
 
@@ -611,6 +637,14 @@ button {
 
   .table-row.four-col {
     grid-template-columns: 0.9fr 0.9fr 0.9fr 1.3fr;
+  }
+
+  .table-row.user-col {
+    grid-template-columns: 1fr 0.8fr 0.8fr 1fr;
+  }
+
+  .table-row.stock-col {
+    grid-template-columns: 0.8fr 1.2fr 1fr 1fr 0.7fr;
   }
 
   .chart-host {
