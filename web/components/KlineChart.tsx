@@ -72,6 +72,7 @@ function movingAverage(candles: DisplayCandle[], windowSize: number) {
 
 export function KlineChart({ candles }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -80,6 +81,7 @@ export function KlineChart({ candles }: Props) {
   const volumeMaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
   const roundLabelRef = useRef<Map<string, number>>(new Map());
+  const candleLookupRef = useRef<Map<string, DisplayCandle>>(new Map());
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
   const resistancePrice = useMemo(() => {
@@ -210,6 +212,33 @@ export function KlineChart({ candles }: Props) {
       if (!ref.current) return;
       chart.applyOptions({ width: ref.current.clientWidth, height: ref.current.clientHeight });
     };
+    chart.subscribeCrosshairMove((param) => {
+      const tooltip = tooltipRef.current;
+      if (!tooltip || !ref.current || !param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
+        if (tooltip) tooltip.style.opacity = "0";
+        return;
+      }
+      const candle = candleLookupRef.current.get(String(param.time));
+      if (!candle) {
+        tooltip.style.opacity = "0";
+        return;
+      }
+      const change = candle.close - candle.open;
+      const changePct = candle.open ? (change / candle.open) * 100 : 0;
+      tooltip.innerHTML = `
+        <div class="kline-tip-head">\u7b2c ${candle.round} \u8f6e</div>
+        <div><span>\u5f00</span><strong>\u00a5${candle.open.toFixed(2)}</strong></div>
+        <div><span>\u9ad8</span><strong>\u00a5${candle.high.toFixed(2)}</strong></div>
+        <div><span>\u4f4e</span><strong>\u00a5${candle.low.toFixed(2)}</strong></div>
+        <div><span>\u6536</span><strong>\u00a5${candle.close.toFixed(2)}</strong></div>
+        <div><span>\u6da8\u8dcc</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
+        <div><span>\u91cf</span><strong>${candle.volume}</strong></div>
+      `;
+      const x = param.point.x > ref.current.clientWidth - 190 ? param.point.x - 184 : param.point.x + 16;
+      const y = Math.max(12, Math.min(param.point.y + 12, ref.current.clientHeight - 190));
+      tooltip.style.transform = `translate(${x}px, ${y}px)`;
+      tooltip.style.opacity = "1";
+    });
     window.addEventListener("resize", resize);
     return () => {
       window.removeEventListener("resize", resize);
@@ -227,6 +256,7 @@ export function KlineChart({ candles }: Props) {
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
     roundLabelRef.current = new Map(displayCandles.map((candle) => [String(candle.time), candle.round]));
+    candleLookupRef.current = new Map(displayCandles.map((candle) => [String(candle.time), candle]));
     candleRef.current.setData(candleData);
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
@@ -283,6 +313,7 @@ export function KlineChart({ candles }: Props) {
         <span className="legend-ma10">MA10</span>
         <span>{"\u6210\u4ea4\u91cf"}</span>
       </div>
+      <div className="kline-tooltip" ref={tooltipRef} />
       <div className="chart-host" ref={ref} />
     </div>
   );

@@ -265,6 +265,49 @@ button {
   position: relative;
 }
 
+.kline-tooltip {
+  position: absolute;
+  z-index: 5;
+  top: 30px;
+  left: 0;
+  width: 168px;
+  pointer-events: none;
+  opacity: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  background: rgba(7, 12, 20, 0.94);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  padding: 9px 10px;
+  display: grid;
+  gap: 5px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.08s ease;
+}
+
+.kline-tooltip > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kline-tooltip span {
+  color: #7d8ba1;
+}
+
+.kline-tooltip strong {
+  font-weight: 760;
+}
+
+.kline-tip-head {
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  color: #eef4ff;
+  font-weight: 850;
+}
+
 .chart-legend {
   height: 30px;
   padding: 0 16px;
