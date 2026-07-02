@@ -250,7 +250,7 @@ export function TradingWorkspace() {
 
   async function submitMarketAction(action: MarketAction) {
     if (!token) return;
-    const confirmation = action === "close" ? "确认收盘" : action === "open" ? "确认开盘" : "确认回到第一轮";
+    const confirmation = action === "close" ? "confirm-close" : action === "open" ? "confirm-open" : "confirm-reset-round1";
     setAdminMessage("");
     try {
       const result = await marketControl(token, action, confirmation);
