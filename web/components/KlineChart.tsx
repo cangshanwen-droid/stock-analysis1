@@ -26,7 +26,8 @@ type DisplayCandle = {
   isAnchor: boolean;
 };
 
-const DISPLAY_SEGMENTS = 6;
+const PREVIEW_BARS = 34;
+const ROUND_SEGMENTS = 10;
 const DISPLAY_START_TIME = 946684800;
 const DISPLAY_STEP_SECONDS = 21600;
 
@@ -34,48 +35,80 @@ function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
+function appendSyntheticBar(
+  output: DisplayCandle[],
+  source: Candle,
+  open: number,
+  close: number,
+  range: number,
+  volumeBase: number,
+  isAnchor = false
+) {
+  const index = output.length;
+  const wickBias = 0.18 + ((index + source.round) % 5) * 0.045;
+  const wick = Math.max(range * wickBias, Math.max(open, close) * 0.0025);
+
+  output.push({
+    round: source.round,
+    time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
+    open: round2(open),
+    high: round2(Math.max(open, close) + wick),
+    low: round2(Math.max(0.01, Math.min(open, close) - wick * 0.82)),
+    close: round2(Math.max(0.01, close)),
+    volume: Math.max(1, Math.round(volumeBase * (0.78 + ((index + source.round) % 7) * 0.055))),
+    isAnchor
+  });
+}
+
 function expandCandles(candles: Candle[]): DisplayCandle[] {
   const expanded: DisplayCandle[] = [];
   if (!candles.length) return expanded;
 
+  const first = candles[0];
+  const firstPrice = Math.max(0.01, first.open || first.close || 1);
+  const previewRange = Math.max(firstPrice * 0.018, Math.abs(first.high - first.low), 0.12);
+  let open = round2(firstPrice * (1 - 0.018 + Math.sin(first.round * 1.7) * 0.006));
+
+  for (let index = 0; index < PREVIEW_BARS; index += 1) {
+    const progress = (index + 1) / PREVIEW_BARS;
+    const trend = first.open - open;
+    const wave = Math.sin((index + 1) * 0.72 + first.round) * previewRange * 0.23;
+    const pulse = Math.sin((index + 1) * 0.19) * previewRange * 0.11;
+    const close = index === PREVIEW_BARS - 1
+      ? first.open
+      : Math.max(0.01, open + trend * progress * 0.16 + wave + pulse);
+    appendSyntheticBar(expanded, first, open, close, previewRange, (first.volume || 1200) / 8);
+    open = close + Math.sin((index + first.round) * 0.43) * previewRange * 0.08;
+  }
+
   candles.forEach((candle, candleIndex) => {
-    const sourceOpen = candleIndex === 0 ? candle.open : candles[candleIndex - 1].close;
+    const sourceOpen = candleIndex === 0 ? first.open : candles[candleIndex - 1].close;
     const targetClose = candle.close;
-    const direction = targetClose >= sourceOpen ? 1 : -1;
     const baseRange = Math.max(
       Math.abs(targetClose - sourceOpen),
       Math.abs(candle.high - candle.low),
-      Math.max(targetClose, sourceOpen) * 0.024,
-      0.18
+      Math.max(targetClose, sourceOpen) * 0.02,
+      0.12
     );
-    let segmentOpen = candleIndex === 0 ? candle.open : expanded[expanded.length - 1].close;
+    let segmentOpen = expanded.length ? expanded[expanded.length - 1].close : sourceOpen;
 
-    for (let step = 1; step <= DISPLAY_SEGMENTS; step += 1) {
-      const progress = step / DISPLAY_SEGMENTS;
-      const index = expanded.length;
-      const wave = step === DISPLAY_SEGMENTS
+    for (let step = 1; step <= ROUND_SEGMENTS; step += 1) {
+      const progress = step / ROUND_SEGMENTS;
+      const path = sourceOpen + (targetClose - sourceOpen) * progress;
+      const wave = step === ROUND_SEGMENTS
         ? 0
-        : Math.sin((candle.round + step) * 1.37) * baseRange * 0.22;
-      const drift = (targetClose - sourceOpen) * progress;
-      const segmentClose = step === DISPLAY_SEGMENTS
-        ? targetClose
-        : Math.max(0.01, sourceOpen + drift + wave);
-      const wick = baseRange * (0.2 + ((candle.round + step) % 4) * 0.07);
-      const high = Math.max(segmentOpen, segmentClose) + wick;
-      const low = Math.max(0.01, Math.min(segmentOpen, segmentClose) - wick * 0.82);
-
-      expanded.push({
-        round: candle.round,
-        time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
-        open: round2(segmentOpen),
-        high: round2(high),
-        low: round2(low),
-        close: round2(segmentClose),
-        volume: Math.max(1, Math.round((candle.volume || 1000) / DISPLAY_SEGMENTS * (0.82 + progress * 0.36))),
-        isAnchor: step === DISPLAY_SEGMENTS
-      });
-
-      segmentOpen = segmentClose + (step < DISPLAY_SEGMENTS ? direction * baseRange * 0.03 : 0);
+        : Math.sin((candle.round * 2.1 + step) * 0.93) * baseRange * 0.32;
+      const close = step === ROUND_SEGMENTS ? targetClose : Math.max(0.01, path + wave);
+      appendSyntheticBar(
+        expanded,
+        candle,
+        segmentOpen,
+        close,
+        baseRange,
+        (candle.volume || 1200) / ROUND_SEGMENTS,
+        step === ROUND_SEGMENTS
+      );
+      segmentOpen = close + Math.sin((step + candle.round) * 0.61) * baseRange * 0.05;
     }
   });
 
@@ -120,30 +153,33 @@ export function KlineChart({ candles }: Props) {
       height: ref.current.clientHeight,
       layout: {
         background: { type: ColorType.Solid, color: "#0b1220" },
-        textColor: "#94a3b8",
+        textColor: "#8ea0b8",
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: "#162235" },
-        horzLines: { color: "#1e2a3a" }
+        vertLines: { color: "rgba(57, 72, 96, 0.36)" },
+        horzLines: { color: "rgba(57, 72, 96, 0.46)" }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#64748b", width: 1, labelBackgroundColor: "#334155" },
-        horzLine: { color: "#64748b", width: 1, labelBackgroundColor: "#334155" }
+        vertLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" },
+        horzLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" }
       },
       rightPriceScale: {
-        borderColor: "#1e2a3a",
-        scaleMargins: { top: 0.08, bottom: 0.22 }
+        borderColor: "#263448",
+        scaleMargins: { top: 0.08, bottom: 0.24 }
       },
       timeScale: {
-        borderColor: "#1e2a3a",
-        rightOffset: 8,
-        barSpacing: 12,
+        borderColor: "#263448",
+        rightOffset: 4,
+        barSpacing: 13,
+        minBarSpacing: 5,
+        fixLeftEdge: true,
+        fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
           const round = roundLabelRef.current.get(String(time));
-          return round ? `第${round}轮` : "";
+          return round ? `\u7b2c${round}\u8f6e` : "";
         }
       },
       handleScale: true,
@@ -157,17 +193,19 @@ export function KlineChart({ candles }: Props) {
       borderDownColor: "#089981",
       wickUpColor: "#f23645",
       wickDownColor: "#089981",
-      priceLineColor: "#fbbf24"
+      priceLineColor: "#fbbf24",
+      priceLineWidth: 1,
+      lastValueVisible: true
     });
 
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
-      color: "rgba(148, 163, 184, 0.32)"
+      color: "rgba(148, 163, 184, 0.28)"
     });
 
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.78, bottom: 0 }
+      scaleMargins: { top: 0.8, bottom: 0 }
     });
 
     const ma5Series = chart.addLineSeries({
@@ -213,19 +251,11 @@ export function KlineChart({ candles }: Props) {
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
-      color: candle.close >= candle.open ? "rgba(242,54,69,.36)" : "rgba(8,153,129,.36)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.28)" : "rgba(8,153,129,.30)"
     })));
     ma5Ref.current.setData(ma5Data);
     ma10Ref.current.setData(ma10Data);
-
-    if (displayCandles.length <= 24) {
-      chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -2,
-        to: Math.max(24, displayCandles.length + 4)
-      });
-    } else {
-      chartRef.current.timeScale().fitContent();
-    }
+    chartRef.current.timeScale().fitContent();
   }, [candleData, displayCandles, ma5Data, ma10Data]);
 
   return (
@@ -233,7 +263,7 @@ export function KlineChart({ candles }: Props) {
       <div className="chart-legend">
         <span className="legend-ma5">MA5</span>
         <span className="legend-ma10">MA10</span>
-        <span>成交量</span>
+        <span>{"\u6210\u4ea4\u91cf"}</span>
       </div>
       <div className="chart-host" ref={ref} />
     </div>

@@ -217,7 +217,7 @@ button {
 }
 
 .chart-card {
-  min-height: clamp(590px, calc(100vh - 146px), 740px);
+  min-height: clamp(545px, calc(100vh - 270px), 620px);
   overflow: hidden;
 }
 
@@ -259,7 +259,7 @@ button {
 }
 
 .chart-host {
-  height: clamp(500px, calc(100vh - 234px), 650px);
+  height: clamp(455px, calc(100vh - 400px), 530px);
 }
 
 .ticket {
