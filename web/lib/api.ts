@@ -1,6 +1,16 @@
 import type { AdminStock, AdminUser, AuditLog, Candle, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+const PRIMARY_API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://gipfel-trading-api.onrender.com";
+const API_FALLBACKS = (process.env.NEXT_PUBLIC_API_FALLBACKS || "")
+  .split(",")
+  .map((base) => base.trim())
+  .filter(Boolean);
+const API_BASES = Array.from(new Set([PRIMARY_API_BASE, ...API_FALLBACKS].filter(Boolean)))
+  .map((base) => base.replace(/\/+$/, ""));
+const MARKET_CACHE_KEY = "gipfel:last-market";
+const CANDLE_CACHE_PREFIX = "gipfel:last-candles:";
+const MARKET_CACHE_TTL = 5000;
+const CANDLE_CACHE_TTL = 30000;
 
 const fallbackMarket: MarketSnapshot = {
   round: 1,
@@ -13,7 +23,38 @@ const fallbackMarket: MarketSnapshot = {
   ]
 };
 
-async function fetchWithRetry(input: string, init?: RequestInit, attempts = 3): Promise<Response> {
+function readCache<T>(key: string, maxAgeMs: number): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as { savedAt: number; data: T };
+    if (!cached.savedAt || Date.now() - cached.savedAt > maxAgeMs) return null;
+    return cached.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache<T>(key: string, data: T) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch {
+    // Browsers can reject storage in private mode. The live API path still works.
+  }
+}
+
+function requestMethod(init?: RequestInit) {
+  return String(init?.method || "GET").toUpperCase();
+}
+
+function isReadRequest(init?: RequestInit) {
+  const method = requestMethod(init);
+  return method === "GET" || method === "HEAD";
+}
+
+async function fetchWithRetry(input: string, init?: RequestInit, attempts = isReadRequest(init) ? 2 : 1): Promise<Response> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
@@ -27,6 +68,23 @@ async function fetchWithRetry(input: string, init?: RequestInit, attempts = 3): 
   throw lastError instanceof Error ? lastError : new Error("request_failed");
 }
 
+async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+  if (!API_BASES.length) throw new Error("api_not_configured");
+  const bases = isReadRequest(init) ? API_BASES : API_BASES.slice(0, 1);
+  let lastError: unknown;
+  for (const base of bases) {
+    try {
+      const res = await fetchWithRetry(`${base}${path}`, init);
+      if (res.ok) return res;
+      lastError = new Error(`api_${res.status}`);
+      if (res.status === 401 || res.status === 403 || res.status === 400 || res.status === 409) return res;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("api_unavailable");
+}
+
 async function apiError(res: Response, fallback: string) {
   try {
     const data = await res.json();
@@ -37,31 +95,44 @@ async function apiError(res: Response, fallback: string) {
 }
 
 export async function fetchMarket(): Promise<MarketSnapshot> {
-  if (!API_BASE) return fallbackMarket;
+  const cached = readCache<MarketSnapshot>(MARKET_CACHE_KEY, MARKET_CACHE_TTL);
+  if (cached?.stocks?.length) return cached;
+  if (!API_BASES.length) return fallbackMarket;
   try {
-    const res = await fetchWithRetry(`${API_BASE}/market`, { cache: "no-store" });
+    const res = await fetchApi("/market", { cache: "no-store" });
     if (!res.ok) return fallbackMarket;
     const data = await res.json();
-    return Array.isArray(data.stocks) && data.stocks.length > 0 ? data : fallbackMarket;
-  } catch {
+    if (Array.isArray(data.stocks) && data.stocks.length > 0) {
+      writeCache(MARKET_CACHE_KEY, data);
+      return data;
+    }
     return fallbackMarket;
+  } catch {
+    return readCache<MarketSnapshot>(MARKET_CACHE_KEY, Number.MAX_SAFE_INTEGER) ?? fallbackMarket;
   }
 }
 
 export async function fetchCandles(symbol: string): Promise<Candle[]> {
-  if (!API_BASE) return demoCandles(symbol);
+  const cacheKey = `${CANDLE_CACHE_PREFIX}${symbol}`;
+  const cached = readCache<Candle[]>(cacheKey, CANDLE_CACHE_TTL);
+  if (cached?.length) return cached;
+  if (!API_BASES.length) return demoCandles(symbol);
   try {
-    const res = await fetchWithRetry(`${API_BASE}/stocks/${symbol}/kline`, { cache: "no-store" });
+    const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`, { cache: "no-store" });
     if (!res.ok) return demoCandles(symbol);
     const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : demoCandles(symbol);
-  } catch {
+    if (Array.isArray(data) && data.length > 0) {
+      writeCache(cacheKey, data);
+      return data;
+    }
     return demoCandles(symbol);
+  } catch {
+    return readCache<Candle[]>(cacheKey, Number.MAX_SAFE_INTEGER) ?? demoCandles(symbol);
   }
 }
 
 export async function login(username: string, password: string): Promise<LoginResult> {
-  if (!API_BASE) {
+  if (!API_BASES.length) {
     return {
       accessToken: "demo-token",
       tokenType: "bearer",
@@ -69,7 +140,7 @@ export async function login(username: string, password: string): Promise<LoginRe
       user: { username, role: username === "admin" ? "admin" : "player", balance: 1000000 }
     };
   }
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await fetchApi("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
@@ -79,7 +150,7 @@ export async function login(username: string, password: string): Promise<LoginRe
 }
 
 export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> {
-  if (!API_BASE || token === "demo-token") {
+  if (!API_BASES.length || token === "demo-token") {
     return {
       user: { username: "player1", role: "player", balance: 1000000 },
       summary: { marketValue: 0, totalAssets: 1000000, totalPnl: 0, pnlRatio: 0 },
@@ -88,7 +159,7 @@ export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> 
       recentTrades: []
     };
   }
-  const res = await fetch(`${API_BASE}/portfolio`, {
+  const res = await fetchApi("/portfolio", {
     cache: "no-store",
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -103,14 +174,14 @@ export async function submitOrder(token: string, order: {
   price: number;
   shares: number;
 }) {
-  if (!API_BASE || token === "demo-token") {
+  if (!API_BASES.length || token === "demo-token") {
     return {
       accepted: false,
       reason: "demo_mode",
       detail: "演示模式未连接真实后端"
     };
   }
-  const res = await fetch(`${API_BASE}/orders`, {
+  const res = await fetchApi("/orders", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -123,7 +194,7 @@ export async function submitOrder(token: string, order: {
 }
 
 export async function marketControl(token: string, action: "open" | "close" | "reset", _confirmation: string) {
-  if (!API_BASE || token === "demo-token") {
+  if (!API_BASES.length || token === "demo-token") {
     return {
       accepted: false,
       reason: "demo_mode",
@@ -136,7 +207,7 @@ export async function marketControl(token: string, action: "open" | "close" | "r
     : action === "open"
       ? "confirm-open"
       : "confirm-reset-round1";
-  const res = await fetch(`${API_BASE}/admin/market/${path}`, {
+  const res = await fetchApi(`/admin/market/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -155,14 +226,14 @@ export async function fetchAdminOverview(token: string): Promise<{
   stocks: AdminStock[];
   auditLogs: AuditLog[];
 }> {
-  if (!API_BASE || token === "demo-token") {
+  if (!API_BASES.length || token === "demo-token") {
     return { users: [], stocks: [], auditLogs: [] };
   }
   const headers = { Authorization: `Bearer ${token}` };
   const [usersRes, stocksRes, logsRes] = await Promise.all([
-    fetch(`${API_BASE}/admin/users`, { headers, cache: "no-store" }),
-    fetch(`${API_BASE}/admin/stocks`, { headers, cache: "no-store" }),
-    fetch(`${API_BASE}/admin/audit-logs?limit=12`, { headers, cache: "no-store" })
+    fetchApi("/admin/users", { headers, cache: "no-store" }),
+    fetchApi("/admin/stocks", { headers, cache: "no-store" }),
+    fetchApi("/admin/audit-logs?limit=12", { headers, cache: "no-store" })
   ]);
   if (!usersRes.ok || !stocksRes.ok || !logsRes.ok) throw new Error("admin_overview_failed");
   return {
@@ -177,7 +248,7 @@ export async function createAdminUser(token: string, payload: {
   password: string;
   role: "admin" | "player";
 }) {
-  const res = await fetch(`${API_BASE}/admin/users`, {
+  const res = await fetchApi("/admin/users", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -190,7 +261,7 @@ export async function createAdminUser(token: string, payload: {
 }
 
 export async function updateAdminUserStatus(token: string, username: string, status: "active" | "disabled") {
-  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}/status`, {
+  const res = await fetchApi(`/admin/users/${encodeURIComponent(username)}/status`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -203,7 +274,7 @@ export async function updateAdminUserStatus(token: string, username: string, sta
 }
 
 export async function resetAdminUserPassword(token: string, username: string, password: string) {
-  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}/password`, {
+  const res = await fetchApi(`/admin/users/${encodeURIComponent(username)}/password`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -216,7 +287,7 @@ export async function resetAdminUserPassword(token: string, username: string, pa
 }
 
 export async function deleteAdminUser(token: string, username: string) {
-  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}`, {
+  const res = await fetchApi(`/admin/users/${encodeURIComponent(username)}`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${token}`
@@ -238,7 +309,7 @@ export async function createAdminStock(token: string, payload: {
   industry_carbon_mean: number;
   premium_rate: number;
 }) {
-  const res = await fetch(`${API_BASE}/admin/stocks`, {
+  const res = await fetchApi("/admin/stocks", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -258,7 +329,7 @@ export async function updateAdminStock(token: string, symbol: string, payload: {
   industry_carbon_mean?: number;
   premium_rate?: number;
 }) {
-  const res = await fetch(`${API_BASE}/admin/stocks/${encodeURIComponent(symbol)}`, {
+  const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -271,7 +342,7 @@ export async function updateAdminStock(token: string, symbol: string, payload: {
 }
 
 export async function deleteAdminStock(token: string, symbol: string) {
-  const res = await fetch(`${API_BASE}/admin/stocks/${encodeURIComponent(symbol)}`, {
+  const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}`, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${token}`

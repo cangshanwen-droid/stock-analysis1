@@ -7,7 +7,7 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -30,6 +30,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_public_read_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.method == "GET" and response.status_code == 200:
+        path = request.url.path
+        if path == "/market":
+            response.headers["Cache-Control"] = "public, max-age=3, stale-while-revalidate=15"
+        elif path.startswith("/stocks/") and path.endswith("/kline"):
+            response.headers["Cache-Control"] = "public, max-age=20, stale-while-revalidate=60"
+    return response
 
 
 @app.exception_handler(DatabaseNotReady)
