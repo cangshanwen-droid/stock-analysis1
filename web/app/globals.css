@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  --bg: #070b13;
-  --panel: #0d1420;
-  --panel-2: #111a29;
-  --line: #1d2a3b;
-  --muted: #7d8ba1;
+  --bg: #060a11;
+  --panel: #0b121d;
+  --panel-2: #101927;
+  --line: #1a2636;
+  --muted: #78869a;
   --text: #eef4ff;
-  --red: #f23645;
-  --green: #089981;
-  --gold: #d8b15f;
+  --red: #e04f5f;
+  --green: #00a37a;
+  --gold: #cfa85a;
 }
 
 * {
@@ -120,7 +120,7 @@ button {
 .chart-card,
 .ticket {
   border: 1px solid var(--line);
-  background: rgba(13, 20, 32, 0.88);
+  background: rgba(11, 18, 29, 0.9);
   border-radius: 8px;
 }
 
@@ -165,8 +165,8 @@ button {
 }
 
 .card:hover {
-  border-color: rgba(216, 177, 95, 0.34);
-  background: rgba(16, 25, 39, 0.94);
+  border-color: rgba(207, 168, 90, 0.32);
+  background: rgba(15, 24, 38, 0.95);
   transform: translateY(-1px);
 }
 
@@ -245,17 +245,18 @@ button {
   display: flex;
   align-items: center;
   gap: 14px;
-  color: var(--muted);
+  color: #748198;
   font-size: 12px;
   border-top: 1px solid var(--line);
+  background: #080f19;
 }
 
 .legend-ma5 {
-  color: #eab308;
+  color: #d6a645;
 }
 
 .legend-ma10 {
-  color: #60a5fa;
+  color: #5d8fd6;
 }
 
 .chart-host {
