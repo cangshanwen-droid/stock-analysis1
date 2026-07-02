@@ -545,6 +545,17 @@ button {
   font-size: 12px;
 }
 
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.danger-mini {
+  border-color: rgba(248, 113, 113, 0.32);
+  color: #fecaca;
+}
+
 .admin-head-actions {
   display: flex;
   align-items: center;

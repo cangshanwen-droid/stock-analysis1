@@ -209,6 +209,19 @@ export async function resetAdminUserPassword(token: string, username: string, pa
   return res.json();
 }
 
+export async function deleteAdminUser(token: string, username: string) {
+  const res = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!res.ok) throw await apiError(res, "delete_user_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_user_failed");
+  return data;
+}
+
 export async function createAdminStock(token: string, payload: {
   symbol: string;
   name: string;

@@ -5,6 +5,7 @@ import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react
 import {
   createAdminStock,
   createAdminUser,
+  deleteAdminUser,
   fetchAdminOverview,
   fetchCandles,
   fetchMarket,
@@ -306,6 +307,20 @@ export function TradingWorkspace() {
       await refreshAdminOverview();
     } catch {
       setAdminMessage("账号状态更新失败");
+    }
+  }
+
+  async function submitDeleteUser(username: string) {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认删除操作员账号「${username}」？该账号的未成交挂单会一并移除。`)) return;
+    setAdminMessage("");
+    try {
+      await deleteAdminUser(token, username);
+      setAdminMessage("操作员账号已删除");
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`删除账号失败：${detail || "请稍后重试"}`);
     }
   }
 
@@ -846,12 +861,17 @@ export function TradingWorkspace() {
                             <span>{fmtMoney(account.balance)}</span>
                             <span>
                               {account.role === "player" ? (
-                                <button
-                                  className="mini-action"
-                                  onClick={() => submitUserStatus(account.username, account.status === "active" ? "disabled" : "active")}
-                                >
-                                  {account.status === "active" ? "停用" : "启用"}
-                                </button>
+                                <span className="row-actions">
+                                  <button
+                                    className="mini-action"
+                                    onClick={() => submitUserStatus(account.username, account.status === "active" ? "disabled" : "active")}
+                                  >
+                                    {account.status === "active" ? "停用" : "启用"}
+                                  </button>
+                                  <button className="mini-action danger-mini" onClick={() => submitDeleteUser(account.username)}>
+                                    删除
+                                  </button>
+                                </span>
                               ) : "-"}
                             </span>
                           </div>

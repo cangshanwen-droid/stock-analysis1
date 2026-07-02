@@ -560,6 +560,27 @@ def admin_reset_user_password(username: str, payload: PasswordResetRequest, user
     return {"accepted": True, "username": username}
 
 
+@app.delete("/admin/users/{username}")
+def admin_delete_user(username: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    if username == user["username"]:
+        raise HTTPException(status_code=400, detail="cannot_delete_self")
+    with connect() as conn:
+        target = fetchone(conn, "SELECT username,role FROM users WHERE username=?", (username,))
+        if not target:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        if target["role"] != "player":
+            raise HTTPException(status_code=400, detail="only_player_can_be_deleted")
+        execute(conn, "DELETE FROM order_book WHERE username=?", (username,))
+        execute(conn, "DELETE FROM users WHERE username=? AND role='player'", (username,))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "delete_user", username, "operator deleted from web api"))
+        conn.commit()
+    return {"accepted": True, "username": username}
+
+
 @app.get("/admin/stocks")
 def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
     require_admin(user)
