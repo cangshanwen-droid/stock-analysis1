@@ -201,7 +201,9 @@ export function KlineChart({ candles }: Props) {
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
-      color: "rgba(148, 163, 184, 0.28)"
+      color: "rgba(148, 163, 184, 0.28)",
+      lastValueVisible: false,
+      priceLineVisible: false
     });
 
     volumeSeries.priceScale().applyOptions({
