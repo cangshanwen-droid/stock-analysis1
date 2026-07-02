@@ -510,7 +510,7 @@ export function TradingWorkspace() {
           <section className={`workspace ${view === "market" ? "market-only" : ""}`}>
             <div className="chart-card">
               <div className="chart-head">
-                <div>
+                <div className="chart-title-stack">
                   <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
                 </div>
                 <div className={`chart-price-badge ${cls(current?.change ?? 0)}`}>

@@ -129,9 +129,9 @@ export function KlineChart({ candles }: Props) {
       },
       timeScale: {
         borderColor: "#263448",
-        rightOffset: 10,
-        barSpacing: 24,
-        minBarSpacing: 10,
+        rightOffset: 2,
+        barSpacing: 34,
+        minBarSpacing: 12,
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
@@ -241,7 +241,7 @@ export function KlineChart({ candles }: Props) {
         color: "#f9c42f",
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
+        axisLabelVisible: false,
         title: ""
       });
       priceLinesRef.current.push(currentLine);
@@ -259,8 +259,8 @@ export function KlineChart({ candles }: Props) {
     }
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -1,
-        to: Math.max(24, displayCandles.length + 8)
+        from: -0.8,
+        to: Math.max(10.8, displayCandles.length - 0.2)
       });
     } else {
       chartRef.current.timeScale().fitContent();
