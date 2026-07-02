@@ -513,7 +513,7 @@ export function TradingWorkspace() {
                 <div>
                   <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
                 </div>
-                <div className={cls(current?.change ?? 0)}>
+                <div className={`chart-price-badge ${cls(current?.change ?? 0)}`}>
                   {current ? fmtMoney(current.price) : "--"}
                 </div>
               </div>

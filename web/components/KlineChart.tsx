@@ -5,7 +5,9 @@ import {
   ColorType,
   CrosshairMode,
   createChart,
+  LineStyle,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type Time
 } from "lightweight-charts";
@@ -28,15 +30,20 @@ type DisplayCandle = {
 
 const DISPLAY_START_TIME = 946684800;
 const DISPLAY_STEP_SECONDS = 21600;
+const START_DATE_UTC = Date.UTC(2026, 1, 26);
 
 function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
+function dateForIndex(index: number) {
+  return new Date(START_DATE_UTC + index * 86400000).toISOString().slice(0, 10) as Time;
+}
+
 function expandCandles(candles: Candle[]): DisplayCandle[] {
   return candles.map((candle, index) => ({
     round: candle.round,
-    time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
+    time: dateForIndex(index),
     open: round2(candle.open),
     high: round2(Math.max(
       candle.high,
@@ -70,7 +77,8 @@ export function KlineChart({ candles }: Props) {
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ma5Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ma10Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const roundLabelRef = useRef<Map<string, number>>(new Map());
+  const volumeMaRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
   const candleData = useMemo(() => displayCandles.map(({ time, open, high, low, close }) => ({
@@ -82,6 +90,14 @@ export function KlineChart({ candles }: Props) {
   })), [displayCandles]);
   const ma5Data = useMemo(() => movingAverage(displayCandles, 5), [displayCandles]);
   const ma10Data = useMemo(() => movingAverage(displayCandles, 10), [displayCandles]);
+  const volumeMaData = useMemo(() => displayCandles.map((candle, index) => ({
+    time: candle.time,
+    value: round2(
+      displayCandles
+        .slice(Math.max(0, index - 4), index + 1)
+        .reduce((sum, item) => sum + item.volume, 0) / Math.min(5, index + 1)
+    )
+  })), [displayCandles]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -89,14 +105,14 @@ export function KlineChart({ candles }: Props) {
       width: ref.current.clientWidth,
       height: ref.current.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#0b1220" },
-        textColor: "#8ea0b8",
+        background: { type: ColorType.Solid, color: "#090d16" },
+        textColor: "#a3aec0",
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: "rgba(57, 72, 96, 0.36)" },
-        horzLines: { color: "rgba(57, 72, 96, 0.46)" }
+        vertLines: { visible: false },
+        horzLines: { color: "rgba(168, 179, 196, 0.12)" }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -105,7 +121,7 @@ export function KlineChart({ candles }: Props) {
       },
       rightPriceScale: {
         borderColor: "#263448",
-        scaleMargins: { top: 0.08, bottom: 0.24 }
+        scaleMargins: { top: 0.08, bottom: 0.3 }
       },
       timeScale: {
         borderColor: "#263448",
@@ -115,8 +131,10 @@ export function KlineChart({ candles }: Props) {
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
-          const round = roundLabelRef.current.get(String(time));
-          return round ? `\u7b2c${round}\u8f6e` : "";
+          const value = String(time);
+          const date = value.length >= 10 ? new Date(`${value}T00:00:00Z`) : new Date(Number(value) * 1000);
+          if (Number.isNaN(date.getTime())) return "";
+          return `${date.getMonth() + 1}\u6708${date.getDate()}\u65e5`;
         }
       },
       handleScale: true,
@@ -124,13 +142,13 @@ export function KlineChart({ candles }: Props) {
     });
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: "rgba(242,54,69,0.16)",
-      downColor: "#00b050",
-      borderUpColor: "#f23645",
-      borderDownColor: "#00b050",
-      wickUpColor: "#f23645",
-      wickDownColor: "#00b050",
-      priceLineColor: "#fbbf24",
+      upColor: "#26c296",
+      downColor: "#b52a40",
+      borderUpColor: "#26c296",
+      borderDownColor: "#b52a40",
+      wickUpColor: "#26c296",
+      wickDownColor: "#b52a40",
+      priceLineVisible: false,
       priceLineWidth: 1,
       lastValueVisible: true
     });
@@ -148,15 +166,23 @@ export function KlineChart({ candles }: Props) {
     });
 
     const ma5Series = chart.addLineSeries({
-      color: "#eab308",
+      color: "#f9c42f",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false
     });
 
     const ma10Series = chart.addLineSeries({
-      color: "#60a5fa",
+      color: "#469fe6",
       lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+
+    const volumeMaSeries = chart.addLineSeries({
+      color: "rgba(210, 218, 230, 0.55)",
+      lineWidth: 1,
+      priceScaleId: "",
       priceLineVisible: false,
       lastValueVisible: false
     });
@@ -166,6 +192,7 @@ export function KlineChart({ candles }: Props) {
     volumeRef.current = volumeSeries;
     ma5Ref.current = ma5Series;
     ma10Ref.current = ma10Series;
+    volumeMaRef.current = volumeMaSeries;
 
     const resize = () => {
       if (!ref.current) return;
@@ -180,20 +207,53 @@ export function KlineChart({ candles }: Props) {
       volumeRef.current = null;
       ma5Ref.current = null;
       ma10Ref.current = null;
+      volumeMaRef.current = null;
+      priceLinesRef.current = [];
     };
   }, []);
 
   useEffect(() => {
-    if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !chartRef.current) return;
-    roundLabelRef.current = new Map(displayCandles.filter((candle) => candle.isAnchor).map((candle) => [String(candle.time), candle.round]));
+    if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
     candleRef.current.setData(candleData);
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
-      color: candle.close >= candle.open ? "rgba(242,54,69,.18)" : "rgba(0,176,80,.22)"
+      color: candle.close >= candle.open ? "rgba(38,194,150,.32)" : "rgba(181,42,64,.34)"
     })));
-    ma5Ref.current.setData(ma5Data);
+    const ma5WithCrossColor = ma5Data.map((point, index) => ({
+      ...point,
+      color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : "#f9c42f"
+    }));
+    ma5Ref.current.setData(ma5WithCrossColor);
     ma10Ref.current.setData(ma10Data);
+    volumeMaRef.current.setData(volumeMaData);
+
+    priceLinesRef.current.forEach((line) => candleRef.current?.removePriceLine(line));
+    priceLinesRef.current = [];
+    const last = displayCandles[displayCandles.length - 1];
+    if (last) {
+      const pressure = Math.max(...displayCandles.slice(0, -1).map((candle) => candle.high), last.high);
+      const currentLine = candleRef.current.createPriceLine({
+        price: last.close,
+        color: "#f9c42f",
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: ""
+      });
+      priceLinesRef.current.push(currentLine);
+      if (pressure > last.close) {
+        const pressureLine = candleRef.current.createPriceLine({
+          price: round2(pressure),
+          color: "rgba(240, 245, 255, 0.88)",
+          lineWidth: 2,
+          lineStyle: LineStyle.LargeDashed,
+          axisLabelVisible: true,
+          title: ""
+        });
+        priceLinesRef.current.push(pressureLine);
+      }
+    }
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
         from: -1,
@@ -202,7 +262,7 @@ export function KlineChart({ candles }: Props) {
     } else {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candleData, displayCandles, ma5Data, ma10Data]);
+  }, [candleData, displayCandles, ma5Data, ma10Data, volumeMaData]);
 
   return (
     <div className="chart-shell">

@@ -235,6 +235,23 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.chart-head strong {
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.chart-price-badge {
+  min-width: 74px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: rgba(242, 54, 69, 0.11);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
 .chart-shell {
   position: relative;
 }
@@ -250,12 +267,27 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 750;
+}
+
+.chart-legend span::before {
+  content: "";
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .legend-ma5 {
-  color: #eab308;
+  color: #f9c42f;
 }
 
 .legend-ma10 {
-  color: #60a5fa;
+  color: #469fe6;
 }
 
 .chart-host {
