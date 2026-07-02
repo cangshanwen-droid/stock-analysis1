@@ -177,26 +177,26 @@ export function KlineChart({ candles }: Props) {
       width: ref.current.clientWidth,
       height: ref.current.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#080f19" },
-        textColor: "#7f8da3",
+        background: { type: ColorType.Solid, color: "#0b1220" },
+        textColor: "#8ea0b8",
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: "rgba(49, 64, 86, 0.26)" },
-        horzLines: { color: "rgba(49, 64, 86, 0.34)" }
+        vertLines: { color: "rgba(57, 72, 96, 0.36)" },
+        horzLines: { color: "rgba(57, 72, 96, 0.46)" }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#6f829c", width: 1, labelBackgroundColor: "#182334" },
-        horzLine: { color: "#6f829c", width: 1, labelBackgroundColor: "#182334" }
+        vertLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" },
+        horzLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" }
       },
       rightPriceScale: {
-        borderColor: "#1d2b3f",
+        borderColor: "#263448",
         scaleMargins: { top: 0.08, bottom: 0.24 }
       },
       timeScale: {
-        borderColor: "#1d2b3f",
+        borderColor: "#263448",
         rightOffset: 4,
         barSpacing: 13,
         minBarSpacing: 5,
@@ -213,12 +213,12 @@ export function KlineChart({ candles }: Props) {
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: "rgba(0,0,0,0)",
-      downColor: "#00a37a",
-      borderUpColor: "#e04f5f",
-      borderDownColor: "#00a37a",
-      wickUpColor: "#e04f5f",
-      wickDownColor: "#00a37a",
-      priceLineColor: "#cfa85a",
+      downColor: "#089981",
+      borderUpColor: "#f23645",
+      borderDownColor: "#089981",
+      wickUpColor: "#f23645",
+      wickDownColor: "#089981",
+      priceLineColor: "#fbbf24",
       priceLineWidth: 1,
       lastValueVisible: true
     });
@@ -226,7 +226,7 @@ export function KlineChart({ candles }: Props) {
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
-      color: "rgba(127, 141, 163, 0.22)",
+      color: "rgba(148, 163, 184, 0.28)",
       lastValueVisible: false,
       priceLineVisible: false
     });
@@ -236,14 +236,14 @@ export function KlineChart({ candles }: Props) {
     });
 
     const ma5Series = chart.addLineSeries({
-      color: "#d6a645",
+      color: "#eab308",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false
     });
 
     const ma10Series = chart.addLineSeries({
-      color: "#5d8fd6",
+      color: "#60a5fa",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false
@@ -278,7 +278,7 @@ export function KlineChart({ candles }: Props) {
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
-      color: candle.close >= candle.open ? "rgba(224,79,95,.24)" : "rgba(0,163,122,.26)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.28)" : "rgba(8,153,129,.30)"
     })));
     ma5Ref.current.setData(ma5Data);
     ma10Ref.current.setData(ma10Data);
