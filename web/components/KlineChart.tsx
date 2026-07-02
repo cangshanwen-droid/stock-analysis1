@@ -38,8 +38,14 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
     round: candle.round,
     time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
     open: round2(candle.open),
-    high: round2(candle.high),
-    low: round2(candle.low),
+    high: round2(Math.max(
+      candle.high,
+      Math.max(candle.open, candle.close) + Math.max(Math.abs(candle.close - candle.open) * 0.18, candle.close * 0.0025, 0.04)
+    )),
+    low: round2(Math.max(0.01, Math.min(
+      candle.low,
+      Math.min(candle.open, candle.close) - Math.max(Math.abs(candle.close - candle.open) * 0.14, candle.close * 0.002, 0.03)
+    ))),
     close: round2(candle.close),
     volume: Math.max(0, Math.round(candle.volume || 0)),
     isAnchor: true
@@ -118,7 +124,7 @@ export function KlineChart({ candles }: Props) {
     });
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: "rgba(0,0,0,0)",
+      upColor: "rgba(242,54,69,0.16)",
       downColor: "#089981",
       borderUpColor: "#f23645",
       borderDownColor: "#089981",
@@ -191,7 +197,7 @@ export function KlineChart({ candles }: Props) {
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
         from: -1,
-        to: Math.max(14, displayCandles.length + 5)
+        to: Math.max(24, displayCandles.length + 8)
       });
     } else {
       chartRef.current.timeScale().fitContent();
