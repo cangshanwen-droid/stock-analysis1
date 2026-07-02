@@ -40,23 +40,6 @@ function dateForIndex(index: number) {
   return new Date(START_DATE_UTC + index * 86400000).toISOString().slice(0, 10) as Time;
 }
 
-function parseChartDate(time: Time) {
-  const value = String(time);
-  return value.length >= 10 ? new Date(`${value}T00:00:00Z`) : new Date(Number(value) * 1000);
-}
-
-function formatAxisDate(time: Time) {
-  const date = parseChartDate(time);
-  if (Number.isNaN(date.getTime())) return "";
-  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function formatFullDate(time: Time) {
-  const date = parseChartDate(time);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
-}
-
 function expandCandles(candles: Candle[]): DisplayCandle[] {
   return candles.map((candle, index) => ({
     round: candle.round,
@@ -96,6 +79,7 @@ export function KlineChart({ candles }: Props) {
   const ma10Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const volumeMaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const roundLabelRef = useRef<Map<string, number>>(new Map());
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
   const resistancePrice = useMemo(() => {
@@ -132,7 +116,10 @@ export function KlineChart({ candles }: Props) {
         attributionLogo: false
       },
       localization: {
-        timeFormatter: (time: Time) => formatFullDate(time)
+        timeFormatter: (time: Time) => {
+          const round = roundLabelRef.current.get(String(time));
+          return round ? `第 ${round} 轮` : "";
+        }
       },
       grid: {
         vertLines: { visible: false },
@@ -150,11 +137,14 @@ export function KlineChart({ candles }: Props) {
       timeScale: {
         borderColor: "#263448",
         rightOffset: 2,
-        barSpacing: 34,
-        minBarSpacing: 12,
+        barSpacing: 20,
+        minBarSpacing: 8,
         fixLeftEdge: true,
         fixRightEdge: false,
-        tickMarkFormatter: (time: Time) => formatAxisDate(time)
+        tickMarkFormatter: (time: Time) => {
+          const round = roundLabelRef.current.get(String(time));
+          return round ? `R${round}` : "";
+        }
       },
       handleScale: true,
       handleScroll: true
@@ -236,6 +226,7 @@ export function KlineChart({ candles }: Props) {
 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
+    roundLabelRef.current = new Map(displayCandles.map((candle) => [String(candle.time), candle.round]));
     candleRef.current.setData(candleData);
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
@@ -277,8 +268,8 @@ export function KlineChart({ candles }: Props) {
     }
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -0.8,
-        to: Math.max(10.8, displayCandles.length - 0.2)
+        from: -1.5,
+        to: Math.max(14, displayCandles.length + 1.5)
       });
     } else {
       chartRef.current.timeScale().fitContent();
