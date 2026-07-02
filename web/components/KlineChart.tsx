@@ -125,11 +125,11 @@ export function KlineChart({ candles }: Props) {
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: "rgba(242,54,69,0.16)",
-      downColor: "#089981",
+      downColor: "#00b050",
       borderUpColor: "#f23645",
-      borderDownColor: "#089981",
+      borderDownColor: "#00b050",
       wickUpColor: "#f23645",
-      wickDownColor: "#089981",
+      wickDownColor: "#00b050",
       priceLineColor: "#fbbf24",
       priceLineWidth: 1,
       lastValueVisible: true
@@ -190,7 +190,7 @@ export function KlineChart({ candles }: Props) {
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
-      color: candle.close >= candle.open ? "rgba(242,54,69,.18)" : "rgba(8,153,129,.20)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.18)" : "rgba(0,176,80,.22)"
     })));
     ma5Ref.current.setData(ma5Data);
     ma10Ref.current.setData(ma10Data);
