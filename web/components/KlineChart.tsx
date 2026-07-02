@@ -40,6 +40,23 @@ function dateForIndex(index: number) {
   return new Date(START_DATE_UTC + index * 86400000).toISOString().slice(0, 10) as Time;
 }
 
+function parseChartDate(time: Time) {
+  const value = String(time);
+  return value.length >= 10 ? new Date(`${value}T00:00:00Z`) : new Date(Number(value) * 1000);
+}
+
+function formatAxisDate(time: Time) {
+  const date = parseChartDate(time);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatFullDate(time: Time) {
+  const date = parseChartDate(time);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
 function expandCandles(candles: Candle[]): DisplayCandle[] {
   return candles.map((candle, index) => ({
     round: candle.round,
@@ -114,14 +131,17 @@ export function KlineChart({ candles }: Props) {
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         attributionLogo: false
       },
+      localization: {
+        timeFormatter: (time: Time) => formatFullDate(time)
+      },
       grid: {
         vertLines: { visible: false },
         horzLines: { color: "rgba(168, 179, 196, 0.12)" }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" },
-        horzLine: { color: "#7890ad", width: 1, labelBackgroundColor: "#1f2b3d" }
+        vertLine: { color: "rgba(120,144,173,0.44)", width: 1, labelVisible: false },
+        horzLine: { color: "rgba(120,144,173,0.44)", width: 1, labelVisible: false }
       },
       rightPriceScale: {
         borderColor: "#263448",
@@ -134,12 +154,7 @@ export function KlineChart({ candles }: Props) {
         minBarSpacing: 12,
         fixLeftEdge: true,
         fixRightEdge: false,
-        tickMarkFormatter: (time: Time) => {
-          const value = String(time);
-          const date = value.length >= 10 ? new Date(`${value}T00:00:00Z`) : new Date(Number(value) * 1000);
-          if (Number.isNaN(date.getTime())) return "";
-          return `${date.getMonth() + 1}\u6708${date.getDate()}\u65e5`;
-        }
+        tickMarkFormatter: (time: Time) => formatAxisDate(time)
       },
       handleScale: true,
       handleScroll: true
@@ -173,14 +188,16 @@ export function KlineChart({ candles }: Props) {
       color: "#f9c42f",
       lineWidth: 1,
       priceLineVisible: false,
-      lastValueVisible: false
+      lastValueVisible: false,
+      crosshairMarkerVisible: false
     });
 
     const ma10Series = chart.addLineSeries({
       color: "#469fe6",
       lineWidth: 1,
       priceLineVisible: false,
-      lastValueVisible: false
+      lastValueVisible: false,
+      crosshairMarkerVisible: false
     });
 
     const volumeMaSeries = chart.addLineSeries({
@@ -188,7 +205,8 @@ export function KlineChart({ candles }: Props) {
       lineWidth: 1,
       priceScaleId: "",
       priceLineVisible: false,
-      lastValueVisible: false
+      lastValueVisible: false,
+      crosshairMarkerVisible: false
     });
 
     chartRef.current = chart;
