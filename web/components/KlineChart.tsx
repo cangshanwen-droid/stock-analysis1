@@ -40,6 +40,15 @@ function dateForIndex(index: number) {
   return new Date(START_DATE_UTC + index * 86400000).toISOString().slice(0, 10) as Time;
 }
 
+function timeKey(time: Time | unknown) {
+  if (typeof time === "string" || typeof time === "number") return String(time);
+  if (time && typeof time === "object" && "year" in time && "month" in time && "day" in time) {
+    const item = time as { year: number; month: number; day: number };
+    return `${item.year}-${String(item.month).padStart(2, "0")}-${String(item.day).padStart(2, "0")}`;
+  }
+  return "";
+}
+
 function expandCandles(candles: Candle[]): DisplayCandle[] {
   return candles.map((candle, index) => ({
     round: candle.round,
@@ -119,7 +128,7 @@ export function KlineChart({ candles }: Props) {
       },
       localization: {
         timeFormatter: (time: Time) => {
-          const round = roundLabelRef.current.get(String(time));
+          const round = roundLabelRef.current.get(timeKey(time));
           return round ? `第 ${round} 轮` : "";
         }
       },
@@ -144,7 +153,7 @@ export function KlineChart({ candles }: Props) {
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
-          const round = roundLabelRef.current.get(String(time));
+          const round = roundLabelRef.current.get(timeKey(time));
           return round ? `R${round}` : "";
         }
       },
@@ -218,7 +227,7 @@ export function KlineChart({ candles }: Props) {
         if (tooltip) tooltip.style.opacity = "0";
         return;
       }
-      const candle = candleLookupRef.current.get(String(param.time));
+      const candle = candleLookupRef.current.get(timeKey(param.time));
       if (!candle) {
         tooltip.style.opacity = "0";
         return;
@@ -255,8 +264,8 @@ export function KlineChart({ candles }: Props) {
 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
-    roundLabelRef.current = new Map(displayCandles.map((candle) => [String(candle.time), candle.round]));
-    candleLookupRef.current = new Map(displayCandles.map((candle) => [String(candle.time), candle]));
+    roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.round]));
+    candleLookupRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle]));
     candleRef.current.setData(candleData);
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
