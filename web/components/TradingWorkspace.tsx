@@ -209,8 +209,9 @@ export function TradingWorkspace() {
       setUser(data.user);
       setPortfolio(null);
       setView(data.user.role === "admin" ? "admin" : "trade");
-    } catch {
-      setLoginError("账号或密码不正确");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setLoginError(detail === "invalid_credentials" ? "账号或密码不正确" : `登录失败：${detail || "请稍后重试"}`);
     }
   }
 
@@ -257,8 +258,9 @@ export function TradingWorkspace() {
       setMarket(nextMarket);
       setPendingMarketAction(null);
       setMarketConfirmText("");
-    } catch {
-      setAdminMessage("市场控制失败，请检查管理员权限");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`市场控制失败：${detail || "请重新登录管理员账号"}`);
     }
   }
 

@@ -27,6 +27,15 @@ async function fetchWithRetry(input: string, init?: RequestInit, attempts = 3): 
   throw lastError instanceof Error ? lastError : new Error("request_failed");
 }
 
+async function apiError(res: Response, fallback: string) {
+  try {
+    const data = await res.json();
+    return new Error(data.detail || data.reason || data.message || fallback);
+  } catch {
+    return new Error(fallback);
+  }
+}
+
 export async function fetchMarket(): Promise<MarketSnapshot> {
   if (!API_BASE) return fallbackMarket;
   try {
@@ -65,7 +74,7 @@ export async function login(username: string, password: string): Promise<LoginRe
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
   });
-  if (!res.ok) throw new Error("login_failed");
+  if (!res.ok) throw await apiError(res, "login_failed");
   return res.json();
 }
 
@@ -129,8 +138,10 @@ export async function marketControl(token: string, action: "open" | "close" | "r
       "X-Confirm-Action": confirmation
     }
   });
-  if (!res.ok) throw new Error("market_control_failed");
-  return res.json();
+  if (!res.ok) throw await apiError(res, "market_control_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "market_control_failed");
+  return data;
 }
 
 export async function fetchAdminOverview(token: string): Promise<{
