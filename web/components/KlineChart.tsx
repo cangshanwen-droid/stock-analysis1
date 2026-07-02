@@ -81,6 +81,10 @@ export function KlineChart({ candles }: Props) {
   const priceLinesRef = useRef<IPriceLine[]>([]);
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
+  const resistancePrice = useMemo(() => {
+    if (!candles.length) return 0;
+    return round2(Math.max(...candles.slice(0, -1).map((candle) => Math.max(candle.high, candle.close)), candles[0]?.high ?? 0));
+  }, [candles]);
   const candleData = useMemo(() => displayCandles.map(({ time, open, high, low, close }) => ({
     time,
     open,
@@ -150,7 +154,7 @@ export function KlineChart({ candles }: Props) {
       wickDownColor: "#b52a40",
       priceLineVisible: false,
       priceLineWidth: 1,
-      lastValueVisible: true
+      lastValueVisible: false
     });
 
     const volumeSeries = chart.addHistogramSeries({
@@ -232,7 +236,6 @@ export function KlineChart({ candles }: Props) {
     priceLinesRef.current = [];
     const last = displayCandles[displayCandles.length - 1];
     if (last) {
-      const pressure = Math.max(...displayCandles.slice(0, -1).map((candle) => candle.high), last.high);
       const currentLine = candleRef.current.createPriceLine({
         price: last.close,
         color: "#f9c42f",
@@ -242,9 +245,9 @@ export function KlineChart({ candles }: Props) {
         title: ""
       });
       priceLinesRef.current.push(currentLine);
-      if (pressure > last.close) {
+      if (resistancePrice > last.close) {
         const pressureLine = candleRef.current.createPriceLine({
-          price: round2(pressure),
+          price: resistancePrice,
           color: "rgba(240, 245, 255, 0.88)",
           lineWidth: 2,
           lineStyle: LineStyle.LargeDashed,
@@ -262,7 +265,7 @@ export function KlineChart({ candles }: Props) {
     } else {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candleData, displayCandles, ma5Data, ma10Data, volumeMaData]);
+  }, [candleData, displayCandles, ma5Data, ma10Data, resistancePrice, volumeMaData]);
 
   return (
     <div className="chart-shell">
