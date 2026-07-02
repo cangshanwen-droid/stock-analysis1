@@ -21,11 +21,27 @@ TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
 ENABLE_ORDER_WRITES = os.environ.get("ENABLE_ORDER_WRITES", "false").lower() == "true"
 ENABLE_MARKET_WRITES = os.environ.get("ENABLE_MARKET_WRITES", "false").lower() == "true"
 ENABLE_ADMIN_WRITES = os.environ.get("ENABLE_ADMIN_WRITES", "false").lower() == "true"
+DEFAULT_CORS_ORIGINS = {
+    "https://stock-analysis1-ten.vercel.app",
+    "https://www.gipfel.ltd",
+    "https://gipfel.ltd",
+}
+
+
+def cors_origins() -> list[str]:
+    configured = {
+        origin.strip()
+        for origin in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")
+        if origin.strip()
+    }
+    if "*" in configured:
+        return ["*"]
+    return sorted(configured | DEFAULT_CORS_ORIGINS)
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
