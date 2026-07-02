@@ -78,6 +78,10 @@ class StockUpdateRequest(BaseModel):
     premium_rate: float | None = None
 
 
+class MarketControlRequest(BaseModel):
+    confirmation: str = ""
+
+
 class CreateStockRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=16)
     name: str = Field(min_length=1, max_length=80)
@@ -395,10 +399,13 @@ def require_admin(user: dict[str, Any]) -> None:
 
 @app.post("/admin/market/close")
 def close_market_endpoint(
+    payload: MarketControlRequest | None = None,
     user: dict[str, Any] = Depends(current_user),
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
+    if payload:
+        x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认收盘", "confirm-close"}:
         raise HTTPException(status_code=400, detail="confirm_close_required")
     if not ENABLE_MARKET_WRITES:
@@ -424,10 +431,13 @@ def close_market_endpoint(
 
 @app.post("/admin/market/open")
 def open_market_endpoint(
+    payload: MarketControlRequest | None = None,
     user: dict[str, Any] = Depends(current_user),
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
+    if payload:
+        x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认开盘", "confirm-open"}:
         raise HTTPException(status_code=400, detail="confirm_open_required")
     if not ENABLE_MARKET_WRITES:
@@ -453,10 +463,13 @@ def open_market_endpoint(
 
 @app.post("/admin/market/reset-round1")
 def reset_market_endpoint(
+    payload: MarketControlRequest | None = None,
     user: dict[str, Any] = Depends(current_user),
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
+    if payload:
+        x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认重开", "确认回到第一轮", "confirm-reset-round1"}:
         raise HTTPException(status_code=400, detail="confirm_reset_required")
     if not ENABLE_MARKET_WRITES:

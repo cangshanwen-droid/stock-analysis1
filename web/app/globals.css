@@ -38,7 +38,7 @@ button {
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 256px minmax(0, 1fr);
   background:
     radial-gradient(circle at 18% 0%, rgba(216, 177, 95, 0.08), transparent 30%),
     linear-gradient(180deg, #09101b 0%, #070b13 42%, #050810 100%);
@@ -46,11 +46,12 @@ button {
 
 .sidebar {
   border-right: 1px solid var(--line);
-  background: rgba(7, 11, 19, 0.88);
-  padding: 22px 18px;
+  background: linear-gradient(180deg, rgba(9, 16, 27, 0.96), rgba(5, 8, 16, 0.98));
+  padding: 24px 18px;
   position: sticky;
   top: 0;
   height: 100vh;
+  box-shadow: 18px 0 46px rgba(0, 0, 0, 0.16);
 }
 
 .brand {
@@ -76,27 +77,29 @@ button {
 
 .nav {
   display: grid;
-  gap: 8px;
-  margin-top: 22px;
+  gap: 9px;
+  margin-top: 24px;
 }
 
 .nav button {
-  height: 42px;
+  height: 46px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
   color: #cbd6e6;
   text-align: left;
-  padding: 0 12px;
+  padding: 0 14px;
   display: flex;
   align-items: center;
   gap: 10px;
+  font-weight: 700;
 }
 
 .nav button.active {
-  background: rgba(242, 54, 69, 0.16);
-  border-color: rgba(242, 54, 69, 0.25);
+  background: linear-gradient(90deg, rgba(242, 54, 69, 0.28), rgba(216, 177, 95, 0.09));
+  border-color: rgba(242, 54, 69, 0.34);
   color: #fff;
+  box-shadow: inset 3px 0 0 var(--red);
 }
 
 .mobile-nav {
@@ -105,7 +108,10 @@ button {
 
 .main {
   min-width: 0;
-  padding: 22px;
+  width: 100%;
+  max-width: 1520px;
+  padding: 22px 26px 30px;
+  margin: 0 auto;
 }
 
 .topbar,
@@ -123,16 +129,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  margin-bottom: 14px;
+  gap: 18px;
+  padding: 0 18px;
+  margin-bottom: 12px;
 }
 
 .status-strip {
-  padding: 14px 16px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .status-dot {
@@ -146,14 +153,21 @@ button {
 .quote-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
 .card {
-  min-height: 104px;
+  min-height: 108px;
   padding: 14px;
   text-align: left;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.card:hover {
+  border-color: rgba(216, 177, 95, 0.34);
+  background: rgba(16, 25, 39, 0.94);
+  transform: translateY(-1px);
 }
 
 .symbol {
@@ -184,8 +198,9 @@ button {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
 }
 
 .workspace.market-only {
@@ -202,7 +217,7 @@ button {
 }
 
 .chart-card {
-  min-height: 620px;
+  min-height: clamp(590px, calc(100vh - 146px), 740px);
   overflow: hidden;
 }
 
@@ -212,8 +227,8 @@ button {
 }
 
 .chart-head {
-  height: 56px;
-  padding: 0 14px;
+  height: 58px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -225,8 +240,8 @@ button {
 }
 
 .chart-legend {
-  height: 28px;
-  padding: 0 14px;
+  height: 30px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -244,12 +259,14 @@ button {
 }
 
 .chart-host {
-  height: 536px;
+  height: clamp(500px, calc(100vh - 234px), 650px);
 }
 
 .ticket {
   padding: 16px;
   align-self: start;
+  position: sticky;
+  top: 22px;
 }
 
 .ticket h2 {
@@ -408,7 +425,7 @@ button {
 
 .admin-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -417,11 +434,11 @@ button {
 }
 
 .danger-zone {
-  margin: 14px;
+  margin: 16px;
   border: 1px solid rgba(242, 54, 69, 0.28);
   border-radius: 8px;
   background: rgba(242, 54, 69, 0.07);
-  padding: 12px;
+  padding: 14px;
   display: grid;
   gap: 12px;
 }
@@ -473,7 +490,7 @@ button {
 }
 
 .admin-stats.wide {
-  margin: 0 14px 14px;
+  margin: 0 16px 16px;
 }
 
 .admin-stats div {
@@ -499,16 +516,16 @@ button {
 
 .management-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 0 14px 14px;
+  grid-template-columns: minmax(390px, 0.78fr) minmax(560px, 1.22fr);
+  gap: 16px;
+  margin: 0 16px 16px;
 }
 
 .admin-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 0 14px 14px;
+  gap: 16px;
+  margin: 0 16px 16px;
 }
 
 .management-panel {
@@ -527,11 +544,11 @@ button {
 }
 
 .stock-create-panel {
-  margin: 0 14px 14px;
+  margin: 0 16px 16px;
 }
 
 .stock-form {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  grid-template-columns: repeat(4, minmax(128px, 1fr)) minmax(140px, 0.9fr) 128px;
   align-items: end;
 }
 
@@ -593,6 +610,9 @@ button {
 .stock-editor-list {
   display: grid;
   gap: 10px;
+  max-height: clamp(520px, calc(100vh - 315px), 760px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .stock-editor-card {
@@ -752,11 +772,30 @@ button {
 }
 
 .table-row.user-col {
-  grid-template-columns: 1fr 0.8fr 0.8fr 1.1fr 0.8fr;
+  grid-template-columns: minmax(88px, 1fr) 0.8fr 0.8fr minmax(92px, 1fr) 124px;
 }
 
 .table-row.stock-col {
   grid-template-columns: 0.9fr 1.4fr 1fr 1fr 0.7fr;
+}
+
+@media (min-width: 1280px) {
+  .workspace:not(.market-only) {
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+
+  .quote-grid {
+    grid-template-columns: repeat(4, minmax(210px, 1fr));
+  }
+
+  .panel-grid.two {
+    grid-template-columns: repeat(2, minmax(460px, 1fr));
+  }
+
+  .admin-table {
+    max-height: clamp(360px, calc(100vh - 330px), 640px);
+    overflow: auto;
+  }
 }
 
 .table-row:first-child {
@@ -788,6 +827,7 @@ button {
   .main {
     padding: 12px;
     padding-bottom: 82px;
+    max-width: none;
   }
 
   .mobile-nav {
@@ -834,9 +874,17 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .ticket {
+    position: static;
+  }
+
   .panel-grid.two,
   .asset-grid,
   .management-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-actions {
     grid-template-columns: 1fr;
   }
 
@@ -848,6 +896,13 @@ button {
   .stock-param-grid,
   .factor-strip {
     grid-template-columns: 1fr;
+  }
+
+  .stock-editor-list,
+  .admin-table {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .table-row {

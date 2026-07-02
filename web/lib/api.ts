@@ -122,7 +122,7 @@ export async function submitOrder(token: string, order: {
   return res.json();
 }
 
-export async function marketControl(token: string, action: "open" | "close" | "reset", confirmation: string) {
+export async function marketControl(token: string, action: "open" | "close" | "reset", _confirmation: string) {
   if (!API_BASE || token === "demo-token") {
     return {
       accepted: false,
@@ -139,9 +139,10 @@ export async function marketControl(token: string, action: "open" | "close" | "r
   const res = await fetch(`${API_BASE}/admin/market/${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
-      "X-Confirm-Action": confirmationCode
-    }
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ confirmation: confirmationCode })
   });
   if (!res.ok) throw await apiError(res, "market_control_failed");
   const data = await res.json();

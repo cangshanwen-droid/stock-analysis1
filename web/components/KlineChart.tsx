@@ -15,6 +15,84 @@ type Props = {
   candles: Candle[];
 };
 
+type DisplayCandle = {
+  round: number;
+  time: Time;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  isAnchor: boolean;
+};
+
+const DISPLAY_SEGMENTS = 6;
+const DISPLAY_START_TIME = 946684800;
+const DISPLAY_STEP_SECONDS = 21600;
+
+function round2(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function expandCandles(candles: Candle[]): DisplayCandle[] {
+  const expanded: DisplayCandle[] = [];
+  if (!candles.length) return expanded;
+
+  candles.forEach((candle, candleIndex) => {
+    const sourceOpen = candleIndex === 0 ? candle.open : candles[candleIndex - 1].close;
+    const targetClose = candle.close;
+    const direction = targetClose >= sourceOpen ? 1 : -1;
+    const baseRange = Math.max(
+      Math.abs(targetClose - sourceOpen),
+      Math.abs(candle.high - candle.low),
+      Math.max(targetClose, sourceOpen) * 0.024,
+      0.18
+    );
+    let segmentOpen = candleIndex === 0 ? candle.open : expanded[expanded.length - 1].close;
+
+    for (let step = 1; step <= DISPLAY_SEGMENTS; step += 1) {
+      const progress = step / DISPLAY_SEGMENTS;
+      const index = expanded.length;
+      const wave = step === DISPLAY_SEGMENTS
+        ? 0
+        : Math.sin((candle.round + step) * 1.37) * baseRange * 0.22;
+      const drift = (targetClose - sourceOpen) * progress;
+      const segmentClose = step === DISPLAY_SEGMENTS
+        ? targetClose
+        : Math.max(0.01, sourceOpen + drift + wave);
+      const wick = baseRange * (0.2 + ((candle.round + step) % 4) * 0.07);
+      const high = Math.max(segmentOpen, segmentClose) + wick;
+      const low = Math.max(0.01, Math.min(segmentOpen, segmentClose) - wick * 0.82);
+
+      expanded.push({
+        round: candle.round,
+        time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
+        open: round2(segmentOpen),
+        high: round2(high),
+        low: round2(low),
+        close: round2(segmentClose),
+        volume: Math.max(1, Math.round((candle.volume || 1000) / DISPLAY_SEGMENTS * (0.82 + progress * 0.36))),
+        isAnchor: step === DISPLAY_SEGMENTS
+      });
+
+      segmentOpen = segmentClose + (step < DISPLAY_SEGMENTS ? direction * baseRange * 0.03 : 0);
+    }
+  });
+
+  return expanded;
+}
+
+function movingAverage(candles: DisplayCandle[], windowSize: number) {
+  return candles.map((candle, index) => ({
+    time: candle.time,
+    value: round2(
+      candles
+        .slice(Math.max(0, index - windowSize + 1), index + 1)
+        .reduce((sum, item) => sum + item.close, 0) / Math.min(windowSize, index + 1)
+    )
+  }));
+}
+
 export function KlineChart({ candles }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -24,23 +102,16 @@ export function KlineChart({ candles }: Props) {
   const ma10Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const roundLabelRef = useRef<Map<string, number>>(new Map());
 
-  const candleData = useMemo(() => candles.map(({ time, open, high, low, close }) => ({
+  const displayCandles = useMemo(() => expandCandles(candles), [candles]);
+  const candleData = useMemo(() => displayCandles.map(({ time, open, high, low, close }) => ({
     time,
     open,
     high,
     low,
     close
-  })), [candles]);
-
-  const ma5Data = useMemo(() => candles.map((candle, index) => ({
-    time: candle.time,
-    value: Number((candles.slice(Math.max(0, index - 4), index + 1).reduce((sum, item) => sum + item.close, 0) / Math.min(5, index + 1)).toFixed(2))
-  })), [candles]);
-
-  const ma10Data = useMemo(() => candles.map((candle, index) => ({
-    time: candle.time,
-    value: Number((candles.slice(Math.max(0, index - 9), index + 1).reduce((sum, item) => sum + item.close, 0) / Math.min(10, index + 1)).toFixed(2))
-  })), [candles]);
+  })), [displayCandles]);
+  const ma5Data = useMemo(() => movingAverage(displayCandles, 5), [displayCandles]);
+  const ma10Data = useMemo(() => movingAverage(displayCandles, 10), [displayCandles]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -69,10 +140,9 @@ export function KlineChart({ candles }: Props) {
       timeScale: {
         borderColor: "#1e2a3a",
         rightOffset: 8,
-        barSpacing: 10,
+        barSpacing: 12,
         tickMarkFormatter: (time: Time) => {
-          const key = String(time);
-          const round = roundLabelRef.current.get(key);
+          const round = roundLabelRef.current.get(String(time));
           return round ? `第${round}轮` : "";
         }
       },
@@ -138,24 +208,25 @@ export function KlineChart({ candles }: Props) {
 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !chartRef.current) return;
-    roundLabelRef.current = new Map(candles.map((candle) => [String(candle.time), candle.round]));
+    roundLabelRef.current = new Map(displayCandles.filter((candle) => candle.isAnchor).map((candle) => [String(candle.time), candle.round]));
     candleRef.current.setData(candleData);
-    volumeRef.current.setData(candles.map((c) => ({
-      time: c.time,
-      value: c.volume,
-      color: c.close >= c.open ? "rgba(242,54,69,.36)" : "rgba(8,153,129,.36)"
+    volumeRef.current.setData(displayCandles.map((candle) => ({
+      time: candle.time,
+      value: candle.volume,
+      color: candle.close >= candle.open ? "rgba(242,54,69,.36)" : "rgba(8,153,129,.36)"
     })));
     ma5Ref.current.setData(ma5Data);
     ma10Ref.current.setData(ma10Data);
-    if (candles.length <= 12) {
+
+    if (displayCandles.length <= 24) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -6,
-        to: Math.max(18, candles.length + 8)
+        from: -2,
+        to: Math.max(24, displayCandles.length + 4)
       });
     } else {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candleData, candles, ma5Data, ma10Data]);
+  }, [candleData, displayCandles, ma5Data, ma10Data]);
 
   return (
     <div className="chart-shell">
