@@ -220,8 +220,31 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.chart-shell {
+  position: relative;
+}
+
+.chart-legend {
+  height: 28px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.legend-ma5 {
+  color: #eab308;
+}
+
+.legend-ma10 {
+  color: #60a5fa;
+}
+
 .chart-host {
-  height: 564px;
+  height: 536px;
 }
 
 .ticket {
@@ -844,7 +867,7 @@ button {
   }
 
   .chart-host {
-    height: 460px;
+    height: 432px;
   }
 
   .chart-card {

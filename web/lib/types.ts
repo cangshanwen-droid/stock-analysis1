@@ -7,6 +7,7 @@ export type StockQuote = {
 };
 
 export type Candle = {
+  round: number;
   time: string;
   open: number;
   high: number;

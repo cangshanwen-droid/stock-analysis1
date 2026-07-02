@@ -256,9 +256,10 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
             """,
             (symbol.upper(),),
         )
-    start = date(2026, 1, 1)
+    start = date(2000, 1, 1)
     return [
         {
+            "round": int(row["round"] or 0),
             "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
             "open": float(row["open_price"] or 0),
             "high": float(row["high_price"] or 0),
@@ -689,6 +690,27 @@ def admin_update_stock(symbol: str, payload: StockUpdateRequest, user: dict[str,
                 (user["username"], "update_stock", symbol.upper(), json.dumps(safe, ensure_ascii=False)))
         conn.commit()
     return {"accepted": True, "symbol": symbol.upper(), "updated": safe}
+
+
+@app.delete("/admin/stocks/{symbol}")
+def admin_delete_stock(symbol: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    target_symbol = symbol.upper()
+    with connect() as conn:
+        target = fetchone(conn, "SELECT symbol,name,is_deleted FROM stocks WHERE symbol=?", (target_symbol,))
+        if not target:
+            raise HTTPException(status_code=404, detail="stock_not_found")
+        if int(target["is_deleted"] or 0):
+            return {"accepted": True, "symbol": target_symbol, "detail": "stock_already_deleted"}
+        execute(conn, "DELETE FROM order_book WHERE stock_symbol=?", (target_symbol,))
+        execute(conn, "DELETE FROM rounds WHERE stock_symbol=?", (target_symbol,))
+        execute(conn, "UPDATE stocks SET is_deleted=1, last_update=CURRENT_TIMESTAMP WHERE symbol=?", (target_symbol,))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "delete_stock", target_symbol, str(target["name"])))
+        conn.commit()
+    return {"accepted": True, "symbol": target_symbol}
 
 
 @app.get("/admin/audit-logs")

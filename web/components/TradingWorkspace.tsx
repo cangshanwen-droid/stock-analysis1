@@ -5,6 +5,7 @@ import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react
 import {
   createAdminStock,
   createAdminUser,
+  deleteAdminStock,
   deleteAdminUser,
   fetchAdminOverview,
   fetchCandles,
@@ -393,6 +394,23 @@ export function TradingWorkspace() {
       await refreshAdminOverview();
     } catch {
       setAdminMessage("保存股票参数失败");
+    }
+  }
+
+  async function submitDeleteStock(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认删除股票「${stock.name} (${stock.symbol})」？该股票会从行情和交易列表隐藏，历史记录保留。`)) return;
+    setAdminMessage("");
+    try {
+      await deleteAdminStock(token, stock.symbol);
+      setAdminMessage(`${stock.name} 已删除`);
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket();
+      setMarket(nextMarket);
+      if (nextMarket.stocks[0]) setSelected(nextMarket.stocks[0].symbol);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`删除股票失败：${detail || "请稍后重试"}`);
     }
   }
 
@@ -926,7 +944,10 @@ export function TradingWorkspace() {
                                 <span>幸福因子 {happinessFactor.toFixed(3)}</span>
                                 <span>碳因子 {carbonFactor.toFixed(3)}</span>
                               </div>
-                              <button className="mini-action" onClick={() => submitUpdateStock(stock)}>保存参数</button>
+                              <div className="row-actions">
+                                <button className="mini-action" onClick={() => submitUpdateStock(stock)}>保存参数</button>
+                                <button className="mini-action danger-mini" onClick={() => submitDeleteStock(stock)}>删除股票</button>
+                              </div>
                             </div>
                           );
                         })}

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   ColorType,
   CrosshairMode,
   createChart,
   type IChartApi,
-  type ISeriesApi
+  type ISeriesApi,
+  type Time
 } from "lightweight-charts";
 import type { Candle } from "../lib/types";
 
@@ -19,6 +20,27 @@ export function KlineChart({ candles }: Props) {
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ma5Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const ma10Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const roundLabelRef = useRef<Map<string, number>>(new Map());
+
+  const candleData = useMemo(() => candles.map(({ time, open, high, low, close }) => ({
+    time,
+    open,
+    high,
+    low,
+    close
+  })), [candles]);
+
+  const ma5Data = useMemo(() => candles.map((candle, index) => ({
+    time: candle.time,
+    value: Number((candles.slice(Math.max(0, index - 4), index + 1).reduce((sum, item) => sum + item.close, 0) / Math.min(5, index + 1)).toFixed(2))
+  })), [candles]);
+
+  const ma10Data = useMemo(() => candles.map((candle, index) => ({
+    time: candle.time,
+    value: Number((candles.slice(Math.max(0, index - 9), index + 1).reduce((sum, item) => sum + item.close, 0) / Math.min(10, index + 1)).toFixed(2))
+  })), [candles]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -47,7 +69,12 @@ export function KlineChart({ candles }: Props) {
       timeScale: {
         borderColor: "#1e2a3a",
         rightOffset: 8,
-        barSpacing: 10
+        barSpacing: 10,
+        tickMarkFormatter: (time: Time) => {
+          const key = String(time);
+          const round = roundLabelRef.current.get(key);
+          return round ? `第${round}轮` : "";
+        }
       },
       handleScale: true,
       handleScroll: true
@@ -73,9 +100,25 @@ export function KlineChart({ candles }: Props) {
       scaleMargins: { top: 0.78, bottom: 0 }
     });
 
+    const ma5Series = chart.addLineSeries({
+      color: "#eab308",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+
+    const ma10Series = chart.addLineSeries({
+      color: "#60a5fa",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false
+    });
+
     chartRef.current = chart;
     candleRef.current = candleSeries;
     volumeRef.current = volumeSeries;
+    ma5Ref.current = ma5Series;
+    ma10Ref.current = ma10Series;
 
     const resize = () => {
       if (!ref.current) return;
@@ -88,23 +131,22 @@ export function KlineChart({ candles }: Props) {
       chartRef.current = null;
       candleRef.current = null;
       volumeRef.current = null;
+      ma5Ref.current = null;
+      ma10Ref.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!candleRef.current || !volumeRef.current || !chartRef.current) return;
-    candleRef.current.setData(candles.map(({ time, open, high, low, close }) => ({
-      time,
-      open,
-      high,
-      low,
-      close
-    })));
+    if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !chartRef.current) return;
+    roundLabelRef.current = new Map(candles.map((candle) => [String(candle.time), candle.round]));
+    candleRef.current.setData(candleData);
     volumeRef.current.setData(candles.map((c) => ({
       time: c.time,
       value: c.volume,
       color: c.close >= c.open ? "rgba(242,54,69,.36)" : "rgba(8,153,129,.36)"
     })));
+    ma5Ref.current.setData(ma5Data);
+    ma10Ref.current.setData(ma10Data);
     if (candles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
         from: -6,
@@ -113,7 +155,16 @@ export function KlineChart({ candles }: Props) {
     } else {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candles]);
+  }, [candleData, candles, ma5Data, ma10Data]);
 
-  return <div className="chart-host" ref={ref} />;
+  return (
+    <div className="chart-shell">
+      <div className="chart-legend">
+        <span className="legend-ma5">MA5</span>
+        <span className="legend-ma10">MA10</span>
+        <span>成交量</span>
+      </div>
+      <div className="chart-host" ref={ref} />
+    </div>
+  );
 }

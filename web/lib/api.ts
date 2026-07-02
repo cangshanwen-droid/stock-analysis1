@@ -269,11 +269,24 @@ export async function updateAdminStock(token: string, symbol: string, payload: {
   return res.json();
 }
 
+export async function deleteAdminStock(token: string, symbol: string) {
+  const res = await fetch(`${API_BASE}/admin/stocks/${encodeURIComponent(symbol)}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!res.ok) throw await apiError(res, "delete_stock_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_stock_failed");
+  return data;
+}
+
 export function demoCandles(symbol: string): Candle[] {
   const seed = Array.from(symbol).reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i + 5), 0);
   const base = symbol === "YLIAO" ? 25 : symbol === "JGONG" ? 20 : symbol === "JXIAO" ? 15 : 10;
   let close = base;
-  const start = Date.UTC(2026, 2, 20);
+  const start = Date.UTC(2000, 0, 1);
   return Array.from({ length: 72 }, (_, i) => {
     const date = new Date(start + i * 86400000).toISOString().slice(0, 10);
     const wave = Math.sin((i + seed) / 6) * base * 0.012;
@@ -283,6 +296,7 @@ export function demoCandles(symbol: string): Candle[] {
     const high = Math.max(open, close) + base * (0.008 + ((i + seed) % 7) * 0.002);
     const low = Math.min(open, close) - base * (0.008 + ((i + seed) % 5) * 0.002);
     return {
+      round: i + 1,
       time: date,
       open: Number(open.toFixed(2)),
       high: Number(high.toFixed(2)),
