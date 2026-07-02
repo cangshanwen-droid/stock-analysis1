@@ -1,0 +1,14 @@
+{
+  "projects": [
+    {
+      "name": "gipfel-frontend",
+      "path": "web",
+      "framework": "nextjs"
+    },
+    {
+      "name": "gipfel-api",
+      "path": "api",
+      "framework": "docker"
+    }
+  ]
+}
