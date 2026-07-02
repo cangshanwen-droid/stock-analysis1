@@ -20,7 +20,7 @@ import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, Portfolio
 import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
-type MarketAction = "open" | "close";
+type MarketAction = "open" | "close" | "reset";
 
 function fmtMoney(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
@@ -248,9 +248,10 @@ export function TradingWorkspace() {
 
   async function submitMarketAction(action: MarketAction) {
     if (!token) return;
+    const confirmation = action === "close" ? "确认收盘" : action === "open" ? "确认开盘" : "确认重开";
     setAdminMessage("");
     try {
-      const result = await marketControl(token, action, action === "close" ? "确认收盘" : "确认开盘");
+      const result = await marketControl(token, action, confirmation);
       setAdminMessage(result.detail || result.reason || "操作完成");
       const nextMarket = await fetchMarket();
       setMarket(nextMarket);
@@ -378,8 +379,8 @@ export function TradingWorkspace() {
     }
   }
 
-  const marketActionText = pendingMarketAction === "close" ? "收盘结算" : "开启下一轮";
-  const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : "确认开盘";
+  const marketActionText = pendingMarketAction === "close" ? "收盘结算" : pendingMarketAction === "open" ? "开启下一轮" : "重开赛局";
+  const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : pendingMarketAction === "open" ? "确认开盘" : "确认重开";
   const canCloseMarket = market?.state === "open";
   const canOpenMarket = market?.state === "closed";
   const newStockInitialPrice = calcInitialPrice(
@@ -700,7 +701,7 @@ export function TradingWorkspace() {
                   <div className="danger-zone">
                     <div className="danger-copy">
                       <strong>市场轮次控制</strong>
-                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。收盘会结算本轮成交并生成K线；开启下一轮会推进轮次。</span>
+                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。重开赛局会清空成交、挂单、K线和持仓。</span>
                     </div>
                     <div className="admin-actions">
                       <button className="danger-button" disabled={!canCloseMarket} onClick={() => { setPendingMarketAction("close"); setMarketConfirmText(""); }}>
@@ -709,12 +710,16 @@ export function TradingWorkspace() {
                       <button className="ghost" disabled={!canOpenMarket} onClick={() => { setPendingMarketAction("open"); setMarketConfirmText(""); }}>
                         开启下一轮
                       </button>
+                      <button className="danger-button" onClick={() => { setPendingMarketAction("reset"); setMarketConfirmText(""); }}>
+                        重开赛局
+                      </button>
                     </div>
                     {pendingMarketAction ? (
                       <div className="confirm-box">
                         <div>
                           <strong>确认执行：{marketActionText}</strong>
                           <span>请输入「{marketActionKeyword}」后才能继续。</span>
+                          {pendingMarketAction === "reset" ? <span>该操作会清空比赛交易历史并恢复第 1 轮。</span> : null}
                         </div>
                         <input
                           value={marketConfirmText}

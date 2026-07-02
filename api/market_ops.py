@@ -127,3 +127,28 @@ def open_market(conn) -> MarketResult:
         """, (stock["symbol"], new_round))
     execute(conn, "UPDATE market_state SET state='open', round=? WHERE id=1", (new_round,))
     return MarketResult(True, "市场已开盘", new_round)
+
+
+def reset_to_round1(conn) -> MarketResult:
+    stocks = fetchall(conn, "SELECT * FROM stocks WHERE is_deleted=0")
+    execute(conn, "DELETE FROM transactions")
+    execute(conn, "DELETE FROM order_book")
+    execute(conn, "DELETE FROM kline")
+    execute(conn, "DELETE FROM rounds")
+    execute(conn, "UPDATE users SET balance=1000000 WHERE role='player'")
+    for stock in stocks:
+        revenue = row_get(stock, "revenue", 0) or 0
+        total_shares = row_get(stock, "total_shares", 0) or 0
+        industry_pe = row_get(stock, "industry_pe", 0) or 0
+        if revenue > 0 and total_shares > 0 and industry_pe > 0:
+            init_price = round(float(revenue) * 10000 / float(total_shares) / float(industry_pe), 2)
+        else:
+            init_price = round(float(row_get(stock, "current_price", 1) or 1), 2)
+        execute(conn, "UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_price, init_price, stock["symbol"]))
+        execute(conn, "INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (stock["symbol"],))
+        execute(conn, """
+            INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct)
+            VALUES(?,?,?,?,?,?,?,?,?,0)
+        """, (stock["symbol"], 1, init_price, init_price, init_price, init_price, 0, 0, 0))
+    execute(conn, "UPDATE market_state SET state='open', round=1 WHERE id=1")
+    return MarketResult(True, "已重开赛局并回到第 1 轮", 1, len(stocks), 0)
