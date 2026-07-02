@@ -131,11 +131,16 @@ export async function marketControl(token: string, action: "open" | "close" | "r
     };
   }
   const path = action === "reset" ? "reset-round1" : action;
+  const confirmationCode = action === "close"
+    ? "confirm-close"
+    : action === "open"
+      ? "confirm-open"
+      : "confirm-reset-round1";
   const res = await fetch(`${API_BASE}/admin/market/${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      "X-Confirm-Action": confirmation
+      "X-Confirm-Action": confirmationCode
     }
   });
   if (!res.ok) throw await apiError(res, "market_control_failed");
