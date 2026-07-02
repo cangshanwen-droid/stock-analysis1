@@ -1,27 +1,65 @@
-# Gipfel 免费公网多镜像部署
+# Gipfel 免费公网部署策略
 
-这个方案用于“不用 Streamlit、不用局域网、尽量免费、尽量让中国大陆能打开”的场景。它不能像付费香港服务器一样保证稳定，但会比单独依赖 Vercel/Render 更抗抖。
+目标：不买服务器，尽量让中国大陆用户能打开比赛平台。
 
-## 推荐结构
+当前可行路线：
 
-- 前端主站：Vercel
-- 前端备用：Zeabur
-- API 主站：Render
-- API 备用：Zeabur API 或其他免费容器平台
-- 数据库：Neon PostgreSQL，保持持久化
+1. 保留 Vercel 前端。
+2. 给 Vercel 前端绑定自定义域名。
+3. DNS 使用 Vercel 面向中国访问优化的 CNAME。
+4. 后端继续使用 Render + Neon PostgreSQL。
+5. 前端已内置行情短缓存和读接口兜底，减少 API 抖动带来的白屏。
+
+## 推荐入口
+
+优先使用：
+
+```text
+https://www.your-domain.ltd
+```
+
+暂时保留原入口：
+
+```text
+https://stock-analysis1-ten.vercel.app
+```
+
+## Vercel 域名解析
+
+在域名 DNS 控制台添加：
+
+```text
+类型：CNAME
+主机记录：www
+记录值：cname-china.vercel-dns.com
+```
+
+然后在 Vercel 项目中添加：
+
+```text
+www.your-domain.ltd
+```
+
+根域名可以后续再做跳转到 `www`。
 
 ## 前端环境变量
 
 ```text
 NEXT_PUBLIC_API_BASE=https://gipfel-trading-api.onrender.com
-NEXT_PUBLIC_API_FALLBACKS=https://your-zeabur-api.zeabur.app,https://api.gipfel.example.com
+NEXT_PUBLIC_API_FALLBACKS=
 ```
 
-`NEXT_PUBLIC_API_BASE` 是主 API。`NEXT_PUBLIC_API_FALLBACKS` 可以填多个备用 API，用英文逗号分隔。前端会对行情、K 线、资产和管理概览这类读接口自动按顺序尝试。
+如果后续增加备用 API，可填写：
 
-下单、开市、收市、回到第一轮、创建/删除账号、增删股票等写操作只走主 API，避免网络超时后重复提交。
+```text
+NEXT_PUBLIC_API_FALLBACKS=https://backup-api.example.com
+```
+
+多个备用地址用英文逗号分隔。
 
 ## 后端环境变量
+
+比赛当前阶段建议：
 
 ```text
 DATABASE_URL=postgresql://...
@@ -34,35 +72,40 @@ ENABLE_ADMIN_WRITES=true
 ADMIN_PASSWORD=admin123
 ```
 
-比赛前确认三个写入开关都是 `true`，否则管理员开市、收市、添加股票和操作员交易都会被拒绝。
+等自定义域名确定后，可以把 CORS 收紧为：
 
-## Zeabur 部署要点
+```text
+CORS_ALLOW_ORIGINS=https://stock-analysis1-ten.vercel.app,https://www.your-domain.ltd
+```
 
-1. 连接 GitHub 仓库。
-2. 使用根目录的 `zeabur.json`，它会识别两个项目：
-   - `web`：Next.js 前端
-   - `api`：Docker 后端
-3. 给 `api` 项目配置数据库和后端环境变量。
-4. 给 `web` 项目配置 `NEXT_PUBLIC_API_BASE` 和 `NEXT_PUBLIC_API_FALLBACKS`。
-5. GitHub Actions 已监听 `main` 分支，可手动触发 Zeabur 部署。
+## Zeabur 验证结果
 
-## 比赛前检查
+已实际登录 Zeabur 检查：
 
-- 打开前端首页，行情面板能显示真实股票。
-- `https://你的API域名/health` 返回 `ok: true`。
-- 管理员 `admin/admin123` 可以登录。
-- 操作员 `player1/player1` 可以登录。
-- 管理员能开市、收市、回到第一轮。
-- 操作员能提交买入/卖出。
-- K 线 hover 能显示开高低收和成交量。
+- 新账号没有可用免费共享集群。
+- 创建项目要求先购买服务器或绑定外部服务器。
+- 因此 Zeabur 当前不适合作为“零成本公网部署”方案。
 
-## 免费方案的底线
+## EdgeOne 验证结果
 
-免费公网没有绝对稳定。比赛当天建议准备至少两个入口：
+已实际进入 Tencent Cloud / EdgeOne：
 
-- Vercel 入口
-- Zeabur 入口
+- EdgeOne Pages/Makers 更适合中国大陆访问。
+- 但腾讯云国际站账号要求补全信息并绑定银行卡。
+- 如果不想绑卡，暂不作为当前路线。
 
-如果一个地区打不开，就切另一个入口。
+## 比赛前验收
 
-如果要让多个 API 同时可用于登录和交易，必须确保它们连接同一个 PostgreSQL，并且 `TOKEN_SECRET` 完全相同。
+域名生效后检查：
+
+1. 自定义域名能打开行情面板。
+2. 行情卡片显示真实股票价格。
+3. K 线图能加载并显示 hover 信息。
+4. `player1/player1` 能登录。
+5. `admin/admin123` 能登录。
+6. 管理员能开市、收市、回到第一轮。
+7. 操作员能提交买入和卖出。
+
+## 风险说明
+
+这个方案主要改善前端入口访问。后端 API 仍然在海外免费/低成本平台，不能保证和国内服务器一样稳定，但已经是“不买服务器、不用局域网”条件下最现实的方案。
