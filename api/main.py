@@ -380,7 +380,7 @@ def close_market_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if x_confirm_action != "确认收盘":
+    if x_confirm_action.strip() != "确认收盘":
         raise HTTPException(status_code=400, detail="confirm_close_required")
     if not ENABLE_MARKET_WRITES:
         return {
@@ -409,7 +409,7 @@ def open_market_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if x_confirm_action != "确认开盘":
+    if x_confirm_action.strip() != "确认开盘":
         raise HTTPException(status_code=400, detail="confirm_open_required")
     if not ENABLE_MARKET_WRITES:
         return {

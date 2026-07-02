@@ -716,12 +716,16 @@ export function TradingWorkspace() {
                           <strong>确认执行：{marketActionText}</strong>
                           <span>请输入「{marketActionKeyword}」后才能继续。</span>
                         </div>
-                        <input value={marketConfirmText} onChange={(e) => setMarketConfirmText(e.target.value)} />
+                        <input
+                          value={marketConfirmText}
+                          onChange={(e) => setMarketConfirmText(e.target.value)}
+                          placeholder={marketActionKeyword}
+                        />
                         <div className="confirm-actions">
                           <button className="ghost" onClick={() => { setPendingMarketAction(null); setMarketConfirmText(""); }}>取消</button>
                           <button
                             className="danger-button"
-                            disabled={marketConfirmText !== marketActionKeyword}
+                            disabled={marketConfirmText.trim() !== marketActionKeyword}
                             onClick={() => submitMarketAction(pendingMarketAction)}
                           >
                             确认执行
