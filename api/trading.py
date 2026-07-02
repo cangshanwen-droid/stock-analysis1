@@ -45,7 +45,7 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         if not sell_order:
             break
         fill = min(remaining, int(sell_order["shares"]))
-        match_price = float(sell_order["price"])
+        match_price = round((price + float(sell_order["price"])) / 2, 2)
         amount = fill * match_price
         seller_holding = get_holding_shares(conn, sell_order["username"], symbol)
         pending_sell = fetchone(conn, """
@@ -108,7 +108,7 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         if not buy_order:
             break
         fill = min(remaining, int(buy_order["shares"]))
-        match_price = float(buy_order["price"])
+        match_price = round((float(buy_order["price"]) + price) / 2, 2)
         amount = fill * match_price
         buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
         if not buyer or float(buyer["balance"] or 0) < amount:

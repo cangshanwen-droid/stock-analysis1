@@ -197,6 +197,48 @@ export async function resetAdminUserPassword(token: string, username: string, pa
   return res.json();
 }
 
+export async function createAdminStock(token: string, payload: {
+  symbol: string;
+  name: string;
+  revenue: number;
+  total_shares: number;
+  industry_pe: number;
+  carbon_price: number;
+  industry_carbon_mean: number;
+  premium_rate: number;
+}) {
+  const res = await fetch(`${API_BASE}/admin/stocks`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("create_stock_failed");
+  return res.json();
+}
+
+export async function updateAdminStock(token: string, symbol: string, payload: {
+  revenue?: number;
+  total_shares?: number;
+  industry_pe?: number;
+  carbon_price?: number;
+  industry_carbon_mean?: number;
+  premium_rate?: number;
+}) {
+  const res = await fetch(`${API_BASE}/admin/stocks/${encodeURIComponent(symbol)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("update_stock_failed");
+  return res.json();
+}
+
 export function demoCandles(symbol: string): Candle[] {
   const seed = Array.from(symbol).reduce((sum, ch, i) => sum + ch.charCodeAt(0) * (i + 5), 0);
   const base = symbol === "YLIAO" ? 25 : symbol === "JGONG" ? 20 : symbol === "JXIAO" ? 15 : 10;

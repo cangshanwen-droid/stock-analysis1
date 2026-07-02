@@ -77,6 +77,11 @@ export type AdminStock = {
   totalShares: number;
   revenue: number;
   industryPe: number;
+  carbonPrice: number;
+  industryCarbonMean: number;
+  premiumRate: number;
+  initFunds: number;
+  lastUpdate: string;
 };
 
 export type AuditLog = {

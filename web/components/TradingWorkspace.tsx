@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
 import {
+  createAdminStock,
   createAdminUser,
   fetchAdminOverview,
   fetchCandles,
@@ -12,6 +13,7 @@ import {
   marketControl,
   resetAdminUserPassword,
   submitOrder,
+  updateAdminStock,
   updateAdminUserStatus
 } from "../lib/api";
 import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
@@ -45,6 +47,16 @@ function tradeSide(value: string) {
   return value || "-";
 }
 
+function calcInitialPrice(revenue: number, totalShares: number, industryPe: number) {
+  if (!revenue || !totalShares || !industryPe) return 0;
+  return Number((revenue * 10000 / totalShares / industryPe).toFixed(2));
+}
+
+function numericDraft(value: string) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
 export function TradingWorkspace() {
   const [market, setMarket] = useState<MarketSnapshot | null>(null);
   const [view, setView] = useState<ViewKey>("market");
@@ -71,6 +83,24 @@ export function TradingWorkspace() {
   const [resetPassword, setResetPassword] = useState("");
   const [pendingMarketAction, setPendingMarketAction] = useState<MarketAction | null>(null);
   const [marketConfirmText, setMarketConfirmText] = useState("");
+  const [newStock, setNewStock] = useState({
+    symbol: "",
+    name: "",
+    revenue: "100",
+    totalShares: "10000",
+    industryPe: "20",
+    carbonPrice: "50",
+    industryCarbonMean: "50",
+    premiumRate: "50"
+  });
+  const [stockDrafts, setStockDrafts] = useState<Record<string, {
+    revenue: string;
+    totalShares: string;
+    industryPe: string;
+    carbonPrice: string;
+    industryCarbonMean: string;
+    premiumRate: string;
+  }>>({});
 
   useEffect(() => {
     let alive = true;
@@ -152,6 +182,24 @@ export function TradingWorkspace() {
       alive = false;
     };
   }, [token, user?.role]);
+
+  useEffect(() => {
+    setStockDrafts((currentDrafts) => {
+      const next = { ...currentDrafts };
+      for (const stock of adminStocks) {
+        if (next[stock.symbol]) continue;
+        next[stock.symbol] = {
+          revenue: String(stock.revenue || 100),
+          totalShares: String(stock.totalShares || 10000),
+          industryPe: String(stock.industryPe || 20),
+          carbonPrice: String(stock.carbonPrice || 50),
+          industryCarbonMean: String(stock.industryCarbonMean || 50),
+          premiumRate: String(stock.premiumRate || 50)
+        };
+      }
+      return next;
+    });
+  }, [adminStocks]);
 
   async function submitLogin() {
     setLoginError("");
@@ -258,10 +306,87 @@ export function TradingWorkspace() {
     }
   }
 
+  async function submitCreateStock() {
+    if (!token || user?.role !== "admin") return;
+    const payload = {
+      symbol: newStock.symbol.trim().toUpperCase(),
+      name: newStock.name.trim(),
+      revenue: numericDraft(newStock.revenue),
+      total_shares: numericDraft(newStock.totalShares),
+      industry_pe: numericDraft(newStock.industryPe),
+      carbon_price: numericDraft(newStock.carbonPrice),
+      industry_carbon_mean: numericDraft(newStock.industryCarbonMean),
+      premium_rate: numericDraft(newStock.premiumRate)
+    };
+    if (!payload.symbol || !payload.name || payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0 || payload.industry_carbon_mean <= 0) {
+      setAdminMessage("请完整填写股票代码、公司名称、净利润、总股本、行业PE和碳排均值");
+      return;
+    }
+    setAdminMessage("");
+    try {
+      const result = await createAdminStock(token, payload);
+      if (!result.accepted) {
+        setAdminMessage(result.detail || result.reason || "添加股票未生效");
+        return;
+      }
+      setNewStock({
+        symbol: "",
+        name: "",
+        revenue: "100",
+        totalShares: "10000",
+        industryPe: "20",
+        carbonPrice: "50",
+        industryCarbonMean: "50",
+        premiumRate: "50"
+      });
+      setAdminMessage(result.initialPrice ? `股票已添加，初始价 ${fmtMoney(result.initialPrice)}` : "股票已添加");
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket();
+      setMarket(nextMarket);
+    } catch {
+      setAdminMessage("添加股票失败，请检查代码是否重复或参数是否正确");
+    }
+  }
+
+  async function submitUpdateStock(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    const draft = stockDrafts[stock.symbol];
+    if (!draft) return;
+    const payload = {
+      revenue: numericDraft(draft.revenue),
+      total_shares: numericDraft(draft.totalShares),
+      industry_pe: numericDraft(draft.industryPe),
+      carbon_price: numericDraft(draft.carbonPrice),
+      industry_carbon_mean: numericDraft(draft.industryCarbonMean),
+      premium_rate: numericDraft(draft.premiumRate)
+    };
+    if (payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0 || payload.industry_carbon_mean <= 0) {
+      setAdminMessage("参数异常：净利润、总股本、行业PE和碳排均值必须大于 0");
+      return;
+    }
+    setAdminMessage("");
+    try {
+      const result = await updateAdminStock(token, stock.symbol, payload);
+      if (!result.accepted) {
+        setAdminMessage(result.detail || result.reason || "保存股票参数未生效");
+        return;
+      }
+      setAdminMessage(`${stock.name} 参数已保存`);
+      await refreshAdminOverview();
+    } catch {
+      setAdminMessage("保存股票参数失败");
+    }
+  }
+
   const marketActionText = pendingMarketAction === "close" ? "收盘结算" : "开启下一轮";
   const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : "确认开盘";
   const canCloseMarket = market?.state === "open";
   const canOpenMarket = market?.state === "closed";
+  const newStockInitialPrice = calcInitialPrice(
+    numericDraft(newStock.revenue),
+    numericDraft(newStock.totalShares),
+    numericDraft(newStock.industryPe)
+  );
 
   const navItems = user
     ? [
@@ -649,6 +774,54 @@ export function TradingWorkspace() {
                       </div>
                     </div>
                   </div>
+                  <div className="management-panel stock-create-panel">
+                    <div className="section-caption">添加股票</div>
+                    <div className="inline-form stock-form">
+                      <div className="field">
+                        <label>股票代码</label>
+                        <input value={newStock.symbol} onChange={(e) => setNewStock({ ...newStock, symbol: e.target.value.toUpperCase() })} placeholder="例如 NEWCO" />
+                      </div>
+                      <div className="field">
+                        <label>公司名称</label>
+                        <input value={newStock.name} onChange={(e) => setNewStock({ ...newStock, name: e.target.value })} placeholder="公司/小组名称" />
+                      </div>
+                      <div className="field">
+                        <label>总股本（万股）</label>
+                        <input value={newStock.totalShares} onChange={(e) => setNewStock({ ...newStock, totalShares: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>初始净利润（万）</label>
+                        <input value={newStock.revenue} onChange={(e) => setNewStock({ ...newStock, revenue: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>行业PE</label>
+                        <input value={newStock.industryPe} onChange={(e) => setNewStock({ ...newStock, industryPe: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>当前幸福度</label>
+                        <input value={newStock.premiumRate} onChange={(e) => setNewStock({ ...newStock, premiumRate: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>当前碳排</label>
+                        <input value={newStock.carbonPrice} onChange={(e) => setNewStock({ ...newStock, carbonPrice: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>行业碳排均值</label>
+                        <input value={newStock.industryCarbonMean} onChange={(e) => setNewStock({ ...newStock, industryCarbonMean: e.target.value })} />
+                      </div>
+                      <div className="formula-preview">
+                        <span>公式初始价</span>
+                        <strong>{fmtMoney(newStockInitialPrice)}</strong>
+                      </div>
+                      <button
+                        className="primary"
+                        onClick={submitCreateStock}
+                        disabled={!newStock.symbol.trim() || !newStock.name.trim() || newStockInitialPrice <= 0}
+                      >
+                        添加股票
+                      </button>
+                    </div>
+                  </div>
                   <div className="management-grid">
                     <div className="management-panel">
                       <div className="section-caption">操作员账号</div>
@@ -675,18 +848,57 @@ export function TradingWorkspace() {
                       </div>
                     </div>
                     <div className="management-panel">
-                      <div className="section-caption">参赛公司股票</div>
-                      <div className="data-table admin-table">
-                        <div className="table-row stock-col table-head"><span>代码</span><span>公司</span><span>现价</span><span>营收</span><span>PE</span></div>
-                        {adminStocks.map((stock) => (
-                          <div className="table-row stock-col" key={stock.id}>
-                            <span>{stock.symbol}</span>
-                            <span>{stock.name}</span>
-                            <span className={cls(stock.price - stock.previousClose)}>{fmtMoney(stock.price)}</span>
-                            <span>{fmtMoney(stock.revenue)}</span>
-                            <span>{stock.industryPe.toFixed(2)}</span>
-                          </div>
-                        ))}
+                      <div className="section-caption">股票参数</div>
+                      <div className="stock-editor-list">
+                        {adminStocks.map((stock) => {
+                          const draft = stockDrafts[stock.symbol] ?? {
+                            revenue: String(stock.revenue || 100),
+                            totalShares: String(stock.totalShares || 10000),
+                            industryPe: String(stock.industryPe || 20),
+                            carbonPrice: String(stock.carbonPrice || 50),
+                            industryCarbonMean: String(stock.industryCarbonMean || 50),
+                            premiumRate: String(stock.premiumRate || 50)
+                          };
+                          const initialPrice = calcInitialPrice(
+                            numericDraft(draft.revenue),
+                            numericDraft(draft.totalShares),
+                            numericDraft(draft.industryPe)
+                          );
+                          const happinessFactor = 1 + 0.2 * (numericDraft(draft.premiumRate) - 50) / 50;
+                          const carbonMean = Math.max(numericDraft(draft.industryCarbonMean), 1);
+                          const carbonFactor = 1 - 0.5 * (numericDraft(draft.carbonPrice) - carbonMean) / carbonMean;
+                          const updateDraft = (next: Partial<typeof draft>) => {
+                            setStockDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [stock.symbol]: { ...(currentDrafts[stock.symbol] ?? draft), ...next }
+                            }));
+                          };
+                          return (
+                            <div className="stock-editor-card" key={stock.id}>
+                              <div className="stock-editor-head">
+                                <div>
+                                  <strong>{stock.name}</strong>
+                                  <span>{stock.symbol}</span>
+                                </div>
+                                <div className={cls(stock.price - stock.previousClose)}>{fmtMoney(stock.price)}</div>
+                              </div>
+                              <div className="stock-param-grid">
+                                <div className="field"><label>总股本（万股）</label><input value={draft.totalShares} onChange={(e) => updateDraft({ totalShares: e.target.value })} /></div>
+                                <div className="field"><label>初始净利润（万）</label><input value={draft.revenue} onChange={(e) => updateDraft({ revenue: e.target.value })} /></div>
+                                <div className="field"><label>行业PE</label><input value={draft.industryPe} onChange={(e) => updateDraft({ industryPe: e.target.value })} /></div>
+                                <div className="field"><label>幸福度</label><input value={draft.premiumRate} onChange={(e) => updateDraft({ premiumRate: e.target.value })} /></div>
+                                <div className="field"><label>当前碳排</label><input value={draft.carbonPrice} onChange={(e) => updateDraft({ carbonPrice: e.target.value })} /></div>
+                                <div className="field"><label>行业碳排均值</label><input value={draft.industryCarbonMean} onChange={(e) => updateDraft({ industryCarbonMean: e.target.value })} /></div>
+                              </div>
+                              <div className="factor-strip">
+                                <span>初始价 {fmtMoney(initialPrice)}</span>
+                                <span>幸福因子 {happinessFactor.toFixed(3)}</span>
+                                <span>碳因子 {carbonFactor.toFixed(3)}</span>
+                              </div>
+                              <button className="mini-action" onClick={() => submitUpdateStock(stock)}>保存参数</button>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

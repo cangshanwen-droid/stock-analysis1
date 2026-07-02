@@ -503,6 +503,37 @@ button {
   gap: 10px;
 }
 
+.stock-create-panel {
+  margin: 0 14px 14px;
+}
+
+.stock-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  align-items: end;
+}
+
+.formula-preview {
+  min-height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(17, 26, 41, 0.82);
+  padding: 10px 12px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.formula-preview span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.formula-preview strong {
+  color: var(--text);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
 .mini-action {
   height: 28px;
   min-width: 54px;
@@ -523,6 +554,59 @@ button {
 
 .admin-table {
   margin: 0;
+}
+
+.stock-editor-list {
+  display: grid;
+  gap: 10px;
+}
+
+.stock-editor-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1220;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.stock-editor-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.stock-editor-head strong,
+.stock-editor-head span {
+  display: block;
+}
+
+.stock-editor-head span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.stock-param-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.factor-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.factor-strip span {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(17, 26, 41, 0.72);
+  padding: 8px;
 }
 
 .audit-list {
@@ -723,6 +807,12 @@ button {
   }
 
   .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-form,
+  .stock-param-grid,
+  .factor-strip {
     grid-template-columns: 1fr;
   }
 
