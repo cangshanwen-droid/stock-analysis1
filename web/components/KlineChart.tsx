@@ -35,6 +35,24 @@ function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
+function seedFromCandles(candles: Candle[]) {
+  return candles.reduce((seed, candle) => (
+    seed + candle.round * 97 + Math.round(candle.open * 31) + Math.round(candle.close * 43) + Math.round(candle.volume || 0)
+  ), 137);
+}
+
+function createRandom(seed: number) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function normalish(random: () => number) {
+  return (random() + random() + random() + random() - 2) / 2;
+}
+
 function appendSyntheticBar(
   output: DisplayCandle[],
   source: Candle,
@@ -42,20 +60,22 @@ function appendSyntheticBar(
   close: number,
   range: number,
   volumeBase: number,
+  random: () => number,
   isAnchor = false
 ) {
   const index = output.length;
-  const wickBias = 0.18 + ((index + source.round) % 5) * 0.045;
-  const wick = Math.max(range * wickBias, Math.max(open, close) * 0.0025);
+  const upperWick = Math.max(range * (0.12 + random() * 0.38), Math.max(open, close) * 0.0018);
+  const lowerWick = Math.max(range * (0.12 + random() * 0.36), Math.max(open, close) * 0.0018);
+  const turnoverPulse = 0.72 + random() * 0.62 + Math.abs(close - open) / Math.max(range, 0.01) * 0.22;
 
   output.push({
     round: source.round,
     time: (DISPLAY_START_TIME + index * DISPLAY_STEP_SECONDS) as Time,
     open: round2(open),
-    high: round2(Math.max(open, close) + wick),
-    low: round2(Math.max(0.01, Math.min(open, close) - wick * 0.82)),
+    high: round2(Math.max(open, close) + upperWick),
+    low: round2(Math.max(0.01, Math.min(open, close) - lowerWick)),
     close: round2(Math.max(0.01, close)),
-    volume: Math.max(1, Math.round(volumeBase * (0.78 + ((index + source.round) % 7) * 0.055))),
+    volume: Math.max(1, Math.round(volumeBase * turnoverPulse)),
     isAnchor
   });
 }
@@ -64,21 +84,21 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
   const expanded: DisplayCandle[] = [];
   if (!candles.length) return expanded;
 
+  const random = createRandom(seedFromCandles(candles));
   const first = candles[0];
   const firstPrice = Math.max(0.01, first.open || first.close || 1);
-  const previewRange = Math.max(firstPrice * 0.018, Math.abs(first.high - first.low), 0.12);
-  let open = round2(firstPrice * (1 - 0.018 + Math.sin(first.round * 1.7) * 0.006));
+  const previewRange = Math.max(firstPrice * 0.012, Math.abs(first.high - first.low) * 0.45, 0.08);
+  let open = round2(firstPrice * (1 + normalish(random) * 0.012));
 
   for (let index = 0; index < PREVIEW_BARS; index += 1) {
-    const progress = (index + 1) / PREVIEW_BARS;
-    const trend = first.open - open;
-    const wave = Math.sin((index + 1) * 0.72 + first.round) * previewRange * 0.23;
-    const pulse = Math.sin((index + 1) * 0.19) * previewRange * 0.11;
+    const remaining = PREVIEW_BARS - index;
+    const pullToAnchor = (first.open - open) / remaining;
+    const shock = normalish(random) * previewRange * 0.36;
     const close = index === PREVIEW_BARS - 1
       ? first.open
-      : Math.max(0.01, open + trend * progress * 0.16 + wave + pulse);
-    appendSyntheticBar(expanded, first, open, close, previewRange, (first.volume || 1200) / 8);
-    open = close + Math.sin((index + first.round) * 0.43) * previewRange * 0.08;
+      : Math.max(0.01, open + pullToAnchor + shock);
+    appendSyntheticBar(expanded, first, open, close, previewRange, (first.volume || 1200) / 7, random);
+    open = close;
   }
 
   candles.forEach((candle, candleIndex) => {
@@ -93,12 +113,12 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
     let segmentOpen = expanded.length ? expanded[expanded.length - 1].close : sourceOpen;
 
     for (let step = 1; step <= ROUND_SEGMENTS; step += 1) {
-      const progress = step / ROUND_SEGMENTS;
-      const path = sourceOpen + (targetClose - sourceOpen) * progress;
-      const wave = step === ROUND_SEGMENTS
-        ? 0
-        : Math.sin((candle.round * 2.1 + step) * 0.93) * baseRange * 0.32;
-      const close = step === ROUND_SEGMENTS ? targetClose : Math.max(0.01, path + wave);
+      const remaining = ROUND_SEGMENTS - step + 1;
+      const pullToAnchor = (targetClose - segmentOpen) / remaining;
+      const shockScale = baseRange * (0.42 * Math.sin(Math.PI * step / ROUND_SEGMENTS) + 0.08);
+      const close = step === ROUND_SEGMENTS
+        ? targetClose
+        : Math.max(0.01, segmentOpen + pullToAnchor + normalish(random) * shockScale);
       appendSyntheticBar(
         expanded,
         candle,
@@ -106,9 +126,10 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
         close,
         baseRange,
         (candle.volume || 1200) / ROUND_SEGMENTS,
+        random,
         step === ROUND_SEGMENTS
       );
-      segmentOpen = close + Math.sin((step + candle.round) * 0.61) * baseRange * 0.05;
+      segmentOpen = close;
     }
   });
 
