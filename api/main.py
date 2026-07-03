@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from datetime import date, timedelta
 from typing import Any
@@ -27,6 +28,7 @@ DEFAULT_CORS_ORIGINS = {
     "https://gipfel.ltd",
 }
 READ_CACHE: dict[str, tuple[float, Any]] = {}
+READ_CACHE_LOCK = threading.RLock()
 
 
 def cors_origins() -> list[str]:
@@ -41,23 +43,37 @@ def cors_origins() -> list[str]:
 
 
 def cache_get(key: str, ttl_seconds: float) -> Any | None:
-    cached = READ_CACHE.get(key)
-    if not cached:
-        return None
-    expires_at, value = cached
-    if expires_at <= time.monotonic():
-        READ_CACHE.pop(key, None)
-        return None
-    return value
+    with READ_CACHE_LOCK:
+        cached = READ_CACHE.get(key)
+        if not cached:
+            return None
+        expires_at, value = cached
+        if expires_at <= time.monotonic():
+            READ_CACHE.pop(key, None)
+            return None
+        return value
 
 
 def cache_set(key: str, value: Any, ttl_seconds: float) -> Any:
-    READ_CACHE[key] = (time.monotonic() + ttl_seconds, value)
-    return value
+    with READ_CACHE_LOCK:
+        READ_CACHE[key] = (time.monotonic() + ttl_seconds, value)
+        return value
 
 
 def clear_read_cache() -> None:
-    READ_CACHE.clear()
+    with READ_CACHE_LOCK:
+        READ_CACHE.clear()
+
+
+def cache_get_or_set(key: str, ttl_seconds: float, loader):
+    cached = cache_get(key, ttl_seconds)
+    if cached is not None:
+        return cached
+    with READ_CACHE_LOCK:
+        cached = cache_get(key, ttl_seconds)
+        if cached is not None:
+            return cached
+        return cache_set(key, loader(), ttl_seconds)
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
@@ -273,64 +289,61 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/market")
 def market() -> dict[str, Any]:
-    cached = cache_get("market", 2.0)
-    if cached is not None:
-        return cached
-    with connect() as conn:
-        state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
-        stocks = fetchall(conn,
-            "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
-        )
-    return cache_set("market", {
-        "round": int((state or {}).get("round") or 1),
-        "state": (state or {}).get("state") or "open",
-        "stocks": [
-            {
-                "symbol": s["symbol"],
-                "name": s["name"],
-                "price": float(s["current_price"] or 0),
-                "change": float((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0)),
-                "changePct": (
-                    float(((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0))
-                          / (s["previous_close"] or s["current_price"] or 1) * 100)
-                ),
-            }
-            for s in stocks
-        ],
-    }, 2.0)
+    def load_market():
+        with connect() as conn:
+            state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
+            stocks = fetchall(conn,
+                "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
+            )
+        return {
+            "round": int((state or {}).get("round") or 1),
+            "state": (state or {}).get("state") or "open",
+            "stocks": [
+                {
+                    "symbol": s["symbol"],
+                    "name": s["name"],
+                    "price": float(s["current_price"] or 0),
+                    "change": float((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0)),
+                    "changePct": (
+                        float(((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0))
+                              / (s["previous_close"] or s["current_price"] or 1) * 100)
+                    ),
+                }
+                for s in stocks
+            ],
+        }
+    return cache_get_or_set("market", 2.0, load_market)
 
 
 @app.get("/stocks/{symbol}/kline")
 def stock_kline(symbol: str) -> list[dict[str, Any]]:
     cache_key = f"kline:{symbol.upper()}"
-    cached = cache_get(cache_key, 10.0)
-    if cached is not None:
-        return cached
-    with connect() as conn:
-        rows = fetchall(conn,
-            """
-            SELECT round,open_price,high_price,low_price,close_price,volume,created_at
-            FROM kline
-            WHERE stock_symbol=?
-            ORDER BY round
-            """,
-            (symbol.upper(),),
-        )
-    start = date(2000, 1, 1)
-    data = [
-        {
-            "round": int(row["round"] or 0),
-            "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
-            "open": float(row["open_price"] or 0),
-            "high": float(row["high_price"] or 0),
-            "low": float(row["low_price"] or 0),
-            "close": float(row["close_price"] or 0),
-            "volume": int(row["volume"] or 0),
-        }
-        for row in rows
-        if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
-    ]
-    return cache_set(cache_key, data, 10.0)
+    def load_kline():
+        with connect() as conn:
+            rows = fetchall(conn,
+                """
+                SELECT round,open_price,high_price,low_price,close_price,volume,created_at
+                FROM kline
+                WHERE stock_symbol=?
+                ORDER BY round
+                """,
+                (symbol.upper(),),
+            )
+        start = date(2000, 1, 1)
+        return [
+            {
+                "round": int(row["round"] or 0),
+                "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
+                "open": float(row["open_price"] or 0),
+                "high": float(row["high_price"] or 0),
+                "low": float(row["low_price"] or 0),
+                "close": float(row["close_price"] or 0),
+                "volume": int(row["volume"] or 0),
+            }
+            for row in rows
+            if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
+        ]
+    return cache_get_or_set(cache_key, 10.0, load_kline)
 
 
 @app.get("/portfolio")
