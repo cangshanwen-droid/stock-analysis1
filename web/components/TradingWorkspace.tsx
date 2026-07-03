@@ -10,6 +10,7 @@ import {
   deleteAdminUser,
   fetchAdminOverview,
   fetchCandles,
+  fetchHealth,
   fetchMarket,
   fetchPortfolio,
   login,
@@ -20,12 +21,21 @@ import {
   updateAdminStock,
   updateAdminUserStatus
 } from "../lib/api";
-import type { AdminStock, AdminUser, AuditLog, Candle, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
+import type { AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset";
 type OrderStatus = "idle" | "success" | "error";
+type OrderFeedback = {
+  status: string;
+  side: string;
+  stock: string;
+  price: number;
+  shares: number;
+  round?: number;
+  detail: string;
+};
 
 function fmtMoney(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
@@ -83,11 +93,13 @@ export function TradingWorkspace() {
   const [orderShares, setOrderShares] = useState("100");
   const [orderMessage, setOrderMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
+  const [orderFeedback, setOrderFeedback] = useState<OrderFeedback | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [newOperatorName, setNewOperatorName] = useState("");
   const [newOperatorPassword, setNewOperatorPassword] = useState("");
@@ -156,14 +168,16 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     setAdminLoading(true);
     try {
-      const data = await fetchAdminOverview(token);
+      const [data, health] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null)]);
       setAdminUsers(data.users);
       setAdminStocks(data.stocks);
       setAuditLogs(data.auditLogs);
+      setHealthStatus(health);
     } catch {
       setAdminUsers([]);
       setAdminStocks([]);
       setAuditLogs([]);
+      setHealthStatus(null);
     } finally {
       setAdminLoading(false);
     }
@@ -173,18 +187,20 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     let alive = true;
     setAdminLoading(true);
-    fetchAdminOverview(token)
-      .then((data) => {
+    Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null)])
+      .then(([data, health]) => {
         if (!alive) return;
         setAdminUsers(data.users);
         setAdminStocks(data.stocks);
         setAuditLogs(data.auditLogs);
+        setHealthStatus(health);
       })
       .catch(() => {
         if (!alive) return;
         setAdminUsers([]);
         setAdminStocks([]);
         setAuditLogs([]);
+        setHealthStatus(null);
       })
       .finally(() => {
         if (alive) setAdminLoading(false);
@@ -247,11 +263,13 @@ export function TradingWorkspace() {
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
       setOrderStatus("error");
       setOrderMessage("委托失败：请填写大于 0 的价格和数量。");
+      setOrderFeedback(null);
       return;
     }
     if (!Number.isInteger(shares)) {
       setOrderStatus("error");
       setOrderMessage("委托失败：委托数量必须是整数股。");
+      setOrderFeedback(null);
       return;
     }
     const normalizedShares = Math.floor(shares);
@@ -262,6 +280,7 @@ export function TradingWorkspace() {
     if (!confirmed) return;
     setOrderMessage("");
     setOrderStatus("idle");
+    setOrderFeedback(null);
     setOrderSubmitting(true);
     try {
       const result = await submitOrder(token, {
@@ -272,8 +291,19 @@ export function TradingWorkspace() {
         shares: normalizedShares
       });
       if (result.accepted) {
+        const detail = result.detail || "订单已受理";
+        const statusText = detail.includes("挂") ? "已挂单" : "已成交";
+        setOrderFeedback({
+          status: statusText,
+          side: sideText,
+          stock: `${current.name} (${current.symbol})`,
+          price,
+          shares: normalizedShares,
+          round: result.round,
+          detail
+        });
         setOrderStatus("success");
-        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : "订单已受理，正在刷新资产与行情。"}`);
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${detail}，正在刷新资产与行情。`);
         setOrderSubmitting(false);
         clearPublicReadCache(current.symbol);
         try {
@@ -292,11 +322,28 @@ export function TradingWorkspace() {
         }
       } else {
         setOrderStatus("error");
+        setOrderFeedback({
+          status: "未受理",
+          side: sideText,
+          stock: `${current.name} (${current.symbol})`,
+          price,
+          shares: normalizedShares,
+          round: result.round,
+          detail: result.detail || result.reason || "请检查市场状态、资金或持仓。"
+        });
         setOrderMessage(`${sideText}失败：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
       setOrderStatus("error");
+      setOrderFeedback({
+        status: "提交失败",
+        side: sideText,
+        stock: `${current.name} (${current.symbol})`,
+        price,
+        shares: normalizedShares,
+        detail: detail || "网络或后端暂时不可用，请稍后重试。"
+      });
       setOrderMessage(`${sideText}提交失败：${detail || "网络或后端暂时不可用，请稍后重试。"}`);
     } finally {
       setOrderSubmitting(false);
@@ -480,6 +527,19 @@ export function TradingWorkspace() {
   const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : pendingMarketAction === "open" ? "确认开盘" : "确认回到第一轮";
   const canCloseMarket = market?.state === "open";
   const canOpenMarket = market?.state === "closed";
+  const activeOperators = adminUsers.filter((account) => account.role === "player" && account.status === "active").length;
+  const activeAdmins = adminUsers.filter((account) => account.role === "admin" && account.status === "active").length;
+  const activeStocks = adminStocks.filter((stock) => !stock.isDeleted).length;
+  const recentTradeAudit = auditLogs.find((log) => log.action === "trade_buy" || log.action === "trade_sell");
+  const preflightOk = Boolean(
+    healthStatus?.ok &&
+    healthStatus.database &&
+    healthStatus.orderWritesEnabled &&
+    healthStatus.marketWritesEnabled &&
+    healthStatus.adminWritesEnabled &&
+    activeOperators > 0 &&
+    activeStocks > 0
+  );
   const newStockInitialPrice = numericDraft(newStock.initialPrice);
   const newStockIndustryPe = calcIndustryPe(
     numericDraft(newStock.revenue),
@@ -621,6 +681,7 @@ export function TradingWorkspace() {
                   setSide("buy");
                   setOrderMessage("");
                   setOrderStatus("idle");
+                  setOrderFeedback(null);
                 }}
               >
                 买入
@@ -631,6 +692,7 @@ export function TradingWorkspace() {
                   setSide("sell");
                   setOrderMessage("");
                   setOrderStatus("idle");
+                  setOrderFeedback(null);
                 }}
               >
                 卖出
@@ -661,6 +723,17 @@ export function TradingWorkspace() {
                 {orderSubmitting ? "提交中..." : side === "buy" ? "提交买入" : "提交卖出"}
               </button>
               {orderMessage && <div className={`order-result ${orderStatus}`}>{orderMessage}</div>}
+              {orderFeedback ? (
+                <div className={`trade-feedback ${orderStatus}`}>
+                  <div><span>结果</span><strong>{orderFeedback.status}</strong></div>
+                  <div><span>方向</span><strong>{orderFeedback.side}</strong></div>
+                  <div><span>公司</span><strong>{orderFeedback.stock}</strong></div>
+                  <div><span>轮次</span><strong>{orderFeedback.round ? `第 ${orderFeedback.round} 轮` : "-"}</strong></div>
+                  <div><span>委托价</span><strong>{fmtMoney(orderFeedback.price)}</strong></div>
+                  <div><span>数量</span><strong>{orderFeedback.shares} 股</strong></div>
+                  <div className="wide"><span>说明</span><strong>{orderFeedback.detail}</strong></div>
+                </div>
+              ) : null}
             </div>
 
             <div className="mini-table">
@@ -824,6 +897,26 @@ export function TradingWorkspace() {
                 <div className="empty-state">请使用管理员账号登录后查看管理控制台。</div>
               ) : (
                 <>
+                  <div className={`preflight-panel ${preflightOk ? "ready" : "warning"}`}>
+                    <div className="preflight-head">
+                      <div>
+                        <strong>赛前检查</strong>
+                        <span>{preflightOk ? "核心状态正常" : "请确认下列状态"}</span>
+                      </div>
+                      <button className="mini-action" onClick={refreshAdminOverview}>重新检查</button>
+                    </div>
+                    <div className="preflight-grid">
+                      <div><span>API</span><strong>{healthStatus?.ok ? "正常" : "待确认"}</strong></div>
+                      <div><span>数据库</span><strong>{healthStatus?.database ? "正常" : "待确认"}</strong></div>
+                      <div><span>写入权限</span><strong>{healthStatus?.orderWritesEnabled && healthStatus.marketWritesEnabled && healthStatus.adminWritesEnabled ? "已开启" : "待确认"}</strong></div>
+                      <div><span>当前轮次</span><strong>第 {market?.round ?? 1} 轮</strong></div>
+                      <div><span>市场状态</span><strong>{market?.state === "closed" ? "已闭市" : "交易中"}</strong></div>
+                      <div><span>操作员</span><strong>{activeOperators} 个有效</strong></div>
+                      <div><span>管理员</span><strong>{activeAdmins} 个有效</strong></div>
+                      <div><span>公司股票</span><strong>{activeStocks} 只</strong></div>
+                      <div className="wide"><span>最近交易</span><strong>{recentTradeAudit ? `${recentTradeAudit.actor} · ${recentTradeAudit.target || "-"} · ${recentTradeAudit.detail || recentTradeAudit.action}` : "暂无交易"}</strong></div>
+                    </div>
+                  </div>
                   <div className="danger-zone">
                     <div className="danger-copy">
                       <strong>市场轮次控制</strong>

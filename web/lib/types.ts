@@ -22,6 +22,16 @@ export type MarketSnapshot = {
   stocks: StockQuote[];
 };
 
+export type HealthStatus = {
+  ok: boolean;
+  database: boolean;
+  backend: string;
+  tokenSecretConfigured: boolean;
+  orderWritesEnabled: boolean;
+  marketWritesEnabled: boolean;
+  adminWritesEnabled: boolean;
+};
+
 export type UserSession = {
   username: string;
   role: "admin" | "player";

@@ -1,4 +1,4 @@
-import type { AdminStock, AdminUser, AuditLog, Candle, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
+import type { AdminStock, AdminUser, AuditLog, Candle, HealthStatus, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
 
 const PRIMARY_API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://gipfel-trading-api.onrender.com";
 const API_FALLBACKS = (process.env.NEXT_PUBLIC_API_FALLBACKS || "")
@@ -172,6 +172,23 @@ export function clearPublicReadCache(symbol?: string) {
   }
   pendingMarketRequest = null;
   if (symbol) pendingCandleRequests.delete(symbol);
+}
+
+export async function fetchHealth(): Promise<HealthStatus> {
+  if (!API_BASES.length) {
+    return {
+      ok: false,
+      database: false,
+      backend: "demo",
+      tokenSecretConfigured: false,
+      orderWritesEnabled: false,
+      marketWritesEnabled: false,
+      adminWritesEnabled: false
+    };
+  }
+  const res = await fetchApi("/health");
+  if (!res.ok) throw new Error("health_failed");
+  return res.json();
 }
 
 export async function login(username: string, password: string): Promise<LoginResult> {
