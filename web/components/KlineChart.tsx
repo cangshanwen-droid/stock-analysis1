@@ -281,10 +281,10 @@ export function KlineChart({ candles }: Props) {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
     roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.round]));
     candleLookupRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle]));
-    candleRef.current.setData(candleData);
+    candleRef.current.setData(hasMeaningfulBars ? candleData : []);
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
-      value: candle.volume,
+      value: hasMeaningfulBars ? candle.volume : 0,
       color: candle.close >= candle.open ? "rgba(38,194,150,.32)" : "rgba(181,42,64,.34)"
     })));
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
@@ -298,7 +298,7 @@ export function KlineChart({ candles }: Props) {
     priceLinesRef.current.forEach((line) => candleRef.current?.removePriceLine(line));
     priceLinesRef.current = [];
     const last = displayCandles[displayCandles.length - 1];
-    if (last) {
+    if (last && hasMeaningfulBars) {
       const currentLine = candleRef.current.createPriceLine({
         price: last.close,
         color: "#f9c42f",
