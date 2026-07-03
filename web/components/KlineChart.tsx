@@ -98,7 +98,7 @@ function movingAverage(candles: DisplayCandle[], windowSize: number) {
 }
 
 export function KlineChart({ candles }: Props) {
-  const hasMeaningfulBars = candles.some((candle) => !isFlatNoTrade(candle));
+  const hasMeaningfulBars = candles.some((candle) => Math.round(candle.volume || 0) > 0);
 
   if (!hasMeaningfulBars) {
     return (
