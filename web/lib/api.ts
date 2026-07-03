@@ -106,7 +106,7 @@ export async function fetchMarket(): Promise<MarketSnapshot> {
   if (cached?.stocks?.length) return cached;
   if (!API_BASES.length) return fallbackMarket;
   try {
-    const res = await fetchApi("/market", { cache: "no-store" });
+    const res = await fetchApi("/market");
     if (!res.ok) return fallbackMarket;
     const data = await res.json();
     if (Array.isArray(data.stocks) && data.stocks.length > 0) {
@@ -125,7 +125,7 @@ export async function fetchCandles(symbol: string): Promise<Candle[]> {
   if (cached?.length) return cached;
   if (!API_BASES.length) return demoCandles(symbol);
   try {
-    const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`, { cache: "no-store" });
+    const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`);
     if (!res.ok) return demoCandles(symbol);
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
