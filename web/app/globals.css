@@ -270,6 +270,11 @@ button {
     linear-gradient(180deg, rgba(11, 17, 29, 0.98), rgba(8, 13, 22, 0.98));
 }
 
+.chart-shell-empty {
+  height: clamp(485px, calc(100vh - 370px), 560px);
+  border-top: 1px solid rgba(77, 94, 120, 0.16);
+}
+
 .kline-tooltip {
   position: absolute;
   z-index: 5;

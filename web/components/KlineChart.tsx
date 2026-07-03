@@ -98,6 +98,23 @@ function movingAverage(candles: DisplayCandle[], windowSize: number) {
 }
 
 export function KlineChart({ candles }: Props) {
+  const hasMeaningfulBars = candles.some((candle) => !isFlatNoTrade(candle));
+
+  if (!hasMeaningfulBars) {
+    return (
+      <div className="chart-shell chart-shell-empty">
+        <div className="chart-empty-state">
+          <strong>等待首笔成交</strong>
+          <span>开盘后产生买卖成交，K 线将按比赛轮次更新</span>
+        </div>
+      </div>
+    );
+  }
+
+  return <KlineChartCanvas candles={candles} />;
+}
+
+function KlineChartCanvas({ candles }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -380,12 +397,6 @@ export function KlineChart({ candles }: Props) {
         <span className="legend-ma10">MA10</span>
         <span>成交量</span>
       </div>
-      {!hasMeaningfulBars && (
-        <div className="chart-empty-state">
-          <strong>等待首笔成交</strong>
-          <span>开盘后产生买卖成交，K 线将按比赛轮次更新</span>
-        </div>
-      )}
       <div className="kline-tooltip" ref={tooltipRef} />
       <div className="chart-host" ref={ref} />
     </div>
