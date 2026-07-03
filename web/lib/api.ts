@@ -94,6 +94,13 @@ async function apiError(res: Response, fallback: string) {
   }
 }
 
+async function acceptedJsonOrThrow(res: Response, fallback: string) {
+  if (!res.ok) throw await apiError(res, fallback);
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || fallback);
+  return data;
+}
+
 export async function fetchMarket(): Promise<MarketSnapshot> {
   const cached = readCache<MarketSnapshot>(MARKET_CACHE_KEY, MARKET_CACHE_TTL);
   if (cached?.stocks?.length) return cached;
@@ -256,8 +263,7 @@ export async function createAdminUser(token: string, payload: {
     },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error("create_user_failed");
-  return res.json();
+  return acceptedJsonOrThrow(res, "create_user_failed");
 }
 
 export async function updateAdminUserStatus(token: string, username: string, status: "active" | "disabled") {
@@ -269,8 +275,7 @@ export async function updateAdminUserStatus(token: string, username: string, sta
     },
     body: JSON.stringify({ status })
   });
-  if (!res.ok) throw new Error("update_user_status_failed");
-  return res.json();
+  return acceptedJsonOrThrow(res, "update_user_status_failed");
 }
 
 export async function resetAdminUserPassword(token: string, username: string, password: string) {
@@ -282,8 +287,7 @@ export async function resetAdminUserPassword(token: string, username: string, pa
     },
     body: JSON.stringify({ password })
   });
-  if (!res.ok) throw new Error("reset_user_password_failed");
-  return res.json();
+  return acceptedJsonOrThrow(res, "reset_user_password_failed");
 }
 
 export async function deleteAdminUser(token: string, username: string) {
@@ -317,8 +321,7 @@ export async function createAdminStock(token: string, payload: {
     },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error("create_stock_failed");
-  return res.json();
+  return acceptedJsonOrThrow(res, "create_stock_failed");
 }
 
 export async function updateAdminStock(token: string, symbol: string, payload: {
@@ -337,8 +340,7 @@ export async function updateAdminStock(token: string, symbol: string, payload: {
     },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error("update_stock_failed");
-  return res.json();
+  return acceptedJsonOrThrow(res, "update_stock_failed");
 }
 
 export async function deleteAdminStock(token: string, symbol: string) {

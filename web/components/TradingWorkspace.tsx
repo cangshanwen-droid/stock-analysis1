@@ -240,6 +240,11 @@ export function TradingWorkspace() {
       setOrderMessage("委托失败：请填写大于 0 的价格和数量。");
       return;
     }
+    if (!Number.isInteger(shares)) {
+      setOrderStatus("error");
+      setOrderMessage("委托失败：委托数量必须是整数股。");
+      return;
+    }
     const normalizedShares = Math.floor(shares);
     const sideText = side === "buy" ? "买入" : "卖出";
     const confirmed = window.confirm(
@@ -299,6 +304,8 @@ export function TradingWorkspace() {
 
   async function submitCreateOperator() {
     if (!token || user?.role !== "admin") return;
+    const roleText = newOperatorRole === "admin" ? "管理员" : "操作员";
+    if (!window.confirm(`确认创建${roleText}账号「${newOperatorName.trim()}」？`)) return;
     setAdminMessage("");
     try {
       await createAdminUser(token, {
@@ -309,23 +316,26 @@ export function TradingWorkspace() {
       setNewOperatorName("");
       setNewOperatorPassword("");
       setNewOperatorRole("player");
-      setAdminMessage(newOperatorRole === "admin" ? "管理员账号已创建" : "操作员账号已创建");
+      setAdminMessage(`${roleText}账号已创建`);
       await refreshAdminOverview();
-    } catch {
-      setAdminMessage("创建账号失败，请检查用户名是否已存在");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`创建账号失败：${detail || "请检查用户名是否已存在"}`);
     }
   }
 
   async function submitResetPassword() {
     if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认重置账号「${resetTarget}」的密码？`)) return;
     setAdminMessage("");
     try {
       await resetAdminUserPassword(token, resetTarget, resetPassword);
       setResetPassword("");
       setAdminMessage("密码已重置");
       await refreshAdminOverview();
-    } catch {
-      setAdminMessage("重置密码失败，请检查账号和密码");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`重置密码失败：${detail || "请检查账号和密码"}`);
     }
   }
 
@@ -373,6 +383,7 @@ export function TradingWorkspace() {
       setAdminMessage("请完整填写股票代码、公司名称、净利润、总股本、行业PE和碳排均值");
       return;
     }
+    if (!window.confirm(`确认添加股票「${payload.name} (${payload.symbol})」？初始价 ${fmtMoney(newStockInitialPrice)}。`)) return;
     setAdminMessage("");
     try {
       const result = await createAdminStock(token, payload);
@@ -394,8 +405,9 @@ export function TradingWorkspace() {
       await refreshAdminOverview();
       const nextMarket = await fetchMarket();
       setMarket(nextMarket);
-    } catch {
-      setAdminMessage("添加股票失败，请检查代码是否重复或参数是否正确");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`添加股票失败：${detail || "请检查代码是否重复或参数是否正确"}`);
     }
   }
 
@@ -415,6 +427,7 @@ export function TradingWorkspace() {
       setAdminMessage("参数异常：净利润、总股本、行业PE和碳排均值必须大于 0");
       return;
     }
+    if (!window.confirm(`确认保存「${stock.name}」的股票参数？这会影响后续结算价格。`)) return;
     setAdminMessage("");
     try {
       const result = await updateAdminStock(token, stock.symbol, payload);
@@ -424,8 +437,9 @@ export function TradingWorkspace() {
       }
       setAdminMessage(`${stock.name} 参数已保存`);
       await refreshAdminOverview();
-    } catch {
-      setAdminMessage("保存股票参数失败");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`保存股票参数失败：${detail || "请稍后重试"}`);
     }
   }
 
