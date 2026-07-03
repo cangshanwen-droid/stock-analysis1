@@ -91,13 +91,14 @@ def close_market(conn) -> MarketResult:
         if not open_round or not open_round["round"]:
             continue
         current_round = int(open_round["round"])
-        txns = fetchall(conn, "SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, current_round))
-        buy_total = sum(float(t["price"]) * int(t["shares"]) for t in txns if t["trade_type"] == "buy")
-        sell_total = sum(float(t["price"]) * int(t["shares"]) for t in txns if t["trade_type"] == "sell")
-        buy_volume = sum(int(t["shares"]) for t in txns if t["trade_type"] == "buy")
-        sell_volume = sum(int(t["shares"]) for t in txns if t["trade_type"] in ("sell", "force_close"))
+        txns = fetchall(conn, "SELECT username,trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, current_round))
+        real_txns = [t for t in txns if t["username"] != "[系统]"]
+        buy_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
+        sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "sell")
+        buy_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
+        sell_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
         volume = max(buy_volume, sell_volume)
-        trade_prices = [float(t["price"]) for t in txns if float(t["price"] or 0) > 0]
+        trade_prices = [float(t["price"]) for t in real_txns if float(t["price"] or 0) > 0]
         next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
         previous_close = float(stock["previous_close"] or stock["current_price"] or next_price)
         high = max([next_price, previous_close, *trade_prices])
