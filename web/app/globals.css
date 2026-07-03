@@ -219,6 +219,9 @@ button {
 .chart-card {
   min-height: clamp(545px, calc(100vh - 270px), 620px);
   overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(69, 85, 113, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(13, 21, 35, 0.98), rgba(8, 13, 22, 0.98));
 }
 
 .compact-panel {
@@ -263,6 +266,8 @@ button {
 
 .chart-shell {
   position: relative;
+  background:
+    linear-gradient(180deg, rgba(11, 17, 29, 0.98), rgba(8, 13, 22, 0.98));
 }
 
 .kline-tooltip {
@@ -273,10 +278,10 @@ button {
   width: 168px;
   pointer-events: none;
   opacity: 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 6px;
-  background: rgba(7, 12, 20, 0.94);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  background: rgba(7, 12, 20, 0.96);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.44);
   padding: 9px 10px;
   display: grid;
   gap: 5px;
@@ -316,7 +321,9 @@ button {
   gap: 14px;
   color: var(--muted);
   font-size: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(77, 94, 120, 0.2);
+  border-bottom: 1px solid rgba(77, 94, 120, 0.16);
+  background: rgba(13, 22, 36, 0.66);
 }
 
 .chart-legend span {
@@ -340,6 +347,36 @@ button {
 
 .legend-ma10 {
   color: #469fe6;
+}
+
+.chart-empty-state {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  min-width: 220px;
+  padding: 13px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 13, 22, 0.72);
+  color: #aeb9ca;
+  pointer-events: none;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.24);
+}
+
+.chart-empty-state strong {
+  color: #edf4ff;
+  font-size: 14px;
+}
+
+.chart-empty-state span {
+  color: #7d8ba1;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .chart-host {

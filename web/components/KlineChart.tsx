@@ -25,12 +25,16 @@ type DisplayCandle = {
   low: number;
   close: number;
   volume: number;
-  isAnchor: boolean;
 };
 
-const DISPLAY_START_TIME = 946684800;
-const DISPLAY_STEP_SECONDS = 21600;
 const START_DATE_UTC = Date.UTC(2026, 1, 26);
+const CHART_BACKGROUND = "#0b111d";
+const GRID_MAJOR = "rgba(165, 180, 202, 0.105)";
+const GRID_MINOR = "rgba(165, 180, 202, 0.052)";
+const UP_COLOR = "#26c296";
+const DOWN_COLOR = "#b52a40";
+const MA5_COLOR = "#f9c42f";
+const MA10_COLOR = "#469fe6";
 
 function round2(value: number) {
   return Number(value.toFixed(2));
@@ -65,10 +69,11 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
     const flatNoTrade = isFlatNoTrade(candle);
     const wickPad = flatNoTrade
       ? 0
-      : Math.max(Math.abs(close - open) * 0.18, close * 0.0025, 0.04);
+      : Math.max(Math.abs(close - open) * 0.12, close * 0.0018, 0.02);
     const lowPad = flatNoTrade
       ? 0
-      : Math.max(Math.abs(close - open) * 0.14, close * 0.002, 0.03);
+      : Math.max(Math.abs(close - open) * 0.1, close * 0.0015, 0.02);
+
     return {
       round: candle.round,
       time: dateForIndex(index),
@@ -76,8 +81,7 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
       high: round2(Math.max(candle.high, Math.max(open, close) + wickPad)),
       low: round2(Math.max(0.01, Math.min(candle.low, Math.min(open, close) - lowPad))),
       close,
-      volume: Math.max(0, Math.round(candle.volume || 0)),
-      isAnchor: true
+      volume: Math.max(0, Math.round(candle.volume || 0))
     };
   });
 }
@@ -112,6 +116,7 @@ export function KlineChart({ candles }: Props) {
     if (!candles.length || !hasMeaningfulBars) return 0;
     return round2(Math.max(...candles.slice(0, -1).map((candle) => Math.max(candle.high, candle.close)), candles[0]?.high ?? 0));
   }, [candles, hasMeaningfulBars]);
+
   const candleData = useMemo(() => displayCandles.map(({ time, open, high, low, close }) => ({
     time,
     open,
@@ -132,12 +137,13 @@ export function KlineChart({ candles }: Props) {
 
   useEffect(() => {
     if (!ref.current) return;
+
     const chart = createChart(ref.current, {
       width: ref.current.clientWidth,
       height: ref.current.clientHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#090d16" },
-        textColor: "#a3aec0",
+        background: { type: ColorType.Solid, color: CHART_BACKGROUND },
+        textColor: "#aeb9ca",
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         attributionLogo: false
       },
@@ -148,23 +154,23 @@ export function KlineChart({ candles }: Props) {
         }
       },
       grid: {
-        vertLines: { visible: false },
-        horzLines: { color: "rgba(168, 179, 196, 0.12)" }
+        vertLines: { color: GRID_MINOR, style: LineStyle.Solid, visible: true },
+        horzLines: { color: GRID_MAJOR, style: LineStyle.Solid, visible: true }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(120,144,173,0.44)", width: 1, labelVisible: false },
-        horzLine: { color: "rgba(120,144,173,0.44)", width: 1, labelVisible: false }
+        vertLine: { color: "rgba(137, 164, 198, 0.5)", width: 1, labelVisible: true },
+        horzLine: { color: "rgba(137, 164, 198, 0.5)", width: 1, labelVisible: true }
       },
       rightPriceScale: {
-        borderColor: "#263448",
+        borderColor: "rgba(99, 116, 139, 0.42)",
         scaleMargins: { top: 0.08, bottom: 0.3 }
       },
       timeScale: {
-        borderColor: "#263448",
-        rightOffset: 2,
-        barSpacing: 20,
-        minBarSpacing: 8,
+        borderColor: "rgba(99, 116, 139, 0.42)",
+        rightOffset: 1,
+        barSpacing: 13,
+        minBarSpacing: 5,
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
@@ -177,12 +183,13 @@ export function KlineChart({ candles }: Props) {
     });
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: "#26c296",
-      downColor: "#b52a40",
-      borderUpColor: "#26c296",
-      borderDownColor: "#b52a40",
-      wickUpColor: "#26c296",
-      wickDownColor: "#b52a40",
+      upColor: UP_COLOR,
+      downColor: DOWN_COLOR,
+      borderUpColor: UP_COLOR,
+      borderDownColor: DOWN_COLOR,
+      wickUpColor: UP_COLOR,
+      wickDownColor: DOWN_COLOR,
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
       priceLineVisible: false,
       priceLineWidth: 1,
       lastValueVisible: false
@@ -191,17 +198,17 @@ export function KlineChart({ candles }: Props) {
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "",
-      color: "rgba(148, 163, 184, 0.28)",
+      color: "rgba(148, 163, 184, 0.24)",
       lastValueVisible: false,
       priceLineVisible: false
     });
 
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.8, bottom: 0 }
+      scaleMargins: { top: 0.72, bottom: 0 }
     });
 
     const ma5Series = chart.addLineSeries({
-      color: "#f9c42f",
+      color: MA5_COLOR,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -209,7 +216,7 @@ export function KlineChart({ candles }: Props) {
     });
 
     const ma10Series = chart.addLineSeries({
-      color: "#469fe6",
+      color: MA10_COLOR,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -236,33 +243,38 @@ export function KlineChart({ candles }: Props) {
       if (!ref.current) return;
       chart.applyOptions({ width: ref.current.clientWidth, height: ref.current.clientHeight });
     };
+
     chart.subscribeCrosshairMove((param) => {
       const tooltip = tooltipRef.current;
       if (!tooltip || !ref.current || !param.time || !param.point || param.point.x < 0 || param.point.y < 0) {
         if (tooltip) tooltip.style.opacity = "0";
         return;
       }
+
       const candle = candleLookupRef.current.get(timeKey(param.time));
       if (!candle) {
         tooltip.style.opacity = "0";
         return;
       }
+
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
       tooltip.innerHTML = `
-        <div class="kline-tip-head">\u7b2c ${candle.round} \u8f6e</div>
-        <div><span>\u5f00</span><strong>\u00a5${candle.open.toFixed(2)}</strong></div>
-        <div><span>\u9ad8</span><strong>\u00a5${candle.high.toFixed(2)}</strong></div>
-        <div><span>\u4f4e</span><strong>\u00a5${candle.low.toFixed(2)}</strong></div>
-        <div><span>\u6536</span><strong>\u00a5${candle.close.toFixed(2)}</strong></div>
-        <div><span>\u6da8\u8dcc</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
-        <div><span>\u91cf</span><strong>${candle.volume}</strong></div>
+        <div class="kline-tip-head">第 ${candle.round} 轮</div>
+        <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
+        <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
+        <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>
+        <div><span>收盘</span><strong>¥${candle.close.toFixed(2)}</strong></div>
+        <div><span>涨跌</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
+        <div><span>成交量</span><strong>${candle.volume}</strong></div>
       `;
+
       const x = param.point.x > ref.current.clientWidth - 190 ? param.point.x - 184 : param.point.x + 16;
       const y = Math.max(12, Math.min(param.point.y + 12, ref.current.clientHeight - 190));
       tooltip.style.transform = `translate(${x}px, ${y}px)`;
       tooltip.style.opacity = "1";
     });
+
     window.addEventListener("resize", resize);
     return () => {
       window.removeEventListener("resize", resize);
@@ -279,6 +291,7 @@ export function KlineChart({ candles }: Props) {
 
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
+
     roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.round]));
     candleLookupRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle]));
     candleRef.current.setData(hasMeaningfulBars ? candleData : []);
@@ -287,9 +300,10 @@ export function KlineChart({ candles }: Props) {
       value: hasMeaningfulBars ? candle.volume : 0,
       color: candle.close >= candle.open ? "rgba(38,194,150,.32)" : "rgba(181,42,64,.34)"
     })));
+
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,
-      color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : "#f9c42f"
+      color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : MA5_COLOR
     }));
     ma5Ref.current.setData(hasMeaningfulBars ? ma5WithCrossColor : []);
     ma10Ref.current.setData(hasMeaningfulBars ? ma10Data : []);
@@ -297,17 +311,19 @@ export function KlineChart({ candles }: Props) {
 
     priceLinesRef.current.forEach((line) => candleRef.current?.removePriceLine(line));
     priceLinesRef.current = [];
+
     const last = displayCandles[displayCandles.length - 1];
     if (last && hasMeaningfulBars) {
       const currentLine = candleRef.current.createPriceLine({
         price: last.close,
-        color: "#f9c42f",
+        color: MA5_COLOR,
         lineWidth: 1,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: false,
         title: ""
       });
       priceLinesRef.current.push(currentLine);
+
       if (resistancePrice > last.close) {
         const pressureLine = candleRef.current.createPriceLine({
           price: resistancePrice,
@@ -320,10 +336,16 @@ export function KlineChart({ candles }: Props) {
         priceLinesRef.current.push(pressureLine);
       }
     }
+
+    chartRef.current.timeScale().applyOptions({
+      barSpacing: displayCandles.length <= 8 ? 16 : 12,
+      rightOffset: displayCandles.length <= 8 ? 1.5 : 1
+    });
+
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -1.5,
-        to: Math.max(14, displayCandles.length + 1.5)
+        from: -0.8,
+        to: Math.max(7.5, displayCandles.length + 0.8)
       });
     } else {
       chartRef.current.timeScale().fitContent();
@@ -335,8 +357,14 @@ export function KlineChart({ candles }: Props) {
       <div className="chart-legend">
         <span className="legend-ma5">MA5</span>
         <span className="legend-ma10">MA10</span>
-        <span>{"\u6210\u4ea4\u91cf"}</span>
+        <span>成交量</span>
       </div>
+      {!hasMeaningfulBars && (
+        <div className="chart-empty-state">
+          <strong>等待首笔成交</strong>
+          <span>开盘后产生买卖成交，K 线将按比赛轮次更新</span>
+        </div>
+      )}
       <div className="kline-tooltip" ref={tooltipRef} />
       <div className="chart-host" ref={ref} />
     </div>
