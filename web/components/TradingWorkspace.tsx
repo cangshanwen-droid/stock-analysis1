@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
+  clearPublicReadCache,
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
@@ -272,14 +273,23 @@ export function TradingWorkspace() {
       });
       if (result.accepted) {
         setOrderStatus("success");
-        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : "订单已受理，资产与行情已刷新。"}`);
-        const data = await fetchPortfolio(token);
-        setPortfolio(data);
-        setUser(data.user);
-        const nextMarket = await fetchMarket();
-        setMarket(nextMarket);
-        const nextCandles = await fetchCandles(current.symbol);
-        setCandles(nextCandles);
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : "订单已受理，正在刷新资产与行情。"}`);
+        setOrderSubmitting(false);
+        clearPublicReadCache(current.symbol);
+        try {
+          const [data, nextMarket, nextCandles] = await Promise.all([
+            fetchPortfolio(token),
+            fetchMarket(),
+            fetchCandles(current.symbol)
+          ]);
+          setPortfolio(data);
+          setUser(data.user);
+          setMarket(nextMarket);
+          setCandles(nextCandles);
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。资产与行情已刷新。`);
+        } catch {
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
+        }
       } else {
         setOrderStatus("error");
         setOrderMessage(`${sideText}失败：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);

@@ -160,6 +160,20 @@ export function prefetchCandles(symbols: string[]) {
   }
 }
 
+export function clearPublicReadCache(symbol?: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(MARKET_CACHE_KEY);
+    if (symbol) {
+      window.localStorage.removeItem(`${CANDLE_CACHE_PREFIX}${symbol}`);
+    }
+  } catch {
+    // Cache clearing is a speed optimization; failed storage access should not block trading.
+  }
+  pendingMarketRequest = null;
+  if (symbol) pendingCandleRequests.delete(symbol);
+}
+
 export async function login(username: string, password: string): Promise<LoginResult> {
   if (!API_BASES.length) {
     return {
