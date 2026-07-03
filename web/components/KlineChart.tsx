@@ -31,8 +31,8 @@ const START_DATE_UTC = Date.UTC(2026, 1, 26);
 const CHART_BACKGROUND = "#0b111d";
 const GRID_MAJOR = "rgba(165, 180, 202, 0.105)";
 const GRID_MINOR = "rgba(165, 180, 202, 0.052)";
-const UP_COLOR = "#26c296";
-const DOWN_COLOR = "#b52a40";
+const UP_COLOR = "#f23645";
+const DOWN_COLOR = "#26c296";
 const MA5_COLOR = "#f9c42f";
 const MA10_COLOR = "#469fe6";
 
@@ -315,7 +315,7 @@ function KlineChartCanvas({ candles }: Props) {
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: hasMeaningfulBars ? candle.volume : 0,
-      color: candle.close >= candle.open ? "rgba(38,194,150,.32)" : "rgba(181,42,64,.34)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.34)" : "rgba(38,194,150,.32)"
     })));
 
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
