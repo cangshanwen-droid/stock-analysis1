@@ -13,6 +13,7 @@ import {
   fetchPortfolio,
   login,
   marketControl,
+  prefetchCandles,
   resetAdminUserPassword,
   submitOrder,
   updateAdminStock,
@@ -228,6 +229,11 @@ export function TradingWorkspace() {
     () => stocks.find((s) => s.symbol === selected) ?? stocks[0],
     [selected, stocks]
   );
+
+  useEffect(() => {
+    if (!stocks.length) return;
+    prefetchCandles(stocks.map((stock) => stock.symbol));
+  }, [stocks]);
 
   useEffect(() => {
     if (current) setOrderPrice(current.price.toFixed(2));

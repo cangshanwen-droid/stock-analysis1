@@ -11,6 +11,8 @@ const MARKET_CACHE_KEY = "gipfel:last-market";
 const CANDLE_CACHE_PREFIX = "gipfel:last-candles:";
 const MARKET_CACHE_TTL = 8000;
 const CANDLE_CACHE_TTL = 45000;
+let pendingMarketRequest: Promise<MarketSnapshot> | null = null;
+const pendingCandleRequests = new Map<string, Promise<Candle[]>>();
 
 const fallbackMarket: MarketSnapshot = {
   round: 1,
@@ -63,7 +65,7 @@ async function fetchWithRetry(input: string, init?: RequestInit, attempts = isRe
     } catch (error) {
       lastError = error;
     }
-    await new Promise((resolve) => setTimeout(resolve, 800 * (i + 1)));
+    await new Promise((resolve) => setTimeout(resolve, 350 * (i + 1)));
   }
   throw lastError instanceof Error ? lastError : new Error("request_failed");
 }
@@ -104,37 +106,57 @@ async function acceptedJsonOrThrow(res: Response, fallback: string) {
 export async function fetchMarket(): Promise<MarketSnapshot> {
   const cached = readCache<MarketSnapshot>(MARKET_CACHE_KEY, MARKET_CACHE_TTL);
   if (cached?.stocks?.length) return cached;
+  if (pendingMarketRequest) return pendingMarketRequest;
   if (!API_BASES.length) return fallbackMarket;
-  try {
-    const res = await fetchApi("/market");
-    if (!res.ok) return fallbackMarket;
-    const data = await res.json();
-    if (Array.isArray(data.stocks) && data.stocks.length > 0) {
-      writeCache(MARKET_CACHE_KEY, data);
-      return data;
+  pendingMarketRequest = (async () => {
+    try {
+      const res = await fetchApi("/market");
+      if (!res.ok) return fallbackMarket;
+      const data = await res.json();
+      if (Array.isArray(data.stocks) && data.stocks.length > 0) {
+        writeCache(MARKET_CACHE_KEY, data);
+        return data;
+      }
+      return fallbackMarket;
+    } catch {
+      return readCache<MarketSnapshot>(MARKET_CACHE_KEY, Number.MAX_SAFE_INTEGER) ?? fallbackMarket;
+    } finally {
+      pendingMarketRequest = null;
     }
-    return fallbackMarket;
-  } catch {
-    return readCache<MarketSnapshot>(MARKET_CACHE_KEY, Number.MAX_SAFE_INTEGER) ?? fallbackMarket;
-  }
+  })();
+  return pendingMarketRequest;
 }
 
 export async function fetchCandles(symbol: string): Promise<Candle[]> {
   const cacheKey = `${CANDLE_CACHE_PREFIX}${symbol}`;
   const cached = readCache<Candle[]>(cacheKey, CANDLE_CACHE_TTL);
   if (cached?.length) return cached;
+  const pending = pendingCandleRequests.get(symbol);
+  if (pending) return pending;
   if (!API_BASES.length) return demoCandles(symbol);
-  try {
-    const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`);
-    if (!res.ok) return demoCandles(symbol);
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      writeCache(cacheKey, data);
-      return data;
+  const request = (async () => {
+    try {
+      const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`);
+      if (!res.ok) return demoCandles(symbol);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        writeCache(cacheKey, data);
+        return data;
+      }
+      return demoCandles(symbol);
+    } catch {
+      return readCache<Candle[]>(cacheKey, Number.MAX_SAFE_INTEGER) ?? demoCandles(symbol);
+    } finally {
+      pendingCandleRequests.delete(symbol);
     }
-    return demoCandles(symbol);
-  } catch {
-    return readCache<Candle[]>(cacheKey, Number.MAX_SAFE_INTEGER) ?? demoCandles(symbol);
+  })();
+  pendingCandleRequests.set(symbol, request);
+  return request;
+}
+
+export function prefetchCandles(symbols: string[]) {
+  for (const symbol of symbols) {
+    void fetchCandles(symbol);
   }
 }
 
