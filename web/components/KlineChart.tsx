@@ -40,6 +40,15 @@ function dateForIndex(index: number) {
   return new Date(START_DATE_UTC + index * 86400000).toISOString().slice(0, 10) as Time;
 }
 
+function isFlatNoTrade(candle: Candle) {
+  return (
+    Math.round(candle.volume || 0) <= 0
+    && round2(candle.open) === round2(candle.close)
+    && round2(candle.high) === round2(candle.open)
+    && round2(candle.low) === round2(candle.open)
+  );
+}
+
 function timeKey(time: Time | unknown) {
   if (typeof time === "string" || typeof time === "number") return String(time);
   if (time && typeof time === "object" && "year" in time && "month" in time && "day" in time) {
@@ -50,22 +59,27 @@ function timeKey(time: Time | unknown) {
 }
 
 function expandCandles(candles: Candle[]): DisplayCandle[] {
-  return candles.map((candle, index) => ({
-    round: candle.round,
-    time: dateForIndex(index),
-    open: round2(candle.open),
-    high: round2(Math.max(
-      candle.high,
-      Math.max(candle.open, candle.close) + Math.max(Math.abs(candle.close - candle.open) * 0.18, candle.close * 0.0025, 0.04)
-    )),
-    low: round2(Math.max(0.01, Math.min(
-      candle.low,
-      Math.min(candle.open, candle.close) - Math.max(Math.abs(candle.close - candle.open) * 0.14, candle.close * 0.002, 0.03)
-    ))),
-    close: round2(candle.close),
-    volume: Math.max(0, Math.round(candle.volume || 0)),
-    isAnchor: true
-  }));
+  return candles.map((candle, index) => {
+    const open = round2(candle.open);
+    const close = round2(candle.close);
+    const flatNoTrade = isFlatNoTrade(candle);
+    const wickPad = flatNoTrade
+      ? 0
+      : Math.max(Math.abs(close - open) * 0.18, close * 0.0025, 0.04);
+    const lowPad = flatNoTrade
+      ? 0
+      : Math.max(Math.abs(close - open) * 0.14, close * 0.002, 0.03);
+    return {
+      round: candle.round,
+      time: dateForIndex(index),
+      open,
+      high: round2(Math.max(candle.high, Math.max(open, close) + wickPad)),
+      low: round2(Math.max(0.01, Math.min(candle.low, Math.min(open, close) - lowPad))),
+      close,
+      volume: Math.max(0, Math.round(candle.volume || 0)),
+      isAnchor: true
+    };
+  });
 }
 
 function movingAverage(candles: DisplayCandle[], windowSize: number) {
@@ -93,10 +107,11 @@ export function KlineChart({ candles }: Props) {
   const candleLookupRef = useRef<Map<string, DisplayCandle>>(new Map());
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
+  const hasMeaningfulBars = useMemo(() => candles.some((candle) => !isFlatNoTrade(candle)), [candles]);
   const resistancePrice = useMemo(() => {
-    if (!candles.length) return 0;
+    if (!candles.length || !hasMeaningfulBars) return 0;
     return round2(Math.max(...candles.slice(0, -1).map((candle) => Math.max(candle.high, candle.close)), candles[0]?.high ?? 0));
-  }, [candles]);
+  }, [candles, hasMeaningfulBars]);
   const candleData = useMemo(() => displayCandles.map(({ time, open, high, low, close }) => ({
     time,
     open,
@@ -276,9 +291,9 @@ export function KlineChart({ candles }: Props) {
       ...point,
       color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : "#f9c42f"
     }));
-    ma5Ref.current.setData(ma5WithCrossColor);
-    ma10Ref.current.setData(ma10Data);
-    volumeMaRef.current.setData(volumeMaData);
+    ma5Ref.current.setData(hasMeaningfulBars ? ma5WithCrossColor : []);
+    ma10Ref.current.setData(hasMeaningfulBars ? ma10Data : []);
+    volumeMaRef.current.setData(hasMeaningfulBars ? volumeMaData : []);
 
     priceLinesRef.current.forEach((line) => candleRef.current?.removePriceLine(line));
     priceLinesRef.current = [];
@@ -313,7 +328,7 @@ export function KlineChart({ candles }: Props) {
     } else {
       chartRef.current.timeScale().fitContent();
     }
-  }, [candleData, displayCandles, ma5Data, ma10Data, resistancePrice, volumeMaData]);
+  }, [candleData, displayCandles, hasMeaningfulBars, ma5Data, ma10Data, resistancePrice, volumeMaData]);
 
   return (
     <div className="chart-shell">
