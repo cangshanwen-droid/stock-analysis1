@@ -23,6 +23,7 @@ import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset";
+type OrderStatus = "idle" | "success" | "error";
 
 function fmtMoney(value: number) {
   return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
@@ -74,6 +75,8 @@ export function TradingWorkspace() {
   const [orderPrice, setOrderPrice] = useState("0.00");
   const [orderShares, setOrderShares] = useState("100");
   const [orderMessage, setOrderMessage] = useState("");
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
@@ -233,6 +236,7 @@ export function TradingWorkspace() {
     const price = Number(orderPrice);
     const shares = Number(orderShares);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
+      setOrderStatus("error");
       setOrderMessage("委托失败：请填写大于 0 的价格和数量。");
       return;
     }
@@ -243,6 +247,8 @@ export function TradingWorkspace() {
     );
     if (!confirmed) return;
     setOrderMessage("");
+    setOrderStatus("idle");
+    setOrderSubmitting(true);
     try {
       const result = await submitOrder(token, {
         username: user.username,
@@ -252,7 +258,8 @@ export function TradingWorkspace() {
         shares: normalizedShares
       });
       if (result.accepted) {
-        setOrderMessage(`${sideText}委托成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : ""}`);
+        setOrderStatus("success");
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : "订单已受理，资产与行情已刷新。"}`);
         const data = await fetchPortfolio(token);
         setPortfolio(data);
         setUser(data.user);
@@ -261,11 +268,15 @@ export function TradingWorkspace() {
         const nextCandles = await fetchCandles(current.symbol);
         setCandles(nextCandles);
       } else {
-        setOrderMessage(`${sideText}未受理：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);
+        setOrderStatus("error");
+        setOrderMessage(`${sideText}失败：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);
       }
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
+      setOrderStatus("error");
       setOrderMessage(`${sideText}提交失败：${detail || "网络或后端暂时不可用，请稍后重试。"}`);
+    } finally {
+      setOrderSubmitting(false);
     }
   }
 
@@ -569,8 +580,26 @@ export function TradingWorkspace() {
                 <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
               </div>
             <div className="segmented">
-              <button className={side === "buy" ? "buy" : ""} onClick={() => setSide("buy")}>买入</button>
-              <button onClick={() => setSide("sell")}>卖出</button>
+              <button
+                className={side === "buy" ? "buy active" : ""}
+                onClick={() => {
+                  setSide("buy");
+                  setOrderMessage("");
+                  setOrderStatus("idle");
+                }}
+              >
+                买入
+              </button>
+              <button
+                className={side === "sell" ? "sell active" : ""}
+                onClick={() => {
+                  setSide("sell");
+                  setOrderMessage("");
+                  setOrderStatus("idle");
+                }}
+              >
+                卖出
+              </button>
             </div>
             <div className="form-grid">
               <div className="field">
@@ -589,8 +618,14 @@ export function TradingWorkspace() {
                 <label>委托数量</label>
                 <input value={orderShares} onChange={(e) => setOrderShares(e.target.value)} />
               </div>
-              <button className="primary" disabled={!user} onClick={submitTrade}>{side === "buy" ? "提交买入" : "提交卖出"}</button>
-              {orderMessage && <div className="hint-text">{orderMessage}</div>}
+              <button
+                className={`primary trade-submit ${side}`}
+                disabled={!user || orderSubmitting}
+                onClick={submitTrade}
+              >
+                {orderSubmitting ? "提交中..." : side === "buy" ? "提交买入" : "提交卖出"}
+              </button>
+              {orderMessage && <div className={`order-result ${orderStatus}`}>{orderMessage}</div>}
             </div>
 
             <div className="mini-table">
