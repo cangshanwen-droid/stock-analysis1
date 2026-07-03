@@ -266,6 +266,7 @@ button {
 
 .chart-shell {
   position: relative;
+  padding-right: 14px;
   background:
     linear-gradient(180deg, rgba(11, 17, 29, 0.98), rgba(8, 13, 22, 0.98));
 }
@@ -386,6 +387,7 @@ button {
 
 .chart-host {
   height: clamp(455px, calc(100vh - 400px), 530px);
+  width: 100%;
 }
 
 .ticket {

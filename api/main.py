@@ -26,6 +26,7 @@ DEFAULT_CORS_ORIGINS = {
     "https://www.gipfel.ltd",
     "https://gipfel.ltd",
 }
+READ_CACHE: dict[str, tuple[float, Any]] = {}
 
 
 def cors_origins() -> list[str]:
@@ -37,6 +38,26 @@ def cors_origins() -> list[str]:
     if "*" in configured:
         return ["*"]
     return sorted(configured | DEFAULT_CORS_ORIGINS)
+
+
+def cache_get(key: str, ttl_seconds: float) -> Any | None:
+    cached = READ_CACHE.get(key)
+    if not cached:
+        return None
+    expires_at, value = cached
+    if expires_at <= time.monotonic():
+        READ_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def cache_set(key: str, value: Any, ttl_seconds: float) -> Any:
+    READ_CACHE[key] = (time.monotonic() + ttl_seconds, value)
+    return value
+
+
+def clear_read_cache() -> None:
+    READ_CACHE.clear()
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
@@ -252,12 +273,15 @@ def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
 
 @app.get("/market")
 def market() -> dict[str, Any]:
+    cached = cache_get("market", 2.0)
+    if cached is not None:
+        return cached
     with connect() as conn:
         state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
         stocks = fetchall(conn,
             "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
         )
-    return {
+    return cache_set("market", {
         "round": int((state or {}).get("round") or 1),
         "state": (state or {}).get("state") or "open",
         "stocks": [
@@ -273,11 +297,15 @@ def market() -> dict[str, Any]:
             }
             for s in stocks
         ],
-    }
+    }, 2.0)
 
 
 @app.get("/stocks/{symbol}/kline")
 def stock_kline(symbol: str) -> list[dict[str, Any]]:
+    cache_key = f"kline:{symbol.upper()}"
+    cached = cache_get(cache_key, 10.0)
+    if cached is not None:
+        return cached
     with connect() as conn:
         rows = fetchall(conn,
             """
@@ -289,7 +317,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
             (symbol.upper(),),
         )
     start = date(2000, 1, 1)
-    return [
+    data = [
         {
             "round": int(row["round"] or 0),
             "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
@@ -302,6 +330,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
         for row in rows
         if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
     ]
+    return cache_set(cache_key, data, 10.0)
 
 
 @app.get("/portfolio")
@@ -408,6 +437,7 @@ def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_u
         result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares)
         if result.ok:
             conn.commit()
+            clear_read_cache()
         else:
             conn.rollback()
     return {
@@ -446,6 +476,7 @@ def close_market_endpoint(
         result = close_market(conn)
         if result.ok:
             conn.commit()
+            clear_read_cache()
         else:
             conn.rollback()
     return {
@@ -478,6 +509,7 @@ def open_market_endpoint(
         result = open_market(conn)
         if result.ok:
             conn.commit()
+            clear_read_cache()
         else:
             conn.rollback()
     return {
@@ -512,6 +544,7 @@ def reset_market_endpoint(
                 (user["username"], "market_reset_round1", "round", "reset match to round 1"))
         if result.ok:
             conn.commit()
+            clear_read_cache()
         else:
             conn.rollback()
     return {
@@ -701,6 +734,7 @@ def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depen
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "create_stock", symbol, json.dumps(payload.model_dump(), ensure_ascii=False)))
         conn.commit()
+        clear_read_cache()
     return {"accepted": True, "symbol": symbol, "initialPrice": init_price}
 
 
@@ -730,6 +764,7 @@ def admin_update_stock(symbol: str, payload: StockUpdateRequest, user: dict[str,
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "update_stock", symbol.upper(), json.dumps(safe, ensure_ascii=False)))
         conn.commit()
+        clear_read_cache()
     return {"accepted": True, "symbol": symbol.upper(), "updated": safe}
 
 
@@ -751,6 +786,7 @@ def admin_delete_stock(symbol: str, user: dict[str, Any] = Depends(current_user)
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_stock", target_symbol, str(target["name"])))
         conn.commit()
+        clear_read_cache()
     return {"accepted": True, "symbol": target_symbol}
 
 

@@ -165,6 +165,11 @@ function KlineChartCanvas({ candles }: Props) {
         attributionLogo: false
       },
       localization: {
+        priceFormatter: (price: number) => {
+          if (Math.abs(price) >= 1000) return price.toFixed(0);
+          if (Math.abs(price) >= 100) return price.toFixed(1);
+          return price.toFixed(2);
+        },
         timeFormatter: (time: Time) => {
           const round = roundLabelRef.current.get(timeKey(time));
           return round ? `第 ${round} 轮` : "";
