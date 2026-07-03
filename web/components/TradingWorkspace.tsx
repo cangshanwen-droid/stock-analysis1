@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, BarChart3, ClipboardList, Shield, Wallet } from "lucide-react";
+import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
   createAdminStock,
   createAdminUser,
@@ -481,7 +481,6 @@ export function TradingWorkspace() {
         { key: "market" as const, label: "行情面板", icon: BarChart3 },
         { key: "trade" as const, label: "操作员交易台", icon: Activity },
         { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
-        { key: "records" as const, label: "委托记录", icon: ClipboardList },
         ...(user.role === "admin"
           ? [{ key: "admin" as const, label: "管理员控制台", icon: Shield }]
           : [])
@@ -933,7 +932,7 @@ export function TradingWorkspace() {
                         <input value={newStock.carbonPrice} onChange={(e) => setNewStock({ ...newStock, carbonPrice: e.target.value })} />
                       </div>
                       <div className="formula-preview">
-                        <span>反推行业PE</span>
+                        <span>PE</span>
                         <strong>{newStockIndustryPe > 0 ? newStockIndustryPe.toFixed(2) : "--"}</strong>
                       </div>
                       <button
