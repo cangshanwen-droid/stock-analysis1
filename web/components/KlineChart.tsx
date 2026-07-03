@@ -312,6 +312,27 @@ export function KlineChart({ candles }: Props) {
     priceLinesRef.current.forEach((line) => candleRef.current?.removePriceLine(line));
     priceLinesRef.current = [];
 
+    chartRef.current.applyOptions({
+      grid: {
+        vertLines: { color: hasMeaningfulBars ? GRID_MINOR : "rgba(0, 0, 0, 0)", style: LineStyle.Solid, visible: hasMeaningfulBars },
+        horzLines: { color: hasMeaningfulBars ? GRID_MAJOR : "rgba(0, 0, 0, 0)", style: LineStyle.Solid, visible: hasMeaningfulBars }
+      },
+      rightPriceScale: {
+        borderColor: hasMeaningfulBars ? "rgba(99, 116, 139, 0.42)" : "rgba(0, 0, 0, 0)",
+        scaleMargins: { top: 0.08, bottom: 0.3 },
+        visible: hasMeaningfulBars
+      },
+      timeScale: {
+        borderColor: hasMeaningfulBars ? "rgba(99, 116, 139, 0.42)" : "rgba(0, 0, 0, 0)",
+        visible: hasMeaningfulBars
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: { color: hasMeaningfulBars ? "rgba(137, 164, 198, 0.5)" : "rgba(0, 0, 0, 0)", width: 1, labelVisible: hasMeaningfulBars },
+        horzLine: { color: hasMeaningfulBars ? "rgba(137, 164, 198, 0.5)" : "rgba(0, 0, 0, 0)", width: 1, labelVisible: hasMeaningfulBars }
+      }
+    });
+
     const last = displayCandles[displayCandles.length - 1];
     if (last && hasMeaningfulBars) {
       const currentLine = candleRef.current.createPriceLine({
