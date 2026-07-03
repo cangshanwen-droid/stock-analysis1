@@ -81,6 +81,7 @@ export function TradingWorkspace() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [newOperatorName, setNewOperatorName] = useState("");
   const [newOperatorPassword, setNewOperatorPassword] = useState("");
+  const [newOperatorRole, setNewOperatorRole] = useState<"player" | "admin">("player");
   const [resetTarget, setResetTarget] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [pendingMarketAction, setPendingMarketAction] = useState<MarketAction | null>(null);
@@ -229,23 +230,42 @@ export function TradingWorkspace() {
 
   async function submitTrade() {
     if (!user || !current || !token) return;
+    const price = Number(orderPrice);
+    const shares = Number(orderShares);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
+      setOrderMessage("委托失败：请填写大于 0 的价格和数量。");
+      return;
+    }
+    const normalizedShares = Math.floor(shares);
+    const sideText = side === "buy" ? "买入" : "卖出";
+    const confirmed = window.confirm(
+      `确认${sideText} ${current.name} (${current.symbol})？\n\n委托价格：${fmtMoney(price)}\n委托数量：${normalizedShares} 股\n预计金额：${fmtMoney(price * normalizedShares)}\n\n提交后会进入撮合/成交流程。`
+    );
+    if (!confirmed) return;
     setOrderMessage("");
     try {
       const result = await submitOrder(token, {
         username: user.username,
         symbol: current.symbol,
         side,
-        price: Number(orderPrice),
-        shares: Number(orderShares)
+        price,
+        shares: normalizedShares
       });
-      setOrderMessage(result.detail || result.reason || "委托已提交");
       if (result.accepted) {
+        setOrderMessage(`${sideText}委托成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${result.detail ? ` ${result.detail}` : ""}`);
         const data = await fetchPortfolio(token);
         setPortfolio(data);
         setUser(data.user);
+        const nextMarket = await fetchMarket();
+        setMarket(nextMarket);
+        const nextCandles = await fetchCandles(current.symbol);
+        setCandles(nextCandles);
+      } else {
+        setOrderMessage(`${sideText}未受理：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);
       }
-    } catch {
-      setOrderMessage("委托提交失败，请稍后重试");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setOrderMessage(`${sideText}提交失败：${detail || "网络或后端暂时不可用，请稍后重试。"}`);
     }
   }
 
@@ -273,11 +293,12 @@ export function TradingWorkspace() {
       await createAdminUser(token, {
         username: newOperatorName.trim(),
         password: newOperatorPassword,
-        role: "player"
+        role: newOperatorRole
       });
       setNewOperatorName("");
       setNewOperatorPassword("");
-      setAdminMessage("操作员账号已创建");
+      setNewOperatorRole("player");
+      setAdminMessage(newOperatorRole === "admin" ? "管理员账号已创建" : "操作员账号已创建");
       await refreshAdminOverview();
     } catch {
       setAdminMessage("创建账号失败，请检查用户名是否已存在");
@@ -781,15 +802,22 @@ export function TradingWorkspace() {
                   </div>
                   <div className="admin-form-grid">
                     <div className="management-panel">
-                      <div className="section-caption">注册操作员账号</div>
+                      <div className="section-caption">注册账号</div>
                       <div className="inline-form">
                         <div className="field">
                           <label>用户名</label>
                           <input value={newOperatorName} onChange={(e) => setNewOperatorName(e.target.value)} placeholder="例如 player4" />
                         </div>
                         <div className="field">
+                          <label>账号角色</label>
+                          <select value={newOperatorRole} onChange={(e) => setNewOperatorRole(e.target.value as "player" | "admin")}>
+                            <option value="player">操作员</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                        </div>
+                        <div className="field">
                           <label>初始密码</label>
-                          <input type="password" value={newOperatorPassword} onChange={(e) => setNewOperatorPassword(e.target.value)} placeholder="给操作员使用" />
+                          <input type="password" value={newOperatorPassword} onChange={(e) => setNewOperatorPassword(e.target.value)} placeholder="给新账号使用" />
                         </div>
                         <button className="primary" onClick={submitCreateOperator} disabled={!newOperatorName.trim() || !newOperatorPassword}>
                           创建账号
