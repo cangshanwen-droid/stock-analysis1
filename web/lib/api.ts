@@ -253,7 +253,7 @@ export async function submitOrder(token: string, order: {
   return res.json();
 }
 
-export async function marketControl(token: string, action: "open" | "close" | "reset", _confirmation: string) {
+export async function marketControl(token: string, action: "open" | "close" | "reset" | "previous", _confirmation: string) {
   if (!API_BASES.length || token === "demo-token") {
     return {
       accepted: false,
@@ -261,12 +261,14 @@ export async function marketControl(token: string, action: "open" | "close" | "r
       detail: "演示模式未连接真实后端"
     };
   }
-  const path = action === "reset" ? "reset-round1" : action;
+  const path = action === "reset" ? "reset-round1" : action === "previous" ? "previous-round" : action;
   const confirmationCode = action === "close"
     ? "confirm-close"
     : action === "open"
       ? "confirm-open"
-      : "confirm-reset-round1";
+      : action === "previous"
+        ? "confirm-previous-round"
+        : "confirm-reset-round1";
   const res = await fetchApi(`/admin/market/${path}`, {
     method: "POST",
     headers: {

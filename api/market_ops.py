@@ -134,21 +134,78 @@ def open_market(conn) -> MarketResult:
     return MarketResult(True, "市场已开盘", new_round)
 
 
+def rebuild_balances_before_round(conn, round_no: int) -> None:
+    execute(conn, "UPDATE users SET balance=1000000 WHERE role='player'")
+    txns = fetchall(conn, """
+        SELECT username,trade_type,price,shares
+        FROM transactions
+        WHERE round<?
+        ORDER BY id
+    """, (round_no,))
+    for txn in txns:
+        amount = round(float(txn["price"] or 0) * int(txn["shares"] or 0), 2)
+        if amount <= 0:
+            continue
+        if txn["trade_type"] == "buy":
+            execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, txn["username"]))
+        elif txn["trade_type"] in ("sell", "force_close"):
+            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, txn["username"]))
+
+
+def stock_initial_price(stock: dict[str, Any]) -> float:
+    revenue = row_get(stock, "revenue", 0) or 0
+    total_shares = row_get(stock, "total_shares", 0) or 0
+    industry_pe = row_get(stock, "industry_pe", 0) or 0
+    if revenue > 0 and total_shares > 0 and industry_pe > 0:
+        return round(float(revenue) * 10000 / float(total_shares) / float(industry_pe), 2)
+    return round(float(row_get(stock, "current_price", 1) or 1), 2)
+
+
+def rollback_previous_round(conn) -> MarketResult:
+    state = fetchone(conn, "SELECT state, round FROM market_state WHERE id=1")
+    current_round = int(row_get(state, "round", 1) or 1)
+    if current_round <= 1:
+        return MarketResult(False, "当前已经是第 1 轮，不能返回上一轮", current_round)
+    target_round = current_round - 1
+
+    execute(conn, "DELETE FROM order_book")
+    execute(conn, "DELETE FROM transactions WHERE round>=?", (target_round,))
+    execute(conn, "DELETE FROM kline WHERE round>=?", (target_round,))
+    execute(conn, "DELETE FROM rounds WHERE round>=?", (target_round,))
+    rebuild_balances_before_round(conn, target_round)
+
+    stocks = fetchall(conn, "SELECT * FROM stocks WHERE is_deleted=0")
+    for stock in stocks:
+        symbol = stock["symbol"]
+        if target_round > 1:
+            prev = fetchone(conn, """
+                SELECT close_price
+                FROM kline
+                WHERE stock_symbol=? AND round=?
+            """, (symbol, target_round - 1))
+            price = round(float(row_get(prev, "close_price", stock_initial_price(stock)) or stock_initial_price(stock)), 2)
+        else:
+            price = stock_initial_price(stock)
+        execute(conn, "UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (price, price, symbol))
+        execute(conn, """
+            INSERT INTO rounds(stock_symbol,round,is_settled)
+            VALUES(?,?,0)
+            ON CONFLICT DO NOTHING
+        """, (symbol, target_round))
+
+    execute(conn, "UPDATE market_state SET state='open', round=? WHERE id=1", (target_round,))
+    return MarketResult(True, f"已返回第 {target_round} 轮起点", target_round, len(stocks), 0)
+
+
 def reset_to_round1(conn) -> MarketResult:
     stocks = fetchall(conn, "SELECT * FROM stocks WHERE is_deleted=0")
     execute(conn, "DELETE FROM transactions")
     execute(conn, "DELETE FROM order_book")
     execute(conn, "DELETE FROM kline")
     execute(conn, "DELETE FROM rounds")
-    execute(conn, "UPDATE users SET balance=1000000 WHERE role='player'")
+    rebuild_balances_before_round(conn, 1)
     for stock in stocks:
-        revenue = row_get(stock, "revenue", 0) or 0
-        total_shares = row_get(stock, "total_shares", 0) or 0
-        industry_pe = row_get(stock, "industry_pe", 0) or 0
-        if revenue > 0 and total_shares > 0 and industry_pe > 0:
-            init_price = round(float(revenue) * 10000 / float(total_shares) / float(industry_pe), 2)
-        else:
-            init_price = round(float(row_get(stock, "current_price", 1) or 1), 2)
+        init_price = stock_initial_price(stock)
         execute(conn, "UPDATE stocks SET current_price=?, previous_close=? WHERE symbol=?", (init_price, init_price, stock["symbol"]))
         execute(conn, "INSERT INTO rounds(stock_symbol,round,is_settled) VALUES(?,1,0)", (stock["symbol"],))
         execute(conn, """

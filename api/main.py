@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, connect, execute, fetchall, fetchone, is_postgres, row_dict
-from .market_ops import close_market, open_market, reset_to_round1
+from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
 from .trading import place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
@@ -555,6 +555,41 @@ def reset_market_endpoint(
         result = reset_to_round1(conn)
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "market_reset_round1", "round", "reset match to round 1"))
+        if result.ok:
+            conn.commit()
+            clear_read_cache()
+        else:
+            conn.rollback()
+    return {
+        "accepted": result.ok,
+        "detail": result.message,
+        "round": result.round,
+        "settledStocks": result.settled_stocks,
+        "matchedShares": result.matched_shares,
+    }
+
+
+@app.post("/admin/market/previous-round")
+def previous_round_endpoint(
+    payload: MarketControlRequest | None = None,
+    user: dict[str, Any] = Depends(current_user),
+    x_confirm_action: str = Header(default=""),
+) -> dict[str, Any]:
+    require_admin(user)
+    if payload:
+        x_confirm_action = payload.confirmation
+    if x_confirm_action.strip() not in {"确认返回上一轮", "confirm-previous-round"}:
+        raise HTTPException(status_code=400, detail="confirm_previous_round_required")
+    if not ENABLE_MARKET_WRITES:
+        return {
+            "accepted": False,
+            "reason": "market_api_not_enabled_yet",
+            "detail": "Set ENABLE_MARKET_WRITES=true only after settlement tests pass.",
+        }
+    with connect() as conn:
+        result = rollback_previous_round(conn)
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "market_previous_round", "round", result.message))
         if result.ok:
             conn.commit()
             clear_read_cache()

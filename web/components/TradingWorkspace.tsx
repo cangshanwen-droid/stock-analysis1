@@ -25,7 +25,7 @@ import type { AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnaps
 import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
-type MarketAction = "open" | "close" | "reset";
+type MarketAction = "open" | "close" | "reset" | "previous";
 type OrderStatus = "idle" | "success" | "error";
 type OrderFeedback = {
   status: string;
@@ -352,7 +352,13 @@ export function TradingWorkspace() {
 
   async function submitMarketAction(action: MarketAction) {
     if (!token) return;
-    const confirmation = action === "close" ? "confirm-close" : action === "open" ? "confirm-open" : "confirm-reset-round1";
+    const confirmation = action === "close"
+      ? "confirm-close"
+      : action === "open"
+        ? "confirm-open"
+        : action === "previous"
+          ? "confirm-previous-round"
+          : "confirm-reset-round1";
     setAdminMessage("");
     try {
       const result = await marketControl(token, action, confirmation);
@@ -523,10 +529,23 @@ export function TradingWorkspace() {
     }
   }
 
-  const marketActionText = pendingMarketAction === "close" ? "收盘结算" : pendingMarketAction === "open" ? "开启下一轮" : "回到第一轮";
-  const marketActionKeyword = pendingMarketAction === "close" ? "确认收盘" : pendingMarketAction === "open" ? "确认开盘" : "确认回到第一轮";
+  const marketActionText = pendingMarketAction === "close"
+    ? "收盘结算"
+    : pendingMarketAction === "open"
+      ? "开启下一轮"
+      : pendingMarketAction === "previous"
+        ? "返回上一轮"
+        : "回到第一轮";
+  const marketActionKeyword = pendingMarketAction === "close"
+    ? "确认收盘"
+    : pendingMarketAction === "open"
+      ? "确认开盘"
+      : pendingMarketAction === "previous"
+        ? "确认返回上一轮"
+        : "确认回到第一轮";
   const canCloseMarket = market?.state === "open";
   const canOpenMarket = market?.state === "closed";
+  const canRollbackPrevious = (market?.round ?? 1) > 1;
   const activeOperators = adminUsers.filter((account) => account.role === "player" && account.status === "active").length;
   const activeAdmins = adminUsers.filter((account) => account.role === "admin" && account.status === "active").length;
   const activeStocks = adminStocks.filter((stock) => !stock.isDeleted).length;
@@ -920,7 +939,7 @@ export function TradingWorkspace() {
                   <div className="danger-zone">
                     <div className="danger-copy">
                       <strong>市场轮次控制</strong>
-                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。回到第一轮会清空成交、挂单、K线和持仓。</span>
+                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。返回上一轮会清除上一轮起点之后的数据，回到第一轮会清空全赛程。</span>
                     </div>
                     <div className="admin-actions">
                       <button className="danger-button" disabled={!canCloseMarket} onClick={() => { setPendingMarketAction("close"); setMarketConfirmText(""); }}>
@@ -928,6 +947,9 @@ export function TradingWorkspace() {
                       </button>
                       <button className="ghost" disabled={!canOpenMarket} onClick={() => { setPendingMarketAction("open"); setMarketConfirmText(""); }}>
                         开启下一轮
+                      </button>
+                      <button className="danger-button" disabled={!canRollbackPrevious} onClick={() => { setPendingMarketAction("previous"); setMarketConfirmText(""); }}>
+                        返回上一轮
                       </button>
                       <button className="danger-button" onClick={() => { setPendingMarketAction("reset"); setMarketConfirmText(""); }}>
                         回到第一轮
@@ -938,6 +960,7 @@ export function TradingWorkspace() {
                         <div>
                           <strong>确认执行：{marketActionText}</strong>
                           <span>请输入「{marketActionKeyword}」后才能继续。</span>
+                          {pendingMarketAction === "previous" ? <span>该操作会删除上一轮起点之后的成交、挂单和K线，并恢复资金与股价。</span> : null}
                           {pendingMarketAction === "reset" ? <span>该操作会清空比赛交易历史并恢复第 1 轮。</span> : null}
                         </div>
                         <input
