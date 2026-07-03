@@ -930,7 +930,7 @@ export function TradingWorkspace() {
                     </div>
                   </div>
                   <div className="management-grid">
-                    <div className="management-panel">
+                    <div className="management-panel user-management-panel">
                       <div className="section-caption">操作员账号</div>
                       <div className="data-table admin-table">
                         <div className="table-row user-col table-head"><span>用户名</span><span>角色</span><span>状态</span><span>余额</span><span>操作</span></div>

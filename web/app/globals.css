@@ -687,7 +687,7 @@ button {
 
 .management-grid {
   display: grid;
-  grid-template-columns: minmax(390px, 0.78fr) minmax(560px, 1.22fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin: 0 16px 16px;
 }
@@ -776,6 +776,10 @@ button {
 
 .admin-table {
   margin: 0;
+}
+
+.user-management-panel .admin-table {
+  max-height: none;
 }
 
 .stock-editor-list {
@@ -943,7 +947,7 @@ button {
 }
 
 .table-row.user-col {
-  grid-template-columns: minmax(88px, 1fr) 0.8fr 0.8fr minmax(92px, 1fr) 124px;
+  grid-template-columns: minmax(150px, 1.15fr) 104px 96px minmax(140px, 1fr) 154px;
 }
 
 .table-row.stock-col {
@@ -963,7 +967,7 @@ button {
     grid-template-columns: repeat(2, minmax(460px, 1fr));
   }
 
-  .admin-table {
+  .management-panel:not(.user-management-panel) .admin-table {
     max-height: clamp(360px, calc(100vh - 330px), 640px);
     overflow: auto;
   }
@@ -977,6 +981,20 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.table-row.user-col span {
+  min-width: 0;
+}
+
+.table-row.user-col span:nth-child(2),
+.table-row.user-col span:nth-child(3) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.table-row.user-col span:last-child {
+  justify-self: start;
 }
 
 .table-head {
