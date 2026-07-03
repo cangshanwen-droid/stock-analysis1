@@ -38,8 +38,11 @@ def close_market(conn) -> MarketResult:
     round_no = int(row_get(state, "round", 1) or 1)
     matched_shares = 0
 
-    for stock in fetchall(conn, "SELECT symbol FROM stocks WHERE is_deleted=0"):
+    for stock in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0"):
         symbol = stock["symbol"]
+        match_price = round(float(row_get(stock, "current_price", 0) or 0), 2)
+        if match_price <= 0:
+            continue
         buys = fetchall(conn, """
             SELECT id,username,price,shares
             FROM order_book
@@ -54,11 +57,6 @@ def close_market(conn) -> MarketResult:
         """, (symbol,))
         if not buys or not sells:
             continue
-        highest_buy = float(buys[0]["price"])
-        lowest_sell = float(sells[0]["price"])
-        if highest_buy < lowest_sell:
-            continue
-        match_price = round((highest_buy + lowest_sell) / 2, 2)
         total_buy_shares = sum(int(b["shares"]) for b in buys)
         total_sell_shares = sum(int(s["shares"]) for s in sells)
         executable = min(total_buy_shares, total_sell_shares)

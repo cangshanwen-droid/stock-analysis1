@@ -27,6 +27,7 @@ import { KlineChart } from "./KlineChart";
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset" | "previous";
 type OrderStatus = "idle" | "success" | "error";
+const MAX_ORDER_SHARES = 1_000_000;
 type OrderFeedback = {
   status: string;
   side: string;
@@ -264,6 +265,12 @@ export function TradingWorkspace() {
     if (!Number.isInteger(shares)) {
       setOrderStatus("error");
       setOrderMessage("委托失败：委托数量必须是整数股。");
+      setOrderFeedback(null);
+      return;
+    }
+    if (shares > MAX_ORDER_SHARES) {
+      setOrderStatus("error");
+      setOrderMessage(`委托失败：单笔数量不能超过 ${MAX_ORDER_SHARES.toLocaleString("zh-CN")} 股。`);
       setOrderFeedback(null);
       return;
     }
@@ -727,7 +734,7 @@ export function TradingWorkspace() {
               </div>
               <div className="field">
                 <label>委托数量</label>
-                <input value={orderShares} onChange={(e) => setOrderShares(e.target.value)} />
+                <input value={orderShares} onChange={(e) => setOrderShares(e.target.value)} inputMode="numeric" />
               </div>
               <button
                 className={`primary trade-submit ${side}`}

@@ -3,6 +3,8 @@ from typing import Any
 
 from .db import execute, fetchall, fetchone, row_dict
 
+MAX_ORDER_SHARES = 1_000_000
+
 
 @dataclass
 class TradeResult:
@@ -38,14 +40,14 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         sell_order = row_dict(fetchone(conn, """
             SELECT id,username,price,shares
             FROM order_book
-            WHERE stock_symbol=? AND trade_type='sell' AND price<=?
+            WHERE stock_symbol=? AND trade_type='sell'
             ORDER BY price ASC,id ASC
             LIMIT 1
-        """, (symbol, price)))
+        """, (symbol,)))
         if not sell_order:
             break
         fill = min(remaining, int(sell_order["shares"]))
-        match_price = round((price + float(sell_order["price"])) / 2, 2)
+        match_price = price
         amount = fill * match_price
         seller_holding = get_holding_shares(conn, sell_order["username"], symbol)
         pending_sell = fetchone(conn, """
@@ -101,14 +103,14 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         buy_order = row_dict(fetchone(conn, """
             SELECT id,username,price,shares
             FROM order_book
-            WHERE stock_symbol=? AND trade_type='buy' AND price>=?
+            WHERE stock_symbol=? AND trade_type='buy'
             ORDER BY price DESC,id ASC
             LIMIT 1
-        """, (symbol, price)))
+        """, (symbol,)))
         if not buy_order:
             break
         fill = min(remaining, int(buy_order["shares"]))
-        match_price = round((float(buy_order["price"]) + price) / 2, 2)
+        match_price = price
         amount = fill * match_price
         buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
         if not buyer or float(buyer["balance"] or 0) < amount:
@@ -147,6 +149,8 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
 
 
 def place_order(conn, username: str, symbol: str, side: str, price: float, shares: int) -> TradeResult:
+    if shares > MAX_ORDER_SHARES:
+        return TradeResult(False, f"单笔委托数量不能超过 {MAX_ORDER_SHARES} 股")
     symbol = symbol.upper()
     current_round = fetchone(conn, "SELECT MIN(round) AS round FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,))
     round_no = int(current_round["round"] or 0) if current_round else 0

@@ -112,7 +112,7 @@ class TradeRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=16)
     side: str = Field(pattern="^(buy|sell)$")
     price: float = Field(gt=0)
-    shares: int = Field(gt=0)
+    shares: int = Field(gt=0, le=1_000_000)
 
 
 class LoginRequest(BaseModel):
@@ -135,12 +135,12 @@ class CreateUserRequest(BaseModel):
 
 
 class StockUpdateRequest(BaseModel):
-    revenue: float | None = Field(default=None, gt=0)
-    total_shares: float | None = Field(default=None, gt=0)
-    industry_pe: float | None = Field(default=None, gt=0)
-    carbon_price: float | None = None
-    industry_carbon_mean: float | None = Field(default=None, gt=0)
-    premium_rate: float | None = None
+    revenue: float | None = Field(default=None, gt=0, le=1_000_000_000)
+    total_shares: float | None = Field(default=None, gt=0, le=1_000_000_000)
+    industry_pe: float | None = Field(default=None, gt=0, le=1_000_000)
+    carbon_price: float | None = Field(default=None, ge=0, le=1_000_000)
+    industry_carbon_mean: float | None = Field(default=None, gt=0, le=1_000_000)
+    premium_rate: float | None = Field(default=None, ge=0, le=100)
 
 
 class MarketControlRequest(BaseModel):
@@ -150,12 +150,12 @@ class MarketControlRequest(BaseModel):
 class CreateStockRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=16)
     name: str = Field(min_length=1, max_length=80)
-    revenue: float = Field(gt=0)
-    total_shares: float = Field(gt=0)
-    industry_pe: float = Field(gt=0)
-    carbon_price: float = Field(default=50)
-    industry_carbon_mean: float = Field(default=50, gt=0)
-    premium_rate: float = Field(default=50)
+    revenue: float = Field(gt=0, le=1_000_000_000)
+    total_shares: float = Field(gt=0, le=1_000_000_000)
+    industry_pe: float = Field(gt=0, le=1_000_000)
+    carbon_price: float = Field(default=50, ge=0, le=1_000_000)
+    industry_carbon_mean: float = Field(default=50, gt=0, le=1_000_000)
+    premium_rate: float = Field(default=50, ge=0, le=100)
 
 
 def initial_stock_price(revenue: float, total_shares: float, industry_pe: float) -> float:
