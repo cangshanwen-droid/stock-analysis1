@@ -94,11 +94,14 @@ def close_market(conn) -> MarketResult:
         txns = fetchall(conn, "SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, current_round))
         buy_total = sum(float(t["price"]) * int(t["shares"]) for t in txns if t["trade_type"] == "buy")
         sell_total = sum(float(t["price"]) * int(t["shares"]) for t in txns if t["trade_type"] == "sell")
-        volume = sum(int(t["shares"]) for t in txns)
+        buy_volume = sum(int(t["shares"]) for t in txns if t["trade_type"] == "buy")
+        sell_volume = sum(int(t["shares"]) for t in txns if t["trade_type"] in ("sell", "force_close"))
+        volume = max(buy_volume, sell_volume)
+        trade_prices = [float(t["price"]) for t in txns if float(t["price"] or 0) > 0]
         next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total))
         previous_close = float(stock["previous_close"] or stock["current_price"] or next_price)
-        high = max(next_price, previous_close)
-        low = min(next_price, previous_close)
+        high = max([next_price, previous_close, *trade_prices])
+        low = min([next_price, previous_close, *trade_prices])
         change_pct = round((next_price - previous_close) / previous_close * 100, 2) if previous_close else 0
         execute(conn, "DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, current_round))
         execute(conn, """
