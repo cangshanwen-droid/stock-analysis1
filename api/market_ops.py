@@ -109,7 +109,7 @@ def close_market(conn) -> MarketResult:
             INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct)
             VALUES(?,?,?,?,?,?,?,?,?,?)
         """, (symbol, current_round, previous_close, high, low, next_price, volume, buy_total, sell_total, change_pct))
-        execute(conn, "UPDATE stocks SET previous_close=?, current_price=? WHERE symbol=?", (next_price, next_price, symbol))
+        execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (next_price, symbol))
         execute(conn, "UPDATE rounds SET is_settled=1 WHERE stock_symbol=? AND round=?", (symbol, current_round))
         settled += 1
     execute(conn, "UPDATE market_state SET state='closed' WHERE id=1")
@@ -124,6 +124,7 @@ def open_market(conn) -> MarketResult:
         return MarketResult(False, "市场已经开盘", int(state["round"] or 1))
     new_round = int(state["round"] or 1) + 1
     for stock in fetchall(conn, "SELECT symbol FROM stocks WHERE is_deleted=0"):
+        execute(conn, "UPDATE stocks SET previous_close=current_price WHERE symbol=?", (stock["symbol"],))
         execute(conn, """
             INSERT INTO rounds(stock_symbol,round,is_settled)
             VALUES(?,?,0)
