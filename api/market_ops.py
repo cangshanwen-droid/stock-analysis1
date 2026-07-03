@@ -20,13 +20,13 @@ def row_get(row: Any, key: str, default=None):
         return default
 
 
-def compute_price(stock: dict[str, Any]) -> float:
+def compute_price(stock: dict[str, Any], carbon_mean: float | None = None) -> float:
     prev = row_get(stock, "previous_close") or row_get(stock, "current_price") or 50
     buy_total = max(row_get(stock, "buy_total", 0), 1)
     sell_total = max(row_get(stock, "sell_total", 0), 1)
     premium_factor = 1 + 0.2 * (row_get(stock, "premium_rate", 50) - 50) / 50
-    carbon_mean = max(row_get(stock, "industry_carbon_mean", 50), 1)
-    carbon_factor = 1 - 0.5 * (row_get(stock, "carbon_price", 50) - carbon_mean) / carbon_mean
+    effective_carbon_mean = max(carbon_mean or row_get(stock, "industry_carbon_mean", 50), 1)
+    carbon_factor = 1 - 0.5 * (row_get(stock, "carbon_price", 50) - effective_carbon_mean) / effective_carbon_mean
     target = prev * (buy_total / sell_total) * premium_factor * carbon_factor
     return max(round(prev * 0.9, 2), min(round(prev * 1.1, 2), round(target, 2)))
 
@@ -85,6 +85,8 @@ def close_market(conn) -> MarketResult:
 
     settled = 0
     stocks = fetchall(conn, "SELECT * FROM stocks WHERE is_deleted=0")
+    active_carbon_prices = [float(row_get(stock, "carbon_price", 50) or 50) for stock in stocks]
+    market_carbon_mean = sum(active_carbon_prices) / len(active_carbon_prices) if active_carbon_prices else 50
     for stock in stocks:
         symbol = stock["symbol"]
         open_round = fetchone(conn, "SELECT MIN(round) AS round FROM rounds WHERE stock_symbol=? AND is_settled=0", (symbol,))
@@ -98,7 +100,7 @@ def close_market(conn) -> MarketResult:
         sell_volume = sum(int(t["shares"]) for t in txns if t["trade_type"] in ("sell", "force_close"))
         volume = max(buy_volume, sell_volume)
         trade_prices = [float(t["price"]) for t in txns if float(t["price"] or 0) > 0]
-        next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total))
+        next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
         previous_close = float(stock["previous_close"] or stock["current_price"] or next_price)
         high = max([next_price, previous_close, *trade_prices])
         low = min([next_price, previous_close, *trade_prices])

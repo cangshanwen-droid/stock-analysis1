@@ -101,7 +101,6 @@ export function TradingWorkspace() {
     totalShares: "10000",
     initialPrice: "5.00",
     carbonPrice: "50",
-    industryCarbonMean: "50",
     premiumRate: "50"
   });
   const [stockDrafts, setStockDrafts] = useState<Record<string, {
@@ -109,7 +108,6 @@ export function TradingWorkspace() {
     totalShares: string;
     initialPrice: string;
     carbonPrice: string;
-    industryCarbonMean: string;
     premiumRate: string;
   }>>({});
 
@@ -204,7 +202,6 @@ export function TradingWorkspace() {
           totalShares: String(stock.totalShares || 10000),
           initialPrice: String(calcInitialPrice(stock.revenue || 0, stock.totalShares || 0, stock.industryPe || 0) || stock.price || 0),
           carbonPrice: String(stock.carbonPrice || 50),
-          industryCarbonMean: String(stock.industryCarbonMean || 50),
           premiumRate: String(stock.premiumRate || 50)
         };
       }
@@ -381,11 +378,11 @@ export function TradingWorkspace() {
       total_shares: numericDraft(newStock.totalShares),
       industry_pe: calcIndustryPe(numericDraft(newStock.revenue), numericDraft(newStock.totalShares), numericDraft(newStock.initialPrice)),
       carbon_price: numericDraft(newStock.carbonPrice),
-      industry_carbon_mean: numericDraft(newStock.industryCarbonMean),
+      industry_carbon_mean: 50,
       premium_rate: numericDraft(newStock.premiumRate)
     };
-    if (!payload.symbol || !payload.name || payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0 || payload.industry_carbon_mean <= 0) {
-      setAdminMessage("请完整填写股票代码、公司名称、净利润、总股本、目标初始价和碳排均值");
+    if (!payload.symbol || !payload.name || payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0) {
+      setAdminMessage("请完整填写股票代码、公司名称、净利润、总股本和目标初始价");
       return;
     }
     if (!window.confirm(`确认添加股票「${payload.name} (${payload.symbol})」？初始价 ${fmtMoney(newStockInitialPrice)}。`)) return;
@@ -403,7 +400,6 @@ export function TradingWorkspace() {
         totalShares: "10000",
         initialPrice: "5.00",
         carbonPrice: "50",
-        industryCarbonMean: "50",
         premiumRate: "50"
       });
       setAdminMessage(result.initialPrice ? `股票已添加，初始价 ${fmtMoney(result.initialPrice)}` : "股票已添加");
@@ -425,11 +421,10 @@ export function TradingWorkspace() {
       total_shares: numericDraft(draft.totalShares),
       industry_pe: calcIndustryPe(numericDraft(draft.revenue), numericDraft(draft.totalShares), numericDraft(draft.initialPrice)),
       carbon_price: numericDraft(draft.carbonPrice),
-      industry_carbon_mean: numericDraft(draft.industryCarbonMean),
       premium_rate: numericDraft(draft.premiumRate)
     };
-    if (payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0 || payload.industry_carbon_mean <= 0) {
-      setAdminMessage("参数异常：净利润、总股本、目标初始价和碳排均值必须大于 0");
+    if (payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0) {
+      setAdminMessage("参数异常：净利润、总股本和目标初始价必须大于 0");
       return;
     }
     if (!window.confirm(`确认保存「${stock.name}」的股票参数？这会影响后续结算价格。`)) return;
@@ -475,6 +470,11 @@ export function TradingWorkspace() {
     numericDraft(newStock.totalShares),
     numericDraft(newStock.initialPrice)
   );
+  const marketCarbonMean = useMemo(() => {
+    const activeStocks = adminStocks.filter((stock) => !stock.isDeleted);
+    if (!activeStocks.length) return 50;
+    return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
+  }, [adminStocks]);
 
   const navItems = user
     ? [
@@ -932,10 +932,6 @@ export function TradingWorkspace() {
                         <label>当前碳排</label>
                         <input value={newStock.carbonPrice} onChange={(e) => setNewStock({ ...newStock, carbonPrice: e.target.value })} />
                       </div>
-                      <div className="field">
-                        <label>行业碳排均值</label>
-                        <input value={newStock.industryCarbonMean} onChange={(e) => setNewStock({ ...newStock, industryCarbonMean: e.target.value })} />
-                      </div>
                       <div className="formula-preview">
                         <span>反推行业PE</span>
                         <strong>{newStockIndustryPe > 0 ? newStockIndustryPe.toFixed(2) : "--"}</strong>
@@ -988,7 +984,6 @@ export function TradingWorkspace() {
                             totalShares: String(stock.totalShares || 10000),
                             initialPrice: String(calcInitialPrice(stock.revenue || 0, stock.totalShares || 0, stock.industryPe || 0) || stock.price || 0),
                             carbonPrice: String(stock.carbonPrice || 50),
-                            industryCarbonMean: String(stock.industryCarbonMean || 50),
                             premiumRate: String(stock.premiumRate || 50)
                           };
                           const derivedPe = calcIndustryPe(
@@ -1002,7 +997,7 @@ export function TradingWorkspace() {
                             derivedPe
                           );
                           const happinessFactor = 1 + 0.2 * (numericDraft(draft.premiumRate) - 50) / 50;
-                          const carbonMean = Math.max(numericDraft(draft.industryCarbonMean), 1);
+                          const carbonMean = Math.max(marketCarbonMean, 1);
                           const carbonFactor = 1 - 0.5 * (numericDraft(draft.carbonPrice) - carbonMean) / carbonMean;
                           const updateDraft = (next: Partial<typeof draft>) => {
                             setStockDrafts((currentDrafts) => ({
@@ -1025,12 +1020,12 @@ export function TradingWorkspace() {
                                 <div className="field"><label>目标初始价</label><input value={draft.initialPrice} onChange={(e) => updateDraft({ initialPrice: e.target.value })} /></div>
                                 <div className="field"><label>幸福度</label><input value={draft.premiumRate} onChange={(e) => updateDraft({ premiumRate: e.target.value })} /></div>
                                 <div className="field"><label>当前碳排</label><input value={draft.carbonPrice} onChange={(e) => updateDraft({ carbonPrice: e.target.value })} /></div>
-                                <div className="field"><label>行业碳排均值</label><input value={draft.industryCarbonMean} onChange={(e) => updateDraft({ industryCarbonMean: e.target.value })} /></div>
                               </div>
                               <div className="factor-strip">
                                 <span>初始价 {fmtMoney(initialPrice)}</span>
                                 <span>PE {derivedPe > 0 ? derivedPe.toFixed(2) : "--"}</span>
                                 <span>幸福因子 {happinessFactor.toFixed(3)}</span>
+                                <span>市场均碳 {marketCarbonMean.toFixed(1)}</span>
                                 <span>碳因子 {carbonFactor.toFixed(3)}</span>
                               </div>
                               <div className="row-actions">
