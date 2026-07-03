@@ -34,7 +34,7 @@ Value: 216.198.79.1
 
 ### WWW Domain
 
-Vercel currently shows this verification target:
+Current DNS record:
 
 ```text
 Type: CNAME
@@ -42,7 +42,7 @@ Name: www
 Value: 9be3d8809316109e.vercel-dns-017.com.
 ```
 
-For mainland China access optimization, Vercel also supports this China CNAME target:
+Previous test value:
 
 ```text
 Type: CNAME
@@ -50,7 +50,7 @@ Name: www
 Value: cname-china.vercel-dns.com
 ```
 
-If the DNS provider allows only one CNAME for `www`, use one of them. Prefer `cname-china.vercel-dns.com` for China access testing. If Vercel does not verify after DNS propagation, switch `www` to the Vercel-shown value `9be3d8809316109e.vercel-dns-017.com.`.
+`cname-china.vercel-dns.com` was tested first. Because mainland access was still unstable, `www` was switched to the Vercel-recommended project CNAME on 2026-07-03.
 
 ## Frontend Environment
 
