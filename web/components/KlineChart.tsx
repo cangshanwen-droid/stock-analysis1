@@ -185,8 +185,8 @@ function KlineChartCanvas({ candles }: Props) {
       },
       timeScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
-        rightOffset: 1,
-        barSpacing: 13,
+        rightOffset: 3,
+        barSpacing: 9,
         minBarSpacing: 5,
         fixLeftEdge: true,
         fixRightEdge: false,
@@ -376,14 +376,14 @@ function KlineChartCanvas({ candles }: Props) {
     }
 
     chartRef.current.timeScale().applyOptions({
-      barSpacing: displayCandles.length <= 8 ? 16 : 12,
-      rightOffset: displayCandles.length <= 8 ? 1.5 : 1
+      barSpacing: displayCandles.length <= 8 ? 9 : 8,
+      rightOffset: displayCandles.length <= 8 ? 5 : 3
     });
 
     if (displayCandles.length <= 12) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -0.8,
-        to: Math.max(7.5, displayCandles.length + 0.8)
+        from: -2,
+        to: Math.max(15, displayCandles.length + 5)
       });
     } else {
       chartRef.current.timeScale().fitContent();
