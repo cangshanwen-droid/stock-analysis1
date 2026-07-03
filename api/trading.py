@@ -152,9 +152,12 @@ def place_order(conn, username: str, symbol: str, side: str, price: float, share
     round_no = int(current_round["round"] or 0) if current_round else 0
     if round_no <= 0:
         return TradeResult(False, "市场已闭市，无法交易")
-    stock = row_dict(fetchone(conn, "SELECT name FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
+    stock = row_dict(fetchone(conn, "SELECT name,current_price FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
     if not stock:
         return TradeResult(False, "股票不存在或已停用")
+    price = round(float(stock["current_price"] or 0), 2)
+    if price <= 0:
+        return TradeResult(False, "股票当前价异常，无法交易")
     if side == "buy":
         user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,)))
         if not user_row:

@@ -89,7 +89,6 @@ export function TradingWorkspace() {
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [orderPrice, setOrderPrice] = useState("0.00");
   const [orderShares, setOrderShares] = useState("100");
   const [orderMessage, setOrderMessage] = useState("");
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
@@ -252,17 +251,13 @@ export function TradingWorkspace() {
     prefetchCandles(stocks.map((stock) => stock.symbol));
   }, [stocks]);
 
-  useEffect(() => {
-    if (current) setOrderPrice(current.price.toFixed(2));
-  }, [current]);
-
   async function submitTrade() {
     if (!user || !current || !token) return;
-    const price = Number(orderPrice);
+    const price = Number(current.price);
     const shares = Number(orderShares);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
       setOrderStatus("error");
-      setOrderMessage("委托失败：请填写大于 0 的价格和数量。");
+      setOrderMessage("委托失败：当前价异常或委托数量不是大于 0 的数字。");
       setOrderFeedback(null);
       return;
     }
@@ -275,7 +270,7 @@ export function TradingWorkspace() {
     const normalizedShares = Math.floor(shares);
     const sideText = side === "buy" ? "买入" : "卖出";
     const confirmed = window.confirm(
-      `确认${sideText} ${current.name} (${current.symbol})？\n\n委托价格：${fmtMoney(price)}\n委托数量：${normalizedShares} 股\n预计金额：${fmtMoney(price * normalizedShares)}\n\n提交后会进入撮合/成交流程。`
+      `确认${sideText} ${current.name} (${current.symbol})？\n\n系统成交价：${fmtMoney(price)}\n委托数量：${normalizedShares} 股\n预计金额：${fmtMoney(price * normalizedShares)}\n\n价格由系统按当前价自动生成，提交后会进入成交流程。`
     );
     if (!confirmed) return;
     setOrderMessage("");
@@ -303,7 +298,7 @@ export function TradingWorkspace() {
           detail
         });
         setOrderStatus("success");
-        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。${detail}，正在刷新资产与行情。`);
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。${detail}，正在刷新资产与行情。`);
         setOrderSubmitting(false);
         clearPublicReadCache(current.symbol);
         try {
@@ -316,9 +311,9 @@ export function TradingWorkspace() {
           setUser(data.user);
           setMarket(nextMarket);
           setCandles(nextCandles);
-          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。资产与行情已刷新。`);
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产与行情已刷新。`);
         } catch {
-          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，委托价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
         }
       } else {
         setOrderStatus("error");
@@ -727,8 +722,8 @@ export function TradingWorkspace() {
                 </select>
               </div>
               <div className="field">
-                <label>委托价格</label>
-                <input value={orderPrice} onChange={(e) => setOrderPrice(e.target.value)} />
+                <label>系统成交价</label>
+                <div className="readonly-price">{current ? fmtMoney(current.price) : "--"}</div>
               </div>
               <div className="field">
                 <label>委托数量</label>
