@@ -308,8 +308,8 @@ export function TradingWorkspace() {
 
   const stocks = market?.stocks ?? [];
   const tradableStocks = useMemo(() => {
-    if (!tradingCompany) return stocks; // Personal account: all stocks
-    return stocks.filter((s) => s.symbol !== tradingCompany); // Company: exclude own stock
+    if (!tradingCompany) return stocks;
+    return stocks.filter((s) => s.symbol !== tradingCompany);
   }, [stocks, tradingCompany]);
   const current: StockQuote | undefined = useMemo(
     () => tradableStocks.find((s) => s.symbol === selected) ?? tradableStocks[0] ?? stocks[0],
@@ -787,15 +787,9 @@ export function TradingWorkspace() {
             )}
             {user && (
               <>
-              {/* Trading account selector */}
+              {/* Company account selector — operators only use company accounts */}
               {myCompanies.length > 0 ? (
                 <div className="segmented" style={{ marginBottom: 8 }}>
-                  <button
-                    className={!tradingCompany ? "active" : ""}
-                    onClick={() => setTradingCompany(null)}
-                  >
-                    个人账户
-                  </button>
                   {myCompanies.map((c) => (
                     <button
                       key={c.symbol}
@@ -806,28 +800,23 @@ export function TradingWorkspace() {
                     </button>
                   ))}
                 </div>
+              ) : (
+                <div className="empty-state" style={{ fontSize: 13, padding: "12px 0" }}>
+                  还没有管理的公司，请先添加公司。
+                </div>
+              )}
+              {tradingCompany ? (
+                (() => {
+                  const company = myCompanies.find((c) => c.symbol === tradingCompany);
+                  return company ? (
+                    <div className="account-box">
+                      <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
+                      <div className="row"><span>交易账户</span><strong>{company.name}</strong></div>
+                      <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
+                    </div>
+                  ) : null;
+                })()
               ) : null}
-              <div className="account-box">
-                <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
-                {tradingCompany ? (
-                  (() => {
-                    const company = myCompanies.find((c) => c.symbol === tradingCompany);
-                    return company ? (
-                      <>
-                        <div className="row"><span>交易账户</span><strong>{company.name}</strong></div>
-                        <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
-                      </>
-                    ) : null;
-                  })()
-                ) : (
-                  <>
-                    <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                    <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
-                    <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
-                  </>
-                )}
-              </div>
               {/* Add company management */}
               {availableCompanies.length > 0 ? (
                 <div className="section-caption" style={{ marginTop: 12, cursor: "pointer", color: "#469fe6" }}
@@ -1032,17 +1021,9 @@ export function TradingWorkspace() {
                   {fmtMoney(portfolio?.summary.totalAssets ?? user?.balance ?? 0)}
                 </div>
               </div>
-              {myCompanies.length > 0 ? (
+              {/* Portfolio account selector — operators only see company accounts */}
+              {myCompanies.filter((c) => c.fundsLocked).length > 0 ? (
                 <div className="segmented" style={{ marginBottom: 12 }}>
-                  <button
-                    className={!portfolioCompany ? "active" : ""}
-                    onClick={() => {
-                      setPortfolioCompany(null);
-                      if (token) fetchPortfolio(token).then(setPortfolio).catch(() => {});
-                    }}
-                  >
-                    个人账户
-                  </button>
                   {myCompanies.filter((c) => c.fundsLocked).map((c) => (
                     <button
                       key={c.symbol}
