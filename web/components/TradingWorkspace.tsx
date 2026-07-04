@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
   clearPublicReadCache,
+  confirmStockFunds,
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
@@ -17,6 +18,8 @@ import {
   marketControl,
   prefetchCandles,
   resetAdminUserPassword,
+  runDbMigration,
+  setStockManager,
   submitOrder,
   updateAdminStock,
   updateAdminUserStatus
@@ -117,6 +120,9 @@ export function TradingWorkspace() {
     carbonPrice: "50",
     premiumRate: "50"
   });
+  const [fundingStock, setFundingStock] = useState<string | null>(null);
+  const [fundAmount, setFundAmount] = useState("5000");
+  const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, {
     revenue: string;
     totalShares: string;
@@ -282,9 +288,11 @@ export function TradingWorkspace() {
   }
 
   const stocks = market?.stocks ?? [];
+  const myCompany = useMemo(() => user ? stocks.find((s) => s.manager === user.username) : undefined, [user, stocks]);
+  const tradableStocks = useMemo(() => myCompany ? stocks.filter((s) => s.symbol !== myCompany.symbol) : stocks, [myCompany, stocks]);
   const current: StockQuote | undefined = useMemo(
-    () => stocks.find((s) => s.symbol === selected) ?? stocks[0],
-    [selected, stocks]
+    () => tradableStocks.find((s) => s.symbol === selected) ?? tradableStocks[0] ?? stocks[0],
+    [selected, tradableStocks, stocks]
   );
 
   useEffect(() => {
@@ -579,6 +587,40 @@ export function TradingWorkspace() {
     }
   }
 
+  async function submitSetManager(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    const manager = (managerDrafts[stock.symbol] || "").trim();
+    if (!window.confirm(`确认将「${stock.name}」的管理员设为「${manager || "无"}」？`)) return;
+    setAdminMessage("");
+    try {
+      await setStockManager(token, stock.symbol, manager);
+      setAdminMessage(`${stock.name} 管理员已更新`);
+      setManagerDrafts((d) => ({ ...d, [stock.symbol]: manager }));
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`设置管理员失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  async function submitConfirmFunds(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    const amount = Number(fundAmount);
+    if (!amount || amount <= 0) { setAdminMessage("请输入有效的初始资金"); return; }
+    if (!window.confirm(`确认锁定「${stock.name}」初始资金 ¥${amount.toLocaleString()}？锁定后不可修改。`)) return;
+    setAdminMessage("");
+    try {
+      const result = await confirmStockFunds(token, stock.symbol, amount);
+      setAdminMessage(`${stock.name} 初始资金已锁定为 ¥${(result.initFunds || amount).toLocaleString()}`);
+      setFundingStock(null);
+      setFundAmount("5000");
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`锁定资金失败：${detail || "请稍后重试"}`);
+    }
+  }
+
   const marketActionText = pendingMarketAction === "close"
     ? "收盘结算"
     : pendingMarketAction === "open"
@@ -744,9 +786,18 @@ export function TradingWorkspace() {
               <div className="account-box">
                 <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
                 <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
-                <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
-                <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                {(stocks.find((s) => s.manager === user.username) && user.role !== "admin") ? (
+                  <>
+                    <div className="row"><span>管理公司</span><strong>{stocks.find((s) => s.manager === user.username)?.name ?? "-"}</strong></div>
+                    <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                    <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
+                    <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                  </>
+                )}
               </div>
             <div className="segmented">
               <button
@@ -775,8 +826,12 @@ export function TradingWorkspace() {
             <div className="form-grid">
               <div className="field">
                 <label>公司股票</label>
-                <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-                  {stocks.map((stock) => (
+                <select value={selected} onChange={(e) => {
+                  setSelected(e.target.value);
+                  setOrderMessage("");
+                  setOrderFeedback(null);
+                }}>
+                  {tradableStocks.map((stock) => (
                     <option key={stock.symbol} value={stock.symbol}>{stock.name}</option>
                   ))}
                 </select>
@@ -989,6 +1044,19 @@ export function TradingWorkspace() {
                       <div><span>管理员</span><strong>{activeAdmins} 个有效</strong></div>
                       <div><span>公司股票</span><strong>{activeStocks} 只</strong></div>
                       <div className="wide"><span>最近交易</span><strong>{recentTradeAudit ? `${recentTradeAudit.actor} · ${recentTradeAudit.target || "-"} · ${recentTradeAudit.detail || recentTradeAudit.action}` : "暂无交易"}</strong></div>
+                    </div>
+                    <div className="admin-stats wide" style={{ marginTop: 8 }}>
+                      <button className="mini-action" onClick={async () => {
+                        if (!token) return;
+                        if (!window.confirm("确认执行数据库迁移？这将添加公司账户所需的字段。")) return;
+                        try {
+                          const r = await runDbMigration(token);
+                          setAdminMessage(r.detail || "迁移完成");
+                          await refreshAdminOverview();
+                        } catch (e) {
+                          setAdminMessage(`迁移失败：${e instanceof Error ? e.message : ""}`);
+                        }
+                      }}>执行数据库迁移</button>
                     </div>
                   </div>
                   <div className="danger-zone">
@@ -1213,6 +1281,43 @@ export function TradingWorkspace() {
                                 <span>幸福因子 {happinessFactor.toFixed(3)}</span>
                                 <span>市场均碳 {marketCarbonMean.toFixed(1)}</span>
                                 <span>碳因子 {carbonFactor.toFixed(3)}</span>
+                              </div>
+                              <div className="manager-row">
+                                <div className="field">
+                                  <label>管理员</label>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                    <select
+                                      value={managerDrafts[stock.symbol] ?? stock.manager ?? ""}
+                                      onChange={(e) => setManagerDrafts((d) => ({ ...d, [stock.symbol]: e.target.value }))}
+                                    >
+                                      <option value="">无</option>
+                                      {adminUsers.filter((u) => u.role === "player" && u.status === "active").map((u) => (
+                                        <option key={u.username} value={u.username}>{u.username}</option>
+                                      ))}
+                                    </select>
+                                    <button className="mini-action" onClick={() => submitSetManager(stock)}>保存</button>
+                                  </div>
+                                </div>
+                                <div className="field">
+                                  <label>公司资金</label>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                    <strong>{fmtMoney(stock.balance || stock.initFunds || 0)}</strong>
+                                    {stock.fundsLocked ? (
+                                      <span className="tag-locked">已锁定</span>
+                                    ) : (
+                                      <>
+                                        <input
+                                          type="number"
+                                          defaultValue="5000"
+                                          onChange={(e) => setFundAmount(e.target.value)}
+                                          style={{ width: 80 }}
+                                          placeholder="金额"
+                                        />
+                                        <button className="mini-action" onClick={() => submitConfirmFunds(stock)}>锁定资金</button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                               <div className="row-actions">
                                 <button className="mini-action" onClick={() => submitUpdateStock(stock)}>保存参数</button>

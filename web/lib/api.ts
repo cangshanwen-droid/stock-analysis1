@@ -411,6 +411,19 @@ export async function deleteAdminStock(token: string, symbol: string) {
   return data;
 }
 
+export async function runDbMigration(token: string) {
+  const res = await fetchApi("/admin/db/migrate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({})
+  });
+  if (!res.ok) throw await apiError(res, "migration_failed");
+  return res.json();
+}
+
 export async function setStockManager(token: string, symbol: string, manager: string) {
   const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}/manager`, {
     method: "POST",
