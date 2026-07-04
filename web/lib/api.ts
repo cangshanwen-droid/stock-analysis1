@@ -304,16 +304,26 @@ export async function fetchAdminOverview(token: string): Promise<{
     return { users: [], stocks: [], auditLogs: [] };
   }
   const headers = { Authorization: `Bearer ${token}` };
-  const [usersRes, stocksRes, logsRes] = await Promise.all([
-    fetchApi("/admin/users", { headers, cache: "no-store" }),
-    fetchApi("/admin/stocks", { headers, cache: "no-store" }),
-    fetchApi("/admin/audit-logs?limit=12", { headers, cache: "no-store" })
+  const readJson = async <T,>(path: string, fallback: T): Promise<T> => {
+    try {
+      const res = await fetchApi(path, { headers, cache: "no-store" });
+      if (!res.ok) return fallback;
+      const type = res.headers.get("content-type") || "";
+      if (!type.includes("application/json")) return fallback;
+      return await res.json();
+    } catch {
+      return fallback;
+    }
+  };
+  const [users, stocks, auditLogs] = await Promise.all([
+    readJson<AdminUser[]>("/admin/users", []),
+    readJson<AdminStock[]>("/admin/stocks", []),
+    readJson<AuditLog[]>("/admin/audit-logs?limit=12", [])
   ]);
-  if (!usersRes.ok || !stocksRes.ok || !logsRes.ok) throw new Error("admin_overview_failed");
   return {
-    users: await usersRes.json(),
-    stocks: await stocksRes.json(),
-    auditLogs: await logsRes.json()
+    users,
+    stocks,
+    auditLogs
   };
 }
 

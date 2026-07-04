@@ -226,11 +226,8 @@ export function TradingWorkspace() {
       setAdminStocks(data.stocks);
       setAuditLogs(data.auditLogs);
       setHealthStatus(health);
-    } catch {
-      setAdminUsers([]);
-      setAdminStocks([]);
-      setAuditLogs([]);
-      setHealthStatus(null);
+    } catch (error) {
+      setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
     } finally {
       setAdminLoading(false);
     }
@@ -248,12 +245,9 @@ export function TradingWorkspace() {
         setAuditLogs(data.auditLogs);
         setHealthStatus(health);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!alive) return;
-        setAdminUsers([]);
-        setAdminStocks([]);
-        setAuditLogs([]);
-        setHealthStatus(null);
+        setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
       })
       .finally(() => {
         if (alive) setAdminLoading(false);
