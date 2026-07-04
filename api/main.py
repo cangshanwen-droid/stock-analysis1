@@ -262,8 +262,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     return user
 
 
-@app.get("/health")
-def health() -> dict[str, Any]:
+def health_response() -> dict[str, Any]:
     return {
         "ok": True,
         "database": True if is_postgres() else DB_PATH.exists(),
@@ -275,6 +274,8 @@ def health() -> dict[str, Any]:
         "adminWritesEnabled": ENABLE_ADMIN_WRITES,
     }
 
+
+app.add_api_route("/health", health_response, methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
