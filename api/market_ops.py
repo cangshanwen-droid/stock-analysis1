@@ -68,25 +68,36 @@ def close_market(conn) -> MarketResult:
         total_sell_shares = sum(int(s["shares"]) for s in sells)
         executable = min(total_buy_shares, total_sell_shares)
 
-        # Proportional match, last order absorbs rounding so both sides sum to exactly executable
-        buy_matched = 0
-        for idx, buy in enumerate(buys):
-            raw = int(buy["shares"]) * executable / total_buy_shares
-            fill = executable - buy_matched if idx == len(buys) - 1 else int(raw)
-            fill = min(fill, int(buy["shares"]), executable - buy_matched)
+        # Proportional match using largest-remainder (Hare quota) method.
+        # Guarantees both sides sum to exactly executable while distributing
+        # rounding remainders across orders fairly.
+        def _proportional_fill(orders, total):
+            if total <= 0:
+                return [0] * len(orders)
+            fills = [int(int(o["shares"]) * executable / total) for o in orders]
+            allocated = sum(fills)
+            remaining_shares = executable - allocated
+            if remaining_shares > 0:
+                fracs = sorted(
+                    range(len(orders)),
+                    key=lambda i: (int(orders[i]["shares"]) * executable / total - fills[i]),
+                    reverse=True,
+                )
+                for i in fracs[:remaining_shares]:
+                    fills[i] += 1
+            return fills
+
+        buy_fills = _proportional_fill(buys, total_buy_shares)
+        sell_fills = _proportional_fill(sells, total_sell_shares)
+        for buy, fill in zip(buys, buy_fills):
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
             execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                     (buy["username"], symbol, match_price, fill, round_no))
-            buy_matched += fill
             matched_shares += fill
-        sell_matched = 0
-        for idx, sell in enumerate(sells):
-            raw = int(sell["shares"]) * executable / total_sell_shares
-            fill = executable - sell_matched if idx == len(sells) - 1 else int(raw)
-            fill = min(fill, int(sell["shares"]), executable - sell_matched)
+        for sell, fill in zip(sells, sell_fills):
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)

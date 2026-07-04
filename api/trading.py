@@ -82,16 +82,13 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
 
     cost = price * remaining
-    if balance >= cost:
-        execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
-        execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
-                (username, symbol, price, remaining, round_no))
-        execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
-                ("[系统]", symbol, price, remaining, round_no))
-        return TradeResult(True, f"成交 {stock_name} {remaining} 股 @ {price:.2f}", 0, round_no)
-    execute(conn, "INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
+    # balance check always passes here: place_order caps order_shares to fit balance
+    execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+    execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
             (username, symbol, price, remaining, round_no))
-    return TradeResult(True, f"挂买单 {stock_name} {remaining} 股 @ {price:.2f}", 0, round_no)
+    execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
+            ("[系统]", symbol, price, remaining, round_no))
+    return TradeResult(True, f"成交 {stock_name} {remaining} 股 @ {price:.2f}", 0, round_no)
 
 
 def _match_sell(conn, username: str, symbol: str, price: float, shares: int, round_no: int, stock_name: str) -> TradeResult:
@@ -114,6 +111,8 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
         if not buyer or float(buyer["balance"] or 0) < amount:
             execute(conn, "DELETE FROM order_book WHERE id=?", (buy_order["id"],))
+            log_action(conn, "system", "cancel_order", buy_order["username"],
+                       f"buy order for {symbol} deleted: insufficient balance (need {amount})")
             continue
         execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy_order["username"]))
         execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
