@@ -49,7 +49,7 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
             break
         fill = min(remaining, int(sell_order["shares"]))
         match_price = price
-        amount = fill * match_price
+        amount = round(fill * match_price, 2)
         seller_holding = get_holding_shares(conn, sell_order["username"], symbol)
         pending_sell = fetchone(conn, """
             SELECT COALESCE(SUM(shares),0) AS shares
@@ -110,7 +110,7 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
             break
         fill = min(remaining, int(buy_order["shares"]))
         match_price = price
-        amount = fill * match_price
+        amount = round(fill * match_price, 2)
         buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
         if not buyer or float(buyer["balance"] or 0) < amount:
             execute(conn, "DELETE FROM order_book WHERE id=?", (buy_order["id"],))
