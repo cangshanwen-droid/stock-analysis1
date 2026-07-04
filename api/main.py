@@ -7,11 +7,13 @@ import threading
 import time
 from collections import defaultdict
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
@@ -756,6 +758,17 @@ def admin_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, 
         for row in rows
     ]
 
+
+# Serve built frontend if available (for Render deployment)
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web-build"
+if FRONTEND_DIR.exists():
+    app.mount("/_next", StaticFiles(directory=str(FRONTEND_DIR / "_next")), name="next-static")
+    index_html = FRONTEND_DIR / "index.html"
+    if index_html.exists():
+
+        @app.get("/{full_path:path}")
+        def serve_frontend(full_path: str):
+            return HTMLResponse(index_html.read_text(encoding="utf-8"))
 
 @app.post("/admin/users")
 def admin_create_user(payload: CreateUserRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
