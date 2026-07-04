@@ -100,7 +100,7 @@ async def add_public_read_cache_headers(request: Request, call_next):
 
 # Rate limiting — in-memory sliding window per IP
 _RATE_WINDOW = 60.0
-_RATE_LIMITS = {"read": 3600, "write": 120}
+_RATE_LIMITS = {"read": 60000, "write": 3000, "login": 60}
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
 
@@ -123,8 +123,12 @@ async def rate_limit_middleware(request: Request, call_next):
     if path.startswith("/admin") or path in ("/", "/health"):
         return await call_next(request)
     client_ip = request.client.host if request.client else "unknown"
-    is_write = request.method in ("POST", "PATCH", "DELETE")
-    limit = _RATE_LIMITS["write"] if is_write else _RATE_LIMITS["read"]
+    if path == "/auth/login":
+        limit = _RATE_LIMITS["login"]
+    elif request.method in ("POST", "PATCH", "DELETE"):
+        limit = _RATE_LIMITS["write"]
+    else:
+        limit = _RATE_LIMITS["read"]
     if not _rate_limit(client_ip, limit):
         return JSONResponse(status_code=429, content={"detail": "too_many_requests", "retry_after": 60})
     return await call_next(request)
