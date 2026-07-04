@@ -157,7 +157,10 @@ def database_not_ready_handler(_, exc: DatabaseNotReady):
 
 
 @app.get("/")
-def root() -> dict[str, str]:
+def root():
+    index = FRONTEND_DIR / "index.html" if FRONTEND_DIR.exists() else None
+    if index and index.exists():
+        return FileResponse(str(index))
     return {"service": "Gipfel Trading API", "status": "ok", "health": "/health"}
 
 
