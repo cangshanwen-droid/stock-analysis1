@@ -100,7 +100,7 @@ async def add_public_read_cache_headers(request: Request, call_next):
 
 # Rate limiting — in-memory sliding window per IP
 _RATE_WINDOW = 60.0
-_RATE_LIMITS = {"read": 60, "write": 20}
+_RATE_LIMITS = {"read": 3600, "write": 120}
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
 
