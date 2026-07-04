@@ -81,7 +81,7 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         avg = total / matched
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
 
-    cost = price * remaining
+    cost = round(price * remaining, 2)
     # balance check always passes here: place_order caps order_shares to fit balance
     execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
@@ -135,7 +135,7 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
     if matched:
         avg = total / matched
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
-    amount = price * remaining
+    amount = round(price * remaining, 2)
     execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
             (username, symbol, price, remaining, round_no))
