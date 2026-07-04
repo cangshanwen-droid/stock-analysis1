@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, connect, execute, fetchall, fetchone, is_postgres, row_dict
-from .market_ops import close_market, compute_price, is_system_user, open_market, reset_to_round1, rollback_previous_round
+from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
 from .trading import place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
@@ -368,87 +368,19 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 """,
                 (target_symbol,),
             )
-            stock = row_dict(fetchone(conn, "SELECT * FROM stocks WHERE symbol=? AND is_deleted=0", (target_symbol,)))
-            open_round = fetchone(conn, "SELECT MIN(round) AS round FROM rounds WHERE stock_symbol=? AND is_settled=0", (target_symbol,))
-            stocks = fetchall(conn, "SELECT carbon_price FROM stocks WHERE is_deleted=0")
-            active_carbon_prices = [float(row["carbon_price"] or 50) for row in stocks]
-            market_carbon_mean = sum(active_carbon_prices) / len(active_carbon_prices) if active_carbon_prices else 50
-            live_rows = []
-            if stock and open_round and open_round["round"]:
-                current_round = int(open_round["round"])
-                txns = fetchall(conn, """
-                    SELECT username,trade_type,price,shares
-                    FROM transactions
-                    WHERE stock_symbol=? AND round=?
-                    ORDER BY id DESC
-                    LIMIT 240
-                """, (target_symbol, current_round))
-                real_txns = [txn for txn in reversed(txns) if not is_system_user(txn["username"])]
-                previous_close = float(stock["previous_close"] or stock["current_price"] or 0)
-                buy_total = 0.0
-                sell_total = 0.0
-                buy_volume = 0
-                sell_volume = 0
-                last_close = previous_close
-                segment = 0
-                bucket_count = min(24, len(real_txns))
-                buckets: list[list[Any]] = [[] for _ in range(bucket_count)]
-                for idx, txn in enumerate(real_txns):
-                    buckets[int(idx * bucket_count / len(real_txns))].append(txn)
-                for bucket in buckets:
-                    bucket_shares = 0
-                    for txn in bucket:
-                        amount = float(txn["price"] or 0) * int(txn["shares"] or 0)
-                        bucket_shares += int(txn["shares"] or 0)
-                        if txn["trade_type"] == "buy":
-                            buy_total += amount
-                            buy_volume += int(txn["shares"] or 0)
-                        elif txn["trade_type"] in ("sell", "force_close"):
-                            sell_total += amount
-                            sell_volume += int(txn["shares"] or 0)
-                    volume = max(buy_volume, sell_volume)
-                    live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
-                    high = max(last_close, live_close)
-                    low = min(last_close, live_close)
-                    if live_rows and round(float(live_close), 2) == round(float(last_close), 2):
-                        live_rows[-1]["volume"] = int(live_rows[-1]["volume"] or 0) + bucket_shares
-                        live_rows[-1]["high_price"] = max(float(live_rows[-1]["high_price"] or 0), high)
-                        live_rows[-1]["low_price"] = min(float(live_rows[-1]["low_price"] or high), low)
-                        continue
-                    segment += 1
-                    live_rows.append({
-                        "round": current_round,
-                        "segment": segment,
-                        "open_price": last_close,
-                        "high_price": high,
-                        "low_price": low,
-                        "close_price": live_close,
-                        "volume": bucket_shares,
-                        "status": "live",
-                    })
-                    last_close = live_close
         start = date(2000, 1, 1)
-        settled_by_round = {}
-        for row in rows:
-            settled_by_round[int(row["round"] or 0)] = dict(row, status="settled", segment=0)
-        output_rows = list(settled_by_round.values())
-        if live_rows:
-            output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_rows[0]["round"])]
-            output_rows.extend(live_rows)
-            output_rows.sort(key=lambda row: (int(row["round"] or 0), int(row.get("segment") or 0)))
         return [
             {
                 "round": int(row["round"] or 0),
-                "segment": int(row.get("segment") or 0),
+                "segment": 0,
                 "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
                 "open": float(row["open_price"] or 0),
                 "high": float(row["high_price"] or 0),
                 "low": float(row["low_price"] or 0),
                 "close": float(row["close_price"] or 0),
                 "volume": int(row["volume"] or 0),
-                "status": row.get("status", "settled"),
             }
-            for row in output_rows
+            for row in rows
             if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
         ]
     return cache_get_or_set(cache_key, 2.0, load_kline)

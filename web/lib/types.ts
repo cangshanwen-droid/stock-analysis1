@@ -8,14 +8,12 @@ export type StockQuote = {
 
 export type Candle = {
   round: number;
-  segment?: number;
   time: string;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
-  status?: "live" | "settled";
 };
 
 export type MarketSnapshot = {
