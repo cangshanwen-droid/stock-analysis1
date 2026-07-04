@@ -1001,7 +1001,7 @@ export function TradingWorkspace() {
               ) : null}
               <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
                 onClick={async () => {
-                  const name = window.prompt("输入资金账户名称：");
+                  const name = window.prompt("输入资金账户名称：", user?.username || "");
                   if (!name?.trim()) return;
                   const amountText = window.prompt("输入初始资金金额：", "1000000");
                   const amount = Number(amountText);

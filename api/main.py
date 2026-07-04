@@ -274,7 +274,7 @@ def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
             INSERT INTO fund_accounts(owner,name,initial_balance,balance,locked)
             VALUES(?,?,?,?,1)
             RETURNING id
-        """, (owner, "默认资金账户", initial_balance, initial_balance))
+        """, (owner, f"{owner} 的资金", initial_balance, initial_balance))
         try:
             conn.commit()
         except Exception:
