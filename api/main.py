@@ -351,7 +351,8 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 buy_volume = 0
                 sell_volume = 0
                 last_close = previous_close
-                for index, txn in enumerate(real_txns, start=1):
+                segment = 0
+                for txn in real_txns:
                     amount = float(txn["price"] or 0) * int(txn["shares"] or 0)
                     if txn["trade_type"] == "buy":
                         buy_total += amount
@@ -361,17 +362,23 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                         sell_volume += int(txn["shares"] or 0)
                     volume = max(buy_volume, sell_volume)
                     live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
-                    trade_price = float(txn["price"] or 0)
-                    high = max([last_close, live_close, trade_price])
-                    low = min([last_close, live_close, trade_price])
+                    high = max(last_close, live_close)
+                    low = min(last_close, live_close)
+                    txn_shares = int(txn["shares"] or 0)
+                    if live_rows and round(float(live_close), 2) == round(float(last_close), 2):
+                        live_rows[-1]["volume"] = int(live_rows[-1]["volume"] or 0) + txn_shares
+                        live_rows[-1]["high_price"] = max(float(live_rows[-1]["high_price"] or 0), high)
+                        live_rows[-1]["low_price"] = min(float(live_rows[-1]["low_price"] or high), low)
+                        continue
+                    segment += 1
                     live_rows.append({
                         "round": current_round,
-                        "segment": index,
+                        "segment": segment,
                         "open_price": last_close,
                         "high_price": high,
                         "low_price": low,
                         "close_price": live_close,
-                        "volume": int(txn["shares"] or 0),
+                        "volume": txn_shares,
                         "status": "live",
                     })
                     last_close = live_close

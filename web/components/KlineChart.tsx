@@ -70,10 +70,11 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
     const open = round2(candle.open);
     const close = round2(candle.close);
     const flatNoTrade = isFlatNoTrade(candle);
-    const wickPad = flatNoTrade
+    const flatPrice = round2(candle.high) === open && round2(candle.low) === open && open === close;
+    const wickPad = flatNoTrade || flatPrice
       ? 0
       : Math.max(Math.abs(close - open) * 0.12, close * 0.0018, 0.02);
-    const lowPad = flatNoTrade
+    const lowPad = flatNoTrade || flatPrice
       ? 0
       : Math.max(Math.abs(close - open) * 0.1, close * 0.0015, 0.02);
 
