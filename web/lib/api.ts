@@ -10,7 +10,7 @@ const API_BASES = Array.from(new Set([PRIMARY_API_BASE, ...API_FALLBACKS].filter
 const MARKET_CACHE_KEY = "gipfel:last-market";
 const CANDLE_CACHE_PREFIX = "gipfel:last-candles:";
 const MARKET_CACHE_TTL = 2500;
-const CANDLE_CACHE_TTL = 8000;
+const CANDLE_CACHE_TTL = 2500;
 let pendingMarketRequest: Promise<MarketSnapshot> | null = null;
 const pendingCandleRequests = new Map<string, Promise<Candle[]>>();
 

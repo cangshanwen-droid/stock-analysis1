@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, connect, execute, fetchall, fetchone, is_postgres, row_dict
-from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
+from .market_ops import close_market, compute_price, is_system_user, open_market, reset_to_round1, rollback_previous_round
 from .trading import place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
@@ -93,7 +93,7 @@ async def add_public_read_cache_headers(request: Request, call_next):
         if path == "/market":
             response.headers["Cache-Control"] = "public, max-age=2, stale-while-revalidate=8"
         elif path.startswith("/stocks/") and path.endswith("/kline"):
-            response.headers["Cache-Control"] = "public, max-age=5, stale-while-revalidate=20"
+            response.headers["Cache-Control"] = "public, max-age=2, stale-while-revalidate=8"
     return response
 
 
@@ -319,6 +319,7 @@ def market() -> dict[str, Any]:
 def stock_kline(symbol: str) -> list[dict[str, Any]]:
     cache_key = f"kline:{symbol.upper()}"
     def load_kline():
+        target_symbol = symbol.upper()
         with connect() as conn:
             rows = fetchall(conn,
                 """
@@ -327,9 +328,46 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 WHERE stock_symbol=?
                 ORDER BY round
                 """,
-                (symbol.upper(),),
+                (target_symbol,),
             )
+            stock = row_dict(fetchone(conn, "SELECT * FROM stocks WHERE symbol=? AND is_deleted=0", (target_symbol,)))
+            open_round = fetchone(conn, "SELECT MIN(round) AS round FROM rounds WHERE stock_symbol=? AND is_settled=0", (target_symbol,))
+            stocks = fetchall(conn, "SELECT carbon_price FROM stocks WHERE is_deleted=0")
+            active_carbon_prices = [float(row["carbon_price"] or 50) for row in stocks]
+            market_carbon_mean = sum(active_carbon_prices) / len(active_carbon_prices) if active_carbon_prices else 50
+            live_row = None
+            if stock and open_round and open_round["round"]:
+                current_round = int(open_round["round"])
+                txns = fetchall(conn, """
+                    SELECT username,trade_type,price,shares
+                    FROM transactions
+                    WHERE stock_symbol=? AND round=?
+                """, (target_symbol, current_round))
+                real_txns = [t for t in txns if not is_system_user(t["username"])]
+                buy_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
+                sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "sell")
+                buy_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
+                sell_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
+                volume = max(buy_volume, sell_volume)
+                previous_close = float(stock["previous_close"] or stock["current_price"] or 0)
+                live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
+                trade_prices = [float(t["price"]) for t in real_txns if float(t["price"] or 0) > 0]
+                high = max([previous_close, live_close, *trade_prices]) if previous_close else live_close
+                low = min([previous_close, live_close, *trade_prices]) if previous_close else live_close
+                live_row = {
+                    "round": current_round,
+                    "open_price": previous_close,
+                    "high_price": high,
+                    "low_price": low,
+                    "close_price": live_close,
+                    "volume": volume,
+                }
         start = date(2000, 1, 1)
+        output_rows = [dict(row) for row in rows]
+        if live_row:
+            output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_row["round"])]
+            output_rows.append(live_row)
+            output_rows.sort(key=lambda row: int(row["round"] or 0))
         return [
             {
                 "round": int(row["round"] or 0),
@@ -340,10 +378,10 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 "close": float(row["close_price"] or 0),
                 "volume": int(row["volume"] or 0),
             }
-            for row in rows
+            for row in output_rows
             if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
         ]
-    return cache_get_or_set(cache_key, 5.0, load_kline)
+    return cache_get_or_set(cache_key, 2.0, load_kline)
 
 
 @app.get("/portfolio")

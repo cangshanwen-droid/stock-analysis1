@@ -173,7 +173,7 @@ export function TradingWorkspace() {
     }, 4000);
     const candleTimer = window.setInterval(() => {
       void refreshLiveMarket(true, true);
-    }, 12000);
+    }, 4000);
 
     const onVisible = () => {
       if (!document.hidden) void refreshLiveMarket(true, true);

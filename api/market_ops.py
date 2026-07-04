@@ -3,6 +3,8 @@ from typing import Any
 
 from .db import execute, fetchall, fetchone
 
+SYSTEM_USERNAMES = {"[系统]", "[ϵͳ]", "[绯荤粺]"}
+
 
 @dataclass
 class MarketResult:
@@ -18,6 +20,10 @@ def row_get(row: Any, key: str, default=None):
         return row[key]
     except (KeyError, IndexError, TypeError):
         return default
+
+
+def is_system_user(username: Any) -> bool:
+    return str(username or "") in SYSTEM_USERNAMES
 
 
 def compute_price(stock: dict[str, Any], carbon_mean: float | None = None) -> float:
@@ -92,7 +98,7 @@ def close_market(conn) -> MarketResult:
             continue
         current_round = int(open_round["round"])
         txns = fetchall(conn, "SELECT username,trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, current_round))
-        real_txns = [t for t in txns if t["username"] != "[系统]"]
+        real_txns = [t for t in txns if not is_system_user(t["username"])]
         buy_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
         sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "sell")
         buy_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
