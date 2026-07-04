@@ -87,6 +87,22 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def health_any_method(request: Request, call_next):
+    if request.url.path == "/health":
+        return JSONResponse({
+            "ok": True,
+            "database": True if is_postgres() else DB_PATH.exists(),
+            "backend": "postgres" if is_postgres() else "sqlite",
+            "path": "" if is_postgres() else str(DB_PATH),
+            "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
+            "orderWritesEnabled": ENABLE_ORDER_WRITES,
+            "marketWritesEnabled": ENABLE_MARKET_WRITES,
+            "adminWritesEnabled": ENABLE_ADMIN_WRITES,
+        })
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def add_public_read_cache_headers(request: Request, call_next):
     response = await call_next(request)
     if request.method == "GET" and response.status_code == 200:
@@ -262,7 +278,8 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     return user
 
 
-def health_response() -> dict[str, Any]:
+@app.get("/health")
+def health() -> dict[str, Any]:
     return {
         "ok": True,
         "database": True if is_postgres() else DB_PATH.exists(),
@@ -273,9 +290,6 @@ def health_response() -> dict[str, Any]:
         "marketWritesEnabled": ENABLE_MARKET_WRITES,
         "adminWritesEnabled": ENABLE_ADMIN_WRITES,
     }
-
-
-app.add_api_route("/health", health_response, methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
 
 @app.post("/auth/login")
 def login(payload: LoginRequest) -> dict[str, Any]:
