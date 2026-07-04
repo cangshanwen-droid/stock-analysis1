@@ -831,19 +831,6 @@ def admin_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, 
     ]
 
 
-# Serve built frontend SPA (for Render deployment, no Vercel needed)
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web-build"
-if FRONTEND_DIR.exists():
-    @app.get("/{full_path:path}")
-    def serve_frontend(full_path: str):
-        file_path = FRONTEND_DIR / full_path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
-        index = FRONTEND_DIR / "index.html"
-        if index.exists():
-            return FileResponse(str(index))
-        return JSONResponse(status_code=404, content={"detail": "not_found"})
-
 @app.post("/admin/users")
 def admin_create_user(payload: CreateUserRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
@@ -1182,3 +1169,17 @@ def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_use
         }
         for row in rows
     ]
+
+
+# Serve built frontend SPA after all API routes are registered.
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web-build"
+if FRONTEND_DIR.exists():
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        file_path = FRONTEND_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        index = FRONTEND_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return JSONResponse(status_code=404, content={"detail": "not_found"})
