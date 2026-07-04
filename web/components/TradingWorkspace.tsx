@@ -163,44 +163,6 @@ export function TradingWorkspace() {
   }, [selected]);
 
   useEffect(() => {
-    let alive = true;
-    async function refreshLiveMarket(force = false, includeCandles = false) {
-      if (typeof document !== "undefined" && document.hidden) return;
-      try {
-        if (force) clearPublicReadCache(includeCandles ? selected : undefined);
-        const [nextMarket, nextCandles] = await Promise.all([
-          fetchMarket(force),
-          includeCandles && selected ? fetchCandles(selected, force) : Promise.resolve<Candle[]>([])
-        ]);
-        if (!alive) return;
-        setMarket(nextMarket);
-        setLastMarketUpdate(Date.now());
-        if (includeCandles && selected) setCandles(nextCandles);
-      } catch {
-        // Keep the last good quote on screen; the next polling tick will retry.
-      }
-    }
-
-    const marketTimer = window.setInterval(() => {
-      void refreshLiveMarket(true, false);
-    }, 6000);
-    const candleTimer = window.setInterval(() => {
-      void refreshLiveMarket(true, true);
-    }, 10000);
-
-    const onVisible = () => {
-      if (!document.hidden) void refreshLiveMarket(true, true);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      alive = false;
-      window.clearInterval(marketTimer);
-      window.clearInterval(candleTimer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [selected]);
-
-  useEffect(() => {
     if (!token) return;
     let alive = true;
     fetchPortfolio(token)
@@ -375,20 +337,14 @@ export function TradingWorkspace() {
           detail
         });
         setOrderStatus("success");
-        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。${detail}，正在刷新资产与行情。`);
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。${detail}，正在刷新资产。`);
         setOrderSubmitting(false);
-        clearPublicReadCache(current.symbol);
+        clearPublicReadCache();
         try {
-          const [data, nextMarket, nextCandles] = await Promise.all([
-            fetchPortfolio(token, tradingCompany ?? undefined),
-            fetchMarket(true),
-            fetchCandles(current.symbol, true)
-          ]);
+          const data = await fetchPortfolio(token, tradingCompany ?? undefined);
           setPortfolio(data);
           setUser(data.user);
-          setMarket(nextMarket);
-          setCandles(nextCandles);
-          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产与行情已刷新。`);
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产已刷新，行情和 K 线将在收盘结算后更新。`);
         } catch {
           setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
         }
@@ -740,7 +696,7 @@ export function TradingWorkspace() {
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
           </div>
-          <span className="live-refresh">实时 · {liveUpdateText}</span>
+          <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
         </section>
 
         {(view === "market" || view === "trade") ? (

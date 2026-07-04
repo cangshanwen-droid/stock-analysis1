@@ -69,6 +69,7 @@ def close_market(conn) -> MarketResult:
         total_buy_shares = sum(int(b["shares"]) for b in buys)
         total_sell_shares = sum(int(s["shares"]) for s in sells)
         executable = min(total_buy_shares, total_sell_shares)
+        sell_matched = 0
 
         # Proportional match using largest-remainder (Hare quota) method.
         # Guarantees both sides sum to exactly executable while distributing
