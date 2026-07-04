@@ -341,10 +341,11 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 txns = fetchall(conn, """
                     SELECT username,trade_type,price,shares
                     FROM transactions
-                    WHERE stock_symbol=? AND round=?
-                    ORDER BY id
+                    WHERE stock_symbol=? AND round=? AND username NOT IN ('[系统]','[ϵͳ]','[绯荤粺]')
+                    ORDER BY id DESC
+                    LIMIT 240
                 """, (target_symbol, current_round))
-                real_txns = [t for t in txns if not is_system_user(t["username"])]
+                real_txns = list(reversed(txns))
                 previous_close = float(stock["previous_close"] or stock["current_price"] or 0)
                 buy_total = 0.0
                 sell_total = 0.0
