@@ -19,6 +19,8 @@ type Props = {
 
 type DisplayCandle = {
   round: number;
+  segment: number;
+  label: string;
   time: Time;
   open: number;
   high: number;
@@ -77,6 +79,8 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
 
     return {
       round: candle.round,
+      segment: Math.max(0, Math.round(candle.segment || 0)),
+      label: candle.segment ? `R${candle.round}-${candle.segment}` : `R${candle.round}`,
       time: dateForIndex(index),
       open,
       high: round2(Math.max(candle.high, Math.max(open, close) + wickPad)),
@@ -126,7 +130,7 @@ function KlineChartCanvas({ candles }: Props) {
   const ma10Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const volumeMaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
-  const roundLabelRef = useRef<Map<string, number>>(new Map());
+  const roundLabelRef = useRef<Map<string, string>>(new Map());
   const candleLookupRef = useRef<Map<string, DisplayCandle>>(new Map());
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
@@ -173,8 +177,8 @@ function KlineChartCanvas({ candles }: Props) {
           return price.toFixed(2);
         },
         timeFormatter: (time: Time) => {
-          const round = roundLabelRef.current.get(timeKey(time));
-          return round ? `第 ${round} 轮` : "";
+          const label = roundLabelRef.current.get(timeKey(time));
+          return label ?? "";
         }
       },
       grid: {
@@ -198,8 +202,8 @@ function KlineChartCanvas({ candles }: Props) {
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
-          const round = roundLabelRef.current.get(timeKey(time));
-          return round ? `R${round}` : "";
+          const label = roundLabelRef.current.get(timeKey(time));
+          return label ?? "";
         }
       },
       handleScale: true,
@@ -284,8 +288,9 @@ function KlineChartCanvas({ candles }: Props) {
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
       const statusText = candle.status === "live" ? "盘中" : "已定稿";
+      const roundText = candle.segment ? `第 ${candle.round} 轮 - 第 ${candle.segment} 段` : `第 ${candle.round} 轮`;
       tooltip.innerHTML = `
-        <div class="kline-tip-head">第 ${candle.round} 轮 · ${statusText}</div>
+        <div class="kline-tip-head">${roundText} · ${statusText}</div>
         <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
         <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
         <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>
@@ -317,7 +322,7 @@ function KlineChartCanvas({ candles }: Props) {
   useEffect(() => {
     if (!candleRef.current || !volumeRef.current || !ma5Ref.current || !ma10Ref.current || !volumeMaRef.current || !chartRef.current) return;
 
-    roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.round]));
+    roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.label]));
     candleLookupRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle]));
     candleRef.current.setData(hasMeaningfulBars ? candleData : []);
     volumeRef.current.setData(displayCandles.map((candle) => ({

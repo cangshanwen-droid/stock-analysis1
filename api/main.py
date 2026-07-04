@@ -335,45 +335,56 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
             stocks = fetchall(conn, "SELECT carbon_price FROM stocks WHERE is_deleted=0")
             active_carbon_prices = [float(row["carbon_price"] or 50) for row in stocks]
             market_carbon_mean = sum(active_carbon_prices) / len(active_carbon_prices) if active_carbon_prices else 50
-            live_row = None
+            live_rows = []
             if stock and open_round and open_round["round"]:
                 current_round = int(open_round["round"])
                 txns = fetchall(conn, """
                     SELECT username,trade_type,price,shares
                     FROM transactions
                     WHERE stock_symbol=? AND round=?
+                    ORDER BY id
                 """, (target_symbol, current_round))
                 real_txns = [t for t in txns if not is_system_user(t["username"])]
-                buy_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
-                sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "sell")
-                buy_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
-                sell_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
-                volume = max(buy_volume, sell_volume)
                 previous_close = float(stock["previous_close"] or stock["current_price"] or 0)
-                live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
-                trade_prices = [float(t["price"]) for t in real_txns if float(t["price"] or 0) > 0]
-                high = max([previous_close, live_close, *trade_prices]) if previous_close else live_close
-                low = min([previous_close, live_close, *trade_prices]) if previous_close else live_close
-                live_row = {
-                    "round": current_round,
-                    "open_price": previous_close,
-                    "high_price": high,
-                    "low_price": low,
-                    "close_price": live_close,
-                    "volume": volume,
-                    "status": "live",
-                }
+                buy_total = 0.0
+                sell_total = 0.0
+                buy_volume = 0
+                sell_volume = 0
+                last_close = previous_close
+                for index, txn in enumerate(real_txns, start=1):
+                    amount = float(txn["price"] or 0) * int(txn["shares"] or 0)
+                    if txn["trade_type"] == "buy":
+                        buy_total += amount
+                        buy_volume += int(txn["shares"] or 0)
+                    elif txn["trade_type"] in ("sell", "force_close"):
+                        sell_total += amount
+                        sell_volume += int(txn["shares"] or 0)
+                    volume = max(buy_volume, sell_volume)
+                    live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
+                    trade_price = float(txn["price"] or 0)
+                    high = max([last_close, live_close, trade_price])
+                    low = min([last_close, live_close, trade_price])
+                    live_rows.append({
+                        "round": current_round,
+                        "segment": index,
+                        "open_price": last_close,
+                        "high_price": high,
+                        "low_price": low,
+                        "close_price": live_close,
+                        "volume": int(txn["shares"] or 0),
+                        "status": "live",
+                    })
+                    last_close = live_close
         start = date(2000, 1, 1)
-        output_rows = [dict(row, status="settled") for row in rows]
-        if live_row:
-            # The current round is a live, in-progress candle. Keep one visual candle per round
-            # while marking it as live, so historical settled rounds remain unambiguous.
-            output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_row["round"])]
-            output_rows.append(live_row)
-            output_rows.sort(key=lambda row: int(row["round"] or 0))
+        output_rows = [dict(row, status="settled", segment=0) for row in rows]
+        if live_rows:
+            output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_rows[0]["round"])]
+            output_rows.extend(live_rows)
+            output_rows.sort(key=lambda row: (int(row["round"] or 0), int(row.get("segment") or 0)))
         return [
             {
                 "round": int(row["round"] or 0),
+                "segment": int(row.get("segment") or 0),
                 "time": (start + timedelta(days=int(row["round"] or 1) - 1)).isoformat(),
                 "open": float(row["open_price"] or 0),
                 "high": float(row["high_price"] or 0),
