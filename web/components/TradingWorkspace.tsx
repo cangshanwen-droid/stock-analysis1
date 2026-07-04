@@ -307,10 +307,7 @@ export function TradingWorkspace() {
   }
 
   const stocks = market?.stocks ?? [];
-  const tradableStocks = useMemo(() => {
-    if (!tradingCompany) return stocks;
-    return stocks.filter((s) => s.symbol !== tradingCompany);
-  }, [stocks, tradingCompany]);
+  const tradableStocks = useMemo(() => stocks, [stocks]);
   const current: StockQuote | undefined = useMemo(
     () => tradableStocks.find((s) => s.symbol === selected) ?? tradableStocks[0] ?? stocks[0],
     [selected, tradableStocks, stocks]
@@ -359,8 +356,7 @@ export function TradingWorkspace() {
         symbol: current.symbol,
         side,
         price,
-        shares: normalizedShares,
-        ...(tradingCompany ? { company_symbol: tradingCompany } : {})
+        shares: normalizedShares
       });
       if (result.accepted) {
         const detail = result.detail || "订单已受理";

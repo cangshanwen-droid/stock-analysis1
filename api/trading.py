@@ -192,24 +192,11 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
     if price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
 
-    # Determine trader: company-account or personal
-    if company_symbol:
-        # Company-account trade
-        company = row_dict(fetchone(conn,
-            "SELECT symbol,balance,funds_locked FROM stocks WHERE symbol=? AND manager=? AND is_deleted=0",
-            (company_symbol.upper(), operator)))
-        if not company:
-            return TradeResult(False, "你没有管理该公司或无此公司")
-        if not company.get("funds_locked"):
-            return TradeResult(False, "公司初始资金未锁定")
-        if company["symbol"] == symbol:
-            return TradeResult(False, "公司账户不能交易自己的股票")
-        company = row_dict(company)
-        trader = f"{COMPANY_USER_PREFIX}{company['symbol']}]"
-    else:
-        # Personal-account trade (operator uses their own balance)
-        company = None
-        trader = operator
+    # Operators always trade as independent personal accounts. A managed company,
+    # when provided by older clients, is only context and must not restrict symbols
+    # or switch funds into a separate company account.
+    company = None
+    trader = operator
 
     # Serialize concurrent orders for the same stock via PostgreSQL advisory lock
     if is_postgres():
