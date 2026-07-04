@@ -18,10 +18,10 @@ const fallbackMarket: MarketSnapshot = {
   round: 1,
   state: "open",
   stocks: [
-    { symbol: "JGONG", name: "加工1公司", price: 20, change: 0, changePct: 0 },
-    { symbol: "JXIAO", name: "经销1公司", price: 15, change: 0, changePct: 0 },
-    { symbol: "WULIU", name: "物流1公司", price: 10, change: 0, changePct: 0 },
-    { symbol: "YLIAO", name: "原料1公司", price: 25, change: 0, changePct: 0 }
+    { symbol: "JGONG", name: "加工1公司", price: 20, change: 0, changePct: 0, manager: "" },
+    { symbol: "JXIAO", name: "经销1公司", price: 15, change: 0, changePct: 0, manager: "" },
+    { symbol: "WULIU", name: "物流1公司", price: 10, change: 0, changePct: 0, manager: "" },
+    { symbol: "YLIAO", name: "原料1公司", price: 25, change: 0, changePct: 0, manager: "" }
   ]
 };
 
@@ -409,6 +409,32 @@ export async function deleteAdminStock(token: string, symbol: string) {
   const data = await res.json();
   if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_stock_failed");
   return data;
+}
+
+export async function setStockManager(token: string, symbol: string, manager: string) {
+  const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}/manager`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ manager })
+  });
+  if (!res.ok) throw await apiError(res, "set_manager_failed");
+  return res.json();
+}
+
+export async function confirmStockFunds(token: string, symbol: string, initFunds: number) {
+  const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}/confirm-funds`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ init_funds: initFunds })
+  });
+  if (!res.ok) throw await apiError(res, "confirm_funds_failed");
+  return res.json();
 }
 
 export function demoCandles(symbol: string): Candle[] {

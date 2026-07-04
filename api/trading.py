@@ -4,6 +4,7 @@ from typing import Any
 from .db import execute, fetchall, fetchone, is_postgres, row_dict
 
 MAX_ORDER_SHARES = 1_000_000
+COMPANY_USER_PREFIX = "[公司:"
 
 
 @dataclass
@@ -32,6 +33,15 @@ def log_action(conn, actor: str, action: str, target: str = "", detail: str = ""
     )
 
 
+def _update_balance(conn, trader: str, amount: float, direction: str) -> None:
+    """Update balance for a user or company account.
+    direction: '-' for debit (deduct), '+' for credit (add)
+    """
+    if trader.startswith(COMPANY_USER_PREFIX) and trader.endswith("]"):
+        sym = trader[len(COMPANY_USER_PREFIX):-1]
+        execute(conn, f"UPDATE stocks SET balance=balance{direction}? WHERE symbol=?", (amount, sym))
+    execute(conn, f"UPDATE users SET balance=balance{direction}? WHERE username=?", (amount, trader))
+
 
 def _match_buy(conn, username: str, symbol: str, price: float, shares: int, round_no: int, stock_name: str, balance: float) -> TradeResult:
     remaining = shares
@@ -59,8 +69,8 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         if seller_holding - int(pending_sell["shares"] or 0) < fill:
             execute(conn, "DELETE FROM order_book WHERE id=?", (sell_order["id"],))
             continue
-        execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, username))
-        execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell_order["username"]))
+        _update_balance(conn, username, amount, "-")
+        _update_balance(conn, sell_order["username"], amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (username, symbol, match_price, fill, round_no))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -82,8 +92,7 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
 
     cost = round(price * remaining, 2)
-    # balance check always passes here: place_order caps order_shares to fit balance
-    execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
+    _update_balance(conn, username, cost, "-")
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
             (username, symbol, price, remaining, round_no))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -114,8 +123,8 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
             log_action(conn, "system", "cancel_order", buy_order["username"],
                        f"buy order for {symbol} deleted: insufficient balance (need {amount})")
             continue
-        execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy_order["username"]))
-        execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
+        _update_balance(conn, buy_order["username"], amount, "-")
+        _update_balance(conn, username, amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (buy_order["username"], symbol, match_price, fill, round_no))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -136,7 +145,7 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         avg = total / matched
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
     amount = round(price * remaining, 2)
-    execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
+    _update_balance(conn, username, amount, "+")
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
             (username, symbol, price, remaining, round_no))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
@@ -144,7 +153,25 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
     return TradeResult(True, f"成交 {stock_name} {remaining} 股 @ {price:.2f}", 0, round_no)
 
 
-def place_order(conn, username: str, symbol: str, side: str, price: float, shares: int) -> TradeResult:
+def get_managed_company(conn, username: str) -> dict[str, Any] | None:
+    """Return the stock record if username manages a company with locked funds."""
+    stock = row_dict(fetchone(conn,
+        "SELECT symbol,balance,funds_locked FROM stocks WHERE manager=? AND is_deleted=0",
+        (username,)))
+    return stock
+
+
+def ensure_company_user(conn, stock_symbol: str, init_funds: float) -> str:
+    """Create or update the company user in the users table. Returns the company username."""
+    company_user = f"{COMPANY_USER_PREFIX}{stock_symbol}]"
+    existing = fetchone(conn, "SELECT username,balance FROM users WHERE username=?", (company_user,))
+    if not existing:
+        execute(conn, "INSERT INTO users(username,role,balance,status) VALUES(?,?,?,?)",
+                (company_user, "company", init_funds, "active"))
+    return company_user
+
+
+def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int) -> TradeResult:
     if shares > MAX_ORDER_SHARES:
         return TradeResult(False, f"单笔委托数量不能超过 {MAX_ORDER_SHARES} 股")
     symbol = symbol.upper()
@@ -158,31 +185,46 @@ def place_order(conn, username: str, symbol: str, side: str, price: float, share
     price = round(float(stock["current_price"] or 0), 2)
     if price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
+
+    # Check if operator manages a company with locked funds
+    company = get_managed_company(conn, operator)
+    if company and company.get("funds_locked"):
+        if company["symbol"] == symbol:
+            return TradeResult(False, "公司不能交易自己的股票")
+        trader = f"{COMPANY_USER_PREFIX}{company['symbol']}]"
+    else:
+        company = None
+        trader = operator
+
     # Serialize concurrent orders for the same stock via PostgreSQL advisory lock
     if is_postgres():
         lock_id = hash(symbol) & 0x7FFFFFFF
         execute(conn, "SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+
     if side == "buy":
-        user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,)))
-        if not user_row:
-            return TradeResult(False, "用户不存在")
-        balance = float(user_row["balance"] or 0)
+        if company:
+            balance = float(company["balance"] or 0)
+        else:
+            user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (operator,)))
+            if not user_row:
+                return TradeResult(False, "用户不存在")
+            balance = float(user_row["balance"] or 0)
         order_shares = shares
         if balance < price * shares:
             order_shares = int(balance / price)
             if order_shares <= 0:
                 return TradeResult(False, f"余额不足，当前最多可买 0 股")
-        result = _match_buy(conn, username, symbol, price, order_shares, round_no, str(stock["name"]), balance)
+        result = _match_buy(conn, trader, symbol, price, order_shares, round_no, str(stock["name"]), balance)
     else:
-        holding = get_holding_shares(conn, username, symbol)
+        holding = get_holding_shares(conn, trader, symbol)
         pending_sell = fetchone(conn, """
             SELECT COALESCE(SUM(shares),0) AS shares
             FROM order_book
             WHERE username=? AND stock_symbol=? AND trade_type='sell'
-        """, (username, symbol))
+        """, (trader, symbol))
         available = holding - int(pending_sell["shares"] or 0)
         if available < shares:
             return TradeResult(False, f"可卖不足：持仓 {holding} 股，已挂单 {int(pending_sell['shares'] or 0)} 股，可用 {available} 股")
-        result = _match_sell(conn, username, symbol, price, shares, round_no, str(stock["name"]))
-    log_action(conn, username, f"trade_{side}", symbol, f"round={round_no}, price={price}, shares={shares}, matched={result.matched}")
+        result = _match_sell(conn, trader, symbol, price, shares, round_no, str(stock["name"]))
+    log_action(conn, operator, f"trade_{side}", symbol, f"round={round_no}, price={price}, shares={shares}, matched={result.matched}")
     return result

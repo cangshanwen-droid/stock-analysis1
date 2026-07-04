@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS stocks (
     industry_carbon_mean DOUBLE PRECISION DEFAULT 50,
     premium_rate DOUBLE PRECISION DEFAULT 50,
     init_funds DOUBLE PRECISION DEFAULT 5000,
+    balance DOUBLE PRECISION DEFAULT 0,
+    manager TEXT DEFAULT '',
+    funds_locked INTEGER DEFAULT 0,
     last_update TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

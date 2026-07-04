@@ -14,9 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .db import DB_PATH, DatabaseNotReady, connect, execute, fetchall, fetchone, is_postgres, row_dict
+from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
-from .trading import place_order
+from .trading import ensure_company_user, get_managed_company, place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
@@ -211,6 +211,14 @@ class CreateStockRequest(BaseModel):
     premium_rate: float = Field(default=50, ge=0, le=100)
 
 
+class ManagerRequest(BaseModel):
+    manager: str = Field(min_length=1, max_length=40)
+
+
+class ConfirmFundsRequest(BaseModel):
+    init_funds: float = Field(gt=0)
+
+
 def initial_stock_price(revenue: float, total_shares: float, industry_pe: float) -> float:
     return round(revenue * 10000 / total_shares / industry_pe, 2)
 
@@ -345,7 +353,7 @@ def market() -> dict[str, Any]:
         with connect() as conn:
             state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
             stocks = fetchall(conn,
-                "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
+                "SELECT symbol,name,current_price,previous_close,manager FROM stocks WHERE is_deleted=0 ORDER BY symbol"
             )
         is_open = (state or {}).get("state") == "open"
         return {
@@ -361,6 +369,7 @@ def market() -> dict[str, Any]:
                         float(((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0))
                               / (s["previous_close"] or s["current_price"] or 1) * 100)
                     ),
+                    "manager": s["manager"] or "",
                 }
                 for s in stocks
             ],
@@ -771,7 +780,7 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
     with connect() as conn:
         rows = fetchall(conn, """
             SELECT id,symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
-                   carbon_price,industry_carbon_mean,premium_rate,init_funds,last_update
+                   carbon_price,industry_carbon_mean,premium_rate,init_funds,balance,manager,funds_locked,last_update
             FROM stocks
             ORDER BY symbol
         """)
@@ -790,6 +799,9 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
             "industryCarbonMean": float(row["industry_carbon_mean"] or 0),
             "premiumRate": float(row["premium_rate"] or 0),
             "initFunds": float(row["init_funds"] or 0),
+            "balance": float(row["balance"] or 0),
+            "manager": row["manager"] or "",
+            "fundsLocked": bool(row["funds_locked"]),
             "lastUpdate": str(row["last_update"]),
         }
         for row in rows
@@ -812,12 +824,13 @@ def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depen
         state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1")) or {"state": "open", "round": 1}
         round_no = int(state.get("round") or 1)
         is_settled = 0 if state.get("state") == "open" else 1
+        init_funds = 5000.0
         execute(conn, """
             INSERT INTO stocks(
                 symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
-                carbon_price,industry_carbon_mean,premium_rate,init_funds
+                carbon_price,industry_carbon_mean,premium_rate,init_funds,balance
             )
-            VALUES(?,?,?,?,0,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,0,?,?,?,?,?,?,?,?)
         """, (
             symbol,
             payload.name.strip(),
@@ -829,7 +842,8 @@ def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depen
             payload.carbon_price,
             payload.industry_carbon_mean,
             payload.premium_rate,
-            5000,
+            init_funds,
+            init_funds,
         ))
         execute(conn, """
             INSERT INTO rounds(stock_symbol,round,is_settled)
@@ -897,6 +911,77 @@ def admin_delete_stock(symbol: str, user: dict[str, Any] = Depends(current_user)
         conn.commit()
         clear_read_cache()
     return {"accepted": True, "symbol": target_symbol}
+
+
+@app.post("/admin/stocks/{symbol}/manager")
+def admin_set_stock_manager(symbol: str, payload: ManagerRequest, user: dict[str, Any] = Depends(current_user)):
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet"}
+    target_symbol = symbol.upper()
+    manager = payload.manager.strip()
+    with connect() as conn:
+        stock = row_dict(fetchone(conn, "SELECT symbol,init_funds FROM stocks WHERE symbol=? AND is_deleted=0", (target_symbol,)))
+        if not stock:
+            raise HTTPException(status_code=404, detail="stock_not_found")
+        if manager:
+            target_user = fetchone(conn, "SELECT username FROM users WHERE username=?", (manager,))
+            if not target_user:
+                raise HTTPException(status_code=404, detail="manager_not_found")
+            # Create company user if not exists
+            ensure_company_user(conn, target_symbol, float(stock["init_funds"] or 0))
+            execute(conn, "UPDATE stocks SET manager=? WHERE symbol=?", (manager, target_symbol))
+        else:
+            execute(conn, "UPDATE stocks SET manager='' WHERE symbol=?", (target_symbol,))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "set_manager", target_symbol, manager or "none"))
+        conn.commit()
+        clear_read_cache()
+    return {"accepted": True, "symbol": target_symbol, "manager": manager}
+
+
+@app.post("/admin/stocks/{symbol}/confirm-funds")
+def admin_confirm_stock_funds(symbol: str, payload: ConfirmFundsRequest, user: dict[str, Any] = Depends(current_user)):
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet"}
+    target_symbol = symbol.upper()
+    with connect() as conn:
+        stock = row_dict(fetchone(conn, "SELECT symbol,init_funds,funds_locked,balance FROM stocks WHERE symbol=? AND is_deleted=0", (target_symbol,)))
+        if not stock:
+            raise HTTPException(status_code=404, detail="stock_not_found")
+        if stock["funds_locked"]:
+            raise HTTPException(status_code=400, detail="funds_already_locked")
+        init_funds = round(payload.init_funds, 2)
+        company_user = ensure_company_user(conn, target_symbol, init_funds)
+        execute(conn, "UPDATE stocks SET init_funds=?, balance=?, funds_locked=1 WHERE symbol=?",
+                (init_funds, init_funds, target_symbol))
+        execute(conn, "UPDATE users SET balance=? WHERE username=?", (init_funds, company_user))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "confirm_funds", target_symbol, f"init_funds={init_funds}"))
+        conn.commit()
+        clear_read_cache()
+    return {"accepted": True, "symbol": target_symbol, "initFunds": init_funds}
+
+
+@app.post("/admin/db/migrate")
+def admin_db_migrate(user: dict[str, Any] = Depends(current_user)):
+    """Add company account columns to existing database."""
+    require_admin(user)
+    with connect() as conn:
+        for stmt in [
+            "ALTER TABLE stocks ADD COLUMN IF NOT EXISTS balance DOUBLE PRECISION DEFAULT 0",
+            "ALTER TABLE stocks ADD COLUMN IF NOT EXISTS manager TEXT DEFAULT ''",
+            "ALTER TABLE stocks ADD COLUMN IF NOT EXISTS funds_locked INTEGER DEFAULT 0",
+        ]:
+            try:
+                execute(conn, bind(stmt))
+            except Exception:
+                pass  # Column might already exist
+        # Set balance = init_funds for existing stocks where balance = 0
+        execute(conn, "UPDATE stocks SET balance=init_funds WHERE balance=0 AND init_funds>0")
+        conn.commit()
+    return {"accepted": True, "detail": "migration_complete"}
 
 
 @app.get("/admin/audit-logs")

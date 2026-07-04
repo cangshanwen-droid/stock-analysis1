@@ -4,6 +4,7 @@ export type StockQuote = {
   price: number;
   change: number;
   changePct: number;
+  manager: string;
 };
 
 export type Candle = {
@@ -92,6 +93,9 @@ export type AdminStock = {
   industryCarbonMean: number;
   premiumRate: number;
   initFunds: number;
+  balance: number;
+  manager: string;
+  fundsLocked: boolean;
   lastUpdate: string;
 };
 
