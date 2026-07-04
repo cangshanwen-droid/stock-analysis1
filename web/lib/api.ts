@@ -447,6 +447,28 @@ export async function confirmMyCompanyFunds(token: string, initFunds: number) {
   return res.json();
 }
 
+export async function fetchAvailableCompanies(token: string) {
+  if (!API_BASES.length || token === "demo-token") return [];
+  const res = await fetchApi("/available-companies", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function claimCompany(token: string, symbol: string) {
+  const res = await fetchApi("/my-companies/claim", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ manager: symbol })
+  });
+  if (!res.ok) throw await apiError(res, "claim_failed");
+  return res.json();
+}
+
 export async function setStockManager(token: string, symbol: string, manager: string) {
   const res = await fetchApi(`/admin/stocks/${encodeURIComponent(symbol)}/manager`, {
     method: "POST",

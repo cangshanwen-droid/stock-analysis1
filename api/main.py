@@ -357,6 +357,39 @@ def my_companies(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
     ]
 
 
+@app.get("/available-companies")
+def available_companies(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    """List companies available for the operator to claim management."""
+    with connect() as conn:
+        rows = fetchall(conn,
+            "SELECT symbol,name,current_price FROM stocks WHERE is_deleted=0 AND (manager IS NULL OR manager='') ORDER BY symbol")
+    return [{"symbol": r["symbol"], "name": r["name"]} for r in rows]
+
+
+@app.post("/my-companies/claim")
+def claim_company(payload: ManagerRequest, user: dict[str, Any] = Depends(current_user)):
+    """Operator claims management of a company."""
+    symbol = payload.manager.strip().upper()
+    if not symbol:
+        raise HTTPException(status_code=400, detail="invalid_symbol")
+    with connect() as conn:
+        stock = row_dict(fetchone(conn,
+            "SELECT symbol,name,manager,funds_locked FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
+        if not stock:
+            raise HTTPException(status_code=404, detail="stock_not_found")
+        if stock["manager"] and stock["manager"] != user["username"]:
+            raise HTTPException(status_code=409, detail="stock_already_managed")
+        if stock["manager"] == user["username"]:
+            return {"accepted": True, "symbol": symbol, "detail": "already_managed"}
+        company_user = ensure_company_user(conn, symbol, 0)
+        execute(conn, "UPDATE stocks SET manager=? WHERE symbol=?", (user["username"], symbol))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "claim_company", symbol, "operator claimed company"))
+        conn.commit()
+        clear_read_cache()
+    return {"accepted": True, "symbol": symbol}
+
+
 @app.get("/auth/me")
 def me(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     return {

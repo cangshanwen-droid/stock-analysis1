@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
+  claimCompany,
   clearPublicReadCache,
   confirmMyCompanyFunds,
   createAdminStock,
@@ -10,6 +11,7 @@ import {
   deleteAdminStock,
   deleteAdminUser,
   fetchAdminOverview,
+  fetchAvailableCompanies,
   fetchCandles,
   fetchHealth,
   fetchMarket,
@@ -100,6 +102,7 @@ export function TradingWorkspace() {
   const [orderFeedback, setOrderFeedback] = useState<OrderFeedback | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [myCompanies, setMyCompanies] = useState<Array<{symbol: string; name: string; balance: number; fundsLocked: boolean}>>([]);
+  const [availableCompanies, setAvailableCompanies] = useState<Array<{symbol: string; name: string}>>([]);
   const [tradingCompany, setTradingCompany] = useState<string | null>(null);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
@@ -284,11 +287,14 @@ export function TradingWorkspace() {
       setUser(data.user);
       setPortfolio(null);
       setTradingCompany(null);
-      // Fetch managed companies for operator
+      // Fetch managed and available companies for operator
       if (data.user.role !== "admin") {
-        fetchMyCompanies(token).then((companies) => {
+        Promise.all([
+          fetchMyCompanies(token),
+          fetchAvailableCompanies(token)
+        ]).then(([companies, avail]) => {
           setMyCompanies(companies);
-          // Auto-select first company if any
+          setAvailableCompanies(avail);
           if (companies.length > 0) setTradingCompany(companies[0].symbol);
         }).catch(() => {});
       }
@@ -821,6 +827,32 @@ export function TradingWorkspace() {
                   </>
                 )}
               </div>
+              {/* Add company management */}
+              {availableCompanies.length > 0 ? (
+                <div className="section-caption" style={{ marginTop: 12, cursor: "pointer", color: "#469fe6" }}
+                  onClick={async () => {
+                    const symbols = availableCompanies.map((c) => `${c.symbol} ${c.name}`).join("\n");
+                    const pick = window.prompt(`可添加管理的公司：\n${symbols}\n\n输入要添加的公司代码：`);
+                    if (!pick) return;
+                    try {
+                      await claimCompany(token!, pick.trim().toUpperCase());
+                      setOrderMessage(`已添加「${pick.trim().toUpperCase()}」管理权限`);
+                      const [companies, avail] = await Promise.all([
+                        fetchMyCompanies(token!), fetchAvailableCompanies(token!)
+                      ]);
+                      setMyCompanies(companies);
+                      setAvailableCompanies(avail);
+                      if (!tradingCompany && companies.length > 0) setTradingCompany(companies[0].symbol);
+                    } catch (e) {
+                      setOrderMessage(`添加失败：${e instanceof Error ? e.message : ""}`);
+                    }
+                  }}
+                >
+                  + 添加管理公司
+                </div>
+              ) : myCompanies.length > 0 ? (
+                <div className="section-caption" style={{ marginTop: 12, color: "#78839b" }}>已管理所有可用公司</div>
+              ) : null}
               {/* Fund setup for unlocked companies */}
               {myCompanies.filter((c) => !c.fundsLocked).map((company) => (
                 <div key={company.symbol} className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
