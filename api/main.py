@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
-from .trading import ensure_company_user, get_managed_companies, place_order
+from .trading import COMPANY_USER_PREFIX, ensure_company_user, get_managed_companies, place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
@@ -465,8 +465,14 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
 
 
 @app.get("/portfolio")
-def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    username = user["username"]
+def portfolio(company: str | None = None, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    # Determine trader identity: personal or company account
+    if company:
+        company = company.upper()
+        username = f"{COMPANY_USER_PREFIX}{company}]"
+    else:
+        username = user["username"]
+
     cache_key = f"portfolio:{username}"
     cached = cache_get(cache_key, 3.0)
     if cached:

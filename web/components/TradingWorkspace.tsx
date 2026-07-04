@@ -104,6 +104,7 @@ export function TradingWorkspace() {
   const [myCompanies, setMyCompanies] = useState<Array<{symbol: string; name: string; balance: number; fundsLocked: boolean}>>([]);
   const [availableCompanies, setAvailableCompanies] = useState<Array<{symbol: string; name: string}>>([]);
   const [tradingCompany, setTradingCompany] = useState<string | null>(null);
+  const [portfolioCompany, setPortfolioCompany] = useState<string | null>(null);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
@@ -1031,6 +1032,34 @@ export function TradingWorkspace() {
                   {fmtMoney(portfolio?.summary.totalAssets ?? user?.balance ?? 0)}
                 </div>
               </div>
+              {myCompanies.length > 0 ? (
+                <div className="segmented" style={{ marginBottom: 12 }}>
+                  <button
+                    className={!portfolioCompany ? "active" : ""}
+                    onClick={() => {
+                      setPortfolioCompany(null);
+                      if (token) fetchPortfolio(token).then(setPortfolio).catch(() => {});
+                    }}
+                  >
+                    个人账户
+                  </button>
+                  {myCompanies.filter((c) => c.fundsLocked).map((c) => (
+                    <button
+                      key={c.symbol}
+                      className={portfolioCompany === c.symbol ? "active" : ""}
+                      onClick={async () => {
+                        setPortfolioCompany(c.symbol);
+                        try {
+                          const data = await fetchPortfolio(token!, c.symbol);
+                          setPortfolio(data);
+                        } catch { /* ignore */ }
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {!user ? (
                 <div className="empty-state">请先登录交易账号查看资产。</div>
               ) : (

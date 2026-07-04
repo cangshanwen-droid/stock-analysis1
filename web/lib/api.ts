@@ -218,7 +218,7 @@ export async function fetchMyCompanies(token: string) {
   return res.json();
 }
 
-export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> {
+export async function fetchPortfolio(token: string, company?: string): Promise<PortfolioSnapshot> {
   if (!API_BASES.length || token === "demo-token") {
     return {
       user: { username: "player1", role: "player", balance: 1000000 },
@@ -228,7 +228,8 @@ export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> 
       recentTrades: []
     };
   }
-  const res = await fetchApi("/portfolio", {
+  const path = company ? `/portfolio?company=${encodeURIComponent(company)}` : "/portfolio";
+  const res = await fetchApi(path, {
     cache: "no-store",
     headers: { Authorization: `Bearer ${token}` }
   });
