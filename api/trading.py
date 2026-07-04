@@ -171,7 +171,7 @@ def ensure_company_user(conn, stock_symbol: str, init_funds: float) -> str:
     return company_user
 
 
-def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int) -> TradeResult:
+def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int, is_admin: bool = False) -> TradeResult:
     if shares > MAX_ORDER_SHARES:
         return TradeResult(False, f"单笔委托数量不能超过 {MAX_ORDER_SHARES} 股")
     symbol = symbol.upper()
@@ -186,12 +186,16 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
     if price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
 
-    # Check if operator manages a company with locked funds
+    # Determine trader: company-account or personal
     company = get_managed_company(conn, operator)
-    if company and company.get("funds_locked"):
+    if company:
+        if not company.get("funds_locked"):
+            return TradeResult(False, "公司初始资金未锁定，请先联系管理员设置资金")
         if company["symbol"] == symbol:
             return TradeResult(False, "公司不能交易自己的股票")
         trader = f"{COMPANY_USER_PREFIX}{company['symbol']}]"
+    elif not is_admin:
+        return TradeResult(False, "没有管理的公司，无法交易")
     else:
         company = None
         trader = operator

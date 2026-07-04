@@ -517,7 +517,7 @@ def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_u
             "order": payload.model_dump(),
         }
     with connect() as conn:
-        result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares)
+        result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares, is_admin=(user["role"] == "admin"))
         if result.ok:
             conn.commit()
             clear_read_cache()
