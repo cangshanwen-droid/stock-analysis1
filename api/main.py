@@ -595,6 +595,16 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 """,
                 (target_symbol,),
             )
+        # Deduplicate by round — keep last row per round
+        seen: set[int] = set()
+        deduped = []
+        for row in rows:
+            r = int(row["round"] or 0)
+            if r in seen:
+                continue
+            seen.add(r)
+            deduped.append(row)
+        rows = deduped
         start = date(2000, 1, 1)
         return [
             {
