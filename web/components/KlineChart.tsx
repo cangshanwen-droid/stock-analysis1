@@ -288,10 +288,11 @@ function KlineChartCanvas({ candles }: Props) {
 
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
-      const statusText = candle.status === "live" ? "盘中" : "已定稿";
+      const isLive = candle.status === "live";
       const roundText = candle.segment ? `第 ${candle.round} 轮 - 第 ${candle.segment} 段` : `第 ${candle.round} 轮`;
+      const heading = isLive ? `${roundText} · 盘中` : roundText;
       tooltip.innerHTML = `
-        <div class="kline-tip-head">${roundText} · ${statusText}</div>
+        <div class="kline-tip-head">${heading}</div>
         <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
         <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
         <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>
