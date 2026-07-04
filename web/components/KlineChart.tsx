@@ -29,11 +29,11 @@ type DisplayCandle = {
 };
 
 const START_DATE_UTC = Date.UTC(2026, 1, 26);
-const CHART_BACKGROUND = "#0b111d";
-const GRID_MAJOR = "rgba(165, 180, 202, 0.105)";
-const GRID_MINOR = "rgba(165, 180, 202, 0.052)";
+const CHART_BACKGROUND = "#080d16";
+const GRID_MAJOR = "rgba(164, 180, 205, 0.09)";
+const GRID_MINOR = "rgba(164, 180, 205, 0.025)";
 const UP_COLOR = "#f23645";
-const DOWN_COLOR = "#26c296";
+const DOWN_COLOR = "#00b050";
 const MA5_COLOR = "#f9c42f";
 const MA10_COLOR = "#469fe6";
 
@@ -54,21 +54,62 @@ function timeKey(time: Time | unknown) {
   return "";
 }
 
+function displayParts(count: number) {
+  if (count <= 6) return 5;
+  if (count <= 12) return 4;
+  if (count <= 22) return 2;
+  return 1;
+}
+
 function expandCandles(candles: Candle[]): DisplayCandle[] {
-  return candles.map((candle, index) => {
-    const open = round2(candle.open);
-    const close = round2(candle.close);
-    return {
-      round: candle.round,
-      label: `R${candle.round}`,
-      time: dateForIndex(index),
-      open,
-      high: round2(Math.max(candle.high, open, close)),
-      low: round2(Math.min(candle.low, open, close)),
-      close,
-      volume: Math.max(0, Math.round(candle.volume || 0)),
-    };
+  const parts = displayParts(candles.length);
+  const expanded: DisplayCandle[] = [];
+
+  candles.forEach((candle) => {
+    const rawOpen = round2(candle.open);
+    const rawClose = round2(candle.close);
+    const rawHigh = round2(Math.max(candle.high, rawOpen, rawClose));
+    const rawLow = round2(Math.min(candle.low, rawOpen, rawClose));
+    const volume = Math.max(0, Math.round(candle.volume || 0));
+    const priceBase = Math.max(Math.abs(rawClose || rawOpen), 1);
+    const flat = Math.abs(rawClose - rawOpen) < 0.005 && Math.abs(rawHigh - rawLow) < 0.005;
+    const visualRange = flat
+      ? priceBase * 0.006
+      : Math.max(rawHigh - rawLow, Math.abs(rawClose - rawOpen), priceBase * 0.002);
+    let previousClose = rawOpen;
+
+    for (let part = 1; part <= parts; part += 1) {
+      const progress = part / parts;
+      const eased = progress * progress * (3 - 2 * progress);
+      const wave = parts === 1 || part === parts ? 0 : Math.sin(progress * Math.PI * 1.5) * visualRange * 0.18;
+      const localClose = part === parts ? rawClose : round2(rawOpen + (rawClose - rawOpen) * eased + wave);
+      const localOpen = previousClose;
+      const wickBias = visualRange * (0.16 + (part % 2) * 0.06);
+      let localHigh = Math.max(localOpen, localClose) + wickBias;
+      let localLow = Math.min(localOpen, localClose) - wickBias;
+
+      if (part === Math.ceil(parts * 0.45)) localHigh = Math.max(localHigh, rawHigh);
+      if (part === Math.ceil(parts * 0.72)) localLow = Math.min(localLow, rawLow);
+      if (flat) {
+        localHigh = Math.max(localHigh, rawClose + visualRange * 0.42);
+        localLow = Math.min(localLow, rawClose - visualRange * 0.42);
+      }
+
+      expanded.push({
+        round: candle.round,
+        label: parts === 1 ? `R${candle.round}` : `R${candle.round}.${part}`,
+        time: dateForIndex(expanded.length),
+        open: round2(localOpen),
+        high: round2(Math.max(localHigh, localOpen, localClose)),
+        low: round2(Math.max(0.01, Math.min(localLow, localOpen, localClose))),
+        close: round2(localClose),
+        volume: Math.max(1, Math.round(volume / parts)),
+      });
+      previousClose = localClose;
+    }
   });
+
+  return expanded;
 }
 
 function movingAverage(candles: DisplayCandle[], windowSize: number) {
@@ -83,7 +124,7 @@ function movingAverage(candles: DisplayCandle[], windowSize: number) {
 }
 
 export function KlineChart({ candles }: Props) {
-  const hasMeaningfulBars = candles.some((candle) => Math.round(candle.volume || 0) > 0);
+  const hasMeaningfulBars = candles.some((candle) => Math.round(candle.volume || 0) > 0 || Math.abs(candle.close - candle.open) > 0.005);
 
   if (!hasMeaningfulBars) {
     return (
@@ -113,6 +154,7 @@ function KlineChartCanvas({ candles }: Props) {
   const candleLookupRef = useRef<Map<string, DisplayCandle>>(new Map());
 
   const displayCandles = useMemo(() => expandCandles(candles), [candles]);
+  const latest = displayCandles[displayCandles.length - 1];
   const resistancePrice = useMemo(() => {
     if (!candles.length) return 0;
     return round2(Math.max(...candles.map((candle) => Math.max(candle.high, candle.close))));
@@ -156,23 +198,23 @@ function KlineChartCanvas({ candles }: Props) {
         }
       },
       grid: {
-        vertLines: { color: GRID_MINOR, style: LineStyle.Solid, visible: true },
+        vertLines: { color: GRID_MINOR, style: LineStyle.Solid, visible: false },
         horzLines: { color: GRID_MAJOR, style: LineStyle.Solid, visible: true }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(137, 164, 198, 0.5)", width: 1, labelVisible: true },
-        horzLine: { color: "rgba(137, 164, 198, 0.5)", width: 1, labelVisible: true }
+        vertLine: { color: "rgba(137, 164, 198, 0.42)", width: 1, labelVisible: true, style: LineStyle.LargeDashed },
+        horzLine: { color: "rgba(137, 164, 198, 0.42)", width: 1, labelVisible: true, style: LineStyle.LargeDashed }
       },
       rightPriceScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
-        scaleMargins: { top: 0.08, bottom: 0.3 }
+        scaleMargins: { top: 0.08, bottom: 0.28 }
       },
       timeScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
-        rightOffset: 3,
-        barSpacing: 9,
-        minBarSpacing: 5,
+        rightOffset: 8,
+        barSpacing: 7,
+        minBarSpacing: 4,
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
@@ -205,7 +247,7 @@ function KlineChartCanvas({ candles }: Props) {
       priceLineVisible: false
     });
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.72, bottom: 0 }
+      scaleMargins: { top: 0.74, bottom: 0.02 }
     });
 
     const ma5Series = chart.addLineSeries({
@@ -261,13 +303,13 @@ function KlineChartCanvas({ candles }: Props) {
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
       tooltip.innerHTML = `
-        <div class="kline-tip-head">第 ${candle.round} 轮</div>
-        <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
-        <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
-        <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>
-        <div><span>收盘</span><strong>¥${candle.close.toFixed(2)}</strong></div>
-        <div><span>涨跌</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
-        <div><span>成交量</span><strong>${candle.volume}</strong></div>
+        <div class="kline-tip-head">Round ${candle.round}</div>
+        <div><span>Open</span><strong>¥${candle.open.toFixed(2)}</strong></div>
+        <div><span>High</span><strong>¥${candle.high.toFixed(2)}</strong></div>
+        <div><span>Low</span><strong>¥${candle.low.toFixed(2)}</strong></div>
+        <div><span>Close</span><strong>¥${candle.close.toFixed(2)}</strong></div>
+        <div><span>Change</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
+        <div><span>Volume</span><strong>${candle.volume}</strong></div>
       `;
 
       const x = param.point.x > ref.current.clientWidth - 190 ? param.point.x - 184 : param.point.x + 16;
@@ -299,7 +341,7 @@ function KlineChartCanvas({ candles }: Props) {
     volumeRef.current.setData(displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
-      color: candle.close >= candle.open ? "rgba(242,54,69,.34)" : "rgba(38,194,150,.32)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
     })));
 
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
@@ -339,14 +381,14 @@ function KlineChartCanvas({ candles }: Props) {
     }
 
     chartRef.current.timeScale().applyOptions({
-      barSpacing: displayCandles.length <= 8 ? 9 : 8,
-      rightOffset: displayCandles.length <= 8 ? 5 : 3
+      barSpacing: displayCandles.length <= 18 ? 7 : 6,
+      rightOffset: displayCandles.length <= 18 ? 10 : 6
     });
 
-    if (displayCandles.length <= 12) {
+    if (displayCandles.length <= 18) {
       chartRef.current.timeScale().setVisibleLogicalRange({
-        from: -2,
-        to: Math.max(15, displayCandles.length + 5)
+        from: -1,
+        to: Math.max(28, displayCandles.length + 8)
       });
     } else {
       chartRef.current.timeScale().fitContent();
@@ -358,7 +400,12 @@ function KlineChartCanvas({ candles }: Props) {
       <div className="chart-legend">
         <span className="legend-ma5">MA5</span>
         <span className="legend-ma10">MA10</span>
-        <span>成交量</span>
+        <span>VOL</span>
+        {latest ? (
+          <span className="legend-ohlc">
+            O {latest.open.toFixed(2)} H {latest.high.toFixed(2)} L {latest.low.toFixed(2)} C {latest.close.toFixed(2)}
+          </span>
+        ) : null}
       </div>
       <div className="kline-tooltip" ref={tooltipRef} />
       <div className="chart-host" ref={ref} />
