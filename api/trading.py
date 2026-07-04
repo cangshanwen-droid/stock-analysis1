@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .db import execute, fetchall, fetchone, row_dict
+from .market_ops import compute_price, is_system_user
 
 MAX_ORDER_SHARES = 1_000_000
 
@@ -32,6 +33,28 @@ def log_action(conn, actor: str, action: str, target: str = "", detail: str = ""
     )
 
 
+def update_live_stock_price(conn, symbol: str, round_no: int) -> float:
+    stocks = fetchall(conn, "SELECT carbon_price FROM stocks WHERE is_deleted=0")
+    carbon_values = [float(row["carbon_price"] or 50) for row in stocks]
+    market_carbon_mean = sum(carbon_values) / len(carbon_values) if carbon_values else 50
+    stock = row_dict(fetchone(conn, "SELECT * FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
+    if not stock:
+        return 0
+    txns = fetchall(conn, """
+        SELECT username,trade_type,price,shares
+        FROM transactions
+        WHERE stock_symbol=? AND round=?
+    """, (symbol, round_no))
+    real_txns = [txn for txn in txns if not is_system_user(txn["username"])]
+    buy_total = sum(float(txn["price"]) * int(txn["shares"]) for txn in real_txns if txn["trade_type"] == "buy")
+    sell_total = sum(float(txn["price"]) * int(txn["shares"]) for txn in real_txns if txn["trade_type"] in ("sell", "force_close"))
+    if buy_total <= 0 and sell_total <= 0:
+        return round(float(stock["current_price"] or 0), 2)
+    next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
+    execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (next_price, symbol))
+    return next_price
+
+
 def _match_buy(conn, username: str, symbol: str, price: float, shares: int, round_no: int, stock_name: str, balance: float) -> TradeResult:
     remaining = shares
     matched = 0
@@ -60,7 +83,6 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
             continue
         execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, username))
         execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell_order["username"]))
-        execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (match_price, symbol))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (username, symbol, match_price, fill, round_no))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -84,7 +106,6 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
     cost = price * remaining
     if balance >= cost:
         execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (cost, username))
-        execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (price, symbol))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (username, symbol, price, remaining, round_no))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -118,7 +139,6 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
             continue
         execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy_order["username"]))
         execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
-        execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (match_price, symbol))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (buy_order["username"], symbol, match_price, fill, round_no))
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -140,7 +160,6 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
     amount = price * remaining
     execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, username))
-    execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (price, symbol))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
             (username, symbol, price, remaining, round_no))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
@@ -184,5 +203,6 @@ def place_order(conn, username: str, symbol: str, side: str, price: float, share
         if available < shares:
             return TradeResult(False, f"可卖不足：持仓 {holding} 股，已挂单 {int(pending_sell['shares'] or 0)} 股，可用 {available} 股")
         result = _match_sell(conn, username, symbol, price, shares, round_no, str(stock["name"]))
-    log_action(conn, username, f"trade_{side}", symbol, f"round={round_no}, price={price}, shares={shares}, matched={result.matched}")
+    live_price = update_live_stock_price(conn, symbol, round_no) if result.ok else price
+    log_action(conn, username, f"trade_{side}", symbol, f"round={round_no}, price={price}, live_price={live_price}, shares={shares}, matched={result.matched}")
     return result

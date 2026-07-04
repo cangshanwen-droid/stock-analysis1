@@ -23,7 +23,8 @@ def row_get(row: Any, key: str, default=None):
 
 
 def is_system_user(username: Any) -> bool:
-    return str(username or "") in SYSTEM_USERNAMES
+    text = str(username or "")
+    return text in SYSTEM_USERNAMES or (text.startswith("[") and text.endswith("]"))
 
 
 def compute_price(stock: dict[str, Any], carbon_mean: float | None = None) -> float:
