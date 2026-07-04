@@ -137,15 +137,15 @@ export async function fetchCandles(symbol: string, force = false): Promise<Candl
   const request = (async () => {
     try {
       const res = await fetchApi(`/stocks/${encodeURIComponent(symbol)}/kline`);
-      if (!res.ok) return demoCandles(symbol);
+      if (!res.ok) return [];
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         writeCache(cacheKey, data);
         return data;
       }
-      return demoCandles(symbol);
+      return [];
     } catch {
-      return readCache<Candle[]>(cacheKey, Number.MAX_SAFE_INTEGER) ?? demoCandles(symbol);
+      return readCache<Candle[]>(cacheKey, Number.MAX_SAFE_INTEGER) ?? [];
     } finally {
       pendingCandleRequests.delete(symbol);
     }
