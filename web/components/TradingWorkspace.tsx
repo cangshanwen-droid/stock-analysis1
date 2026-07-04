@@ -124,7 +124,7 @@ export function TradingWorkspace() {
     carbonPrice: string;
     premiumRate: string;
   }>>({});
-  const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(Date.now());
+  const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
 
   useEffect(() => {
     let alive = true;
@@ -621,7 +621,7 @@ export function TradingWorkspace() {
     return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
   }, [adminStocks]);
   const liveUpdateText = useMemo(
-    () => new Date(lastMarketUpdate).toLocaleTimeString("zh-CN", { hour12: false }),
+    () => lastMarketUpdate ? new Date(lastMarketUpdate).toLocaleTimeString("zh-CN", { hour12: false }) : "--:--:--",
     [lastMarketUpdate]
   );
 
