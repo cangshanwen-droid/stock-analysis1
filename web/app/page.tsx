@@ -1,5 +1,5 @@
-import { TradingWorkspace } from "../components/TradingWorkspace";
+import { ClientTradingWorkspace } from "../components/ClientTradingWorkspace";
 
 export default function Page() {
-  return <TradingWorkspace />;
+  return <ClientTradingWorkspace />;
 }
