@@ -5,7 +5,6 @@ import json
 import os
 import threading
 import time
-import urllib.request
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any
@@ -78,25 +77,6 @@ def cache_get_or_set(key: str, ttl_seconds: float, loader):
         return cache_set(key, loader(), ttl_seconds)
 
 app = FastAPI(title="Gipfel Trading API", version="0.1.0")
-
-
-def _keep_warm():
-    """Self-ping every 10 minutes to prevent Render free tier from sleeping."""
-    while True:
-        time.sleep(600)
-        try:
-            port = os.environ.get("PORT", "8000")
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5)
-        except Exception:
-            pass
-
-
-@app.on_event("startup")
-def startup():
-    thr = threading.Thread(target=_keep_warm, daemon=True)
-    thr.start()
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
