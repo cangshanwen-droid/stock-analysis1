@@ -353,7 +353,7 @@ def market() -> dict[str, Any]:
         with connect() as conn:
             state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1"))
             stocks = fetchall(conn,
-                "SELECT symbol,name,current_price,previous_close,manager FROM stocks WHERE is_deleted=0 ORDER BY symbol"
+                "SELECT symbol,name,current_price,previous_close,manager,balance,funds_locked FROM stocks WHERE is_deleted=0 ORDER BY symbol"
             )
         is_open = (state or {}).get("state") == "open"
         return {
@@ -370,6 +370,8 @@ def market() -> dict[str, Any]:
                               / (s["previous_close"] or s["current_price"] or 1) * 100)
                     ),
                     "manager": s["manager"] or "",
+                    "fundsLocked": bool(s["funds_locked"]),
+                    "companyBalance": float(s["balance"] or 0),
                 }
                 for s in stocks
             ],
@@ -959,6 +961,32 @@ def admin_confirm_stock_funds(symbol: str, payload: ConfirmFundsRequest, user: d
         execute(conn, "UPDATE users SET balance=? WHERE username=?", (init_funds, company_user))
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "confirm_funds", target_symbol, f"init_funds={init_funds}"))
+        conn.commit()
+        clear_read_cache()
+    return {"accepted": True, "symbol": target_symbol, "initFunds": init_funds}
+
+
+@app.post("/my-company/confirm-funds")
+def operator_confirm_funds(payload: ConfirmFundsRequest, user: dict[str, Any] = Depends(current_user)):
+    """Operator sets their managed company's initial funds (one-time)."""
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet"}
+    with connect() as conn:
+        stock = row_dict(fetchone(conn,
+            "SELECT symbol,init_funds,funds_locked,balance FROM stocks WHERE manager=? AND is_deleted=0",
+            (user["username"],)))
+        if not stock:
+            raise HTTPException(status_code=400, detail="no_managed_company")
+        if stock["funds_locked"]:
+            raise HTTPException(status_code=400, detail="funds_already_locked")
+        init_funds = round(payload.init_funds, 2)
+        target_symbol = stock["symbol"]
+        company_user = ensure_company_user(conn, target_symbol, init_funds)
+        execute(conn, "UPDATE stocks SET init_funds=?, balance=?, funds_locked=1 WHERE symbol=?",
+                (init_funds, init_funds, target_symbol))
+        execute(conn, "UPDATE users SET balance=? WHERE username=?", (init_funds, company_user))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "operator_confirm_funds", target_symbol, f"init_funds={init_funds}"))
         conn.commit()
         clear_read_cache()
     return {"accepted": True, "symbol": target_symbol, "initFunds": init_funds}

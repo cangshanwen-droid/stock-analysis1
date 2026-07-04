@@ -5,6 +5,8 @@ export type StockQuote = {
   change: number;
   changePct: number;
   manager: string;
+  fundsLocked: boolean;
+  companyBalance: number;
 };
 
 export type Candle = {

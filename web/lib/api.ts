@@ -18,10 +18,10 @@ const fallbackMarket: MarketSnapshot = {
   round: 1,
   state: "open",
   stocks: [
-    { symbol: "JGONG", name: "加工1公司", price: 20, change: 0, changePct: 0, manager: "" },
-    { symbol: "JXIAO", name: "经销1公司", price: 15, change: 0, changePct: 0, manager: "" },
-    { symbol: "WULIU", name: "物流1公司", price: 10, change: 0, changePct: 0, manager: "" },
-    { symbol: "YLIAO", name: "原料1公司", price: 25, change: 0, changePct: 0, manager: "" }
+    { symbol: "JGONG", name: "加工1公司", price: 20, change: 0, changePct: 0, manager: "", fundsLocked: false, companyBalance: 0 },
+    { symbol: "JXIAO", name: "经销1公司", price: 15, change: 0, changePct: 0, manager: "", fundsLocked: false, companyBalance: 0 },
+    { symbol: "WULIU", name: "物流1公司", price: 10, change: 0, changePct: 0, manager: "", fundsLocked: false, companyBalance: 0 },
+    { symbol: "YLIAO", name: "原料1公司", price: 25, change: 0, changePct: 0, manager: "", fundsLocked: false, companyBalance: 0 }
   ]
 };
 
@@ -421,6 +421,19 @@ export async function runDbMigration(token: string) {
     body: JSON.stringify({})
   });
   if (!res.ok) throw await apiError(res, "migration_failed");
+  return res.json();
+}
+
+export async function confirmMyCompanyFunds(token: string, initFunds: number) {
+  const res = await fetchApi("/my-company/confirm-funds", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ init_funds: initFunds })
+  });
+  if (!res.ok) throw await apiError(res, "confirm_funds_failed");
   return res.json();
 }
 

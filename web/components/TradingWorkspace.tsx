@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
   clearPublicReadCache,
-  confirmStockFunds,
+  confirmMyCompanyFunds,
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
@@ -120,8 +120,7 @@ export function TradingWorkspace() {
     carbonPrice: "50",
     premiumRate: "50"
   });
-  const [fundingStock, setFundingStock] = useState<string | null>(null);
-  const [fundAmount, setFundAmount] = useState("5000");
+  const [companyFundAmount, setCompanyFundAmount] = useState("5000");
   const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, {
     revenue: string;
@@ -603,24 +602,6 @@ export function TradingWorkspace() {
     }
   }
 
-  async function submitConfirmFunds(stock: AdminStock) {
-    if (!token || user?.role !== "admin") return;
-    const amount = Number(fundAmount);
-    if (!amount || amount <= 0) { setAdminMessage("请输入有效的初始资金"); return; }
-    if (!window.confirm(`确认锁定「${stock.name}」初始资金 ¥${amount.toLocaleString()}？锁定后不可修改。`)) return;
-    setAdminMessage("");
-    try {
-      const result = await confirmStockFunds(token, stock.symbol, amount);
-      setAdminMessage(`${stock.name} 初始资金已锁定为 ¥${(result.initFunds || amount).toLocaleString()}`);
-      setFundingStock(null);
-      setFundAmount("5000");
-      await refreshAdminOverview();
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "";
-      setAdminMessage(`锁定资金失败：${detail || "请稍后重试"}`);
-    }
-  }
-
   const marketActionText = pendingMarketAction === "close"
     ? "收盘结算"
     : pendingMarketAction === "open"
@@ -786,19 +767,69 @@ export function TradingWorkspace() {
               <div className="account-box">
                 <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
                 <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
-                {(stocks.find((s) => s.manager === user.username) && user.role !== "admin") ? (
-                  <>
-                    <div className="row"><span>管理公司</span><strong>{stocks.find((s) => s.manager === user.username)?.name ?? "-"}</strong></div>
-                    <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                  </>
-                ) : (
-                  <>
-                    <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                    <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
-                    <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
-                  </>
-                )}
+                {(() => {
+                  const company = stocks.find((s) => s.manager === user.username);
+                  if (company && user.role !== "admin") {
+                    return (
+                      <>
+                        <div className="row"><span>管理公司</span><strong>{company.name}</strong></div>
+                        {company.fundsLocked ? (
+                          <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.companyBalance)}</strong></div>
+                        ) : null}
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                      <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
+                      <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                    </>
+                  );
+                })()}
               </div>
+              {(() => {
+                const company = stocks.find((s) => s.manager === user.username);
+                if (company && !company.fundsLocked && user.role !== "admin") {
+                  return (
+                    <div className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                      <div className="section-caption">设置初始资金</div>
+                      <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>
+                        请为「{company.name}」设置初始资金，确认后不可修改。
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ color: "#aeb9ca" }}>¥</span>
+                        <input
+                          type="number"
+                          value={companyFundAmount}
+                          onChange={(e) => setCompanyFundAmount(e.target.value)}
+                          style={{ flex: 1 }}
+                          placeholder="输入初始资金"
+                        />
+                        <button
+                          className="primary"
+                          onClick={async () => {
+                            const amount = Number(companyFundAmount);
+                            if (!amount || amount <= 0) { setOrderMessage("请输入有效的金额"); return; }
+                            if (!window.confirm(`确认设置初始资金 ¥${amount.toLocaleString("zh-CN")}？设置后不可修改。`)) return;
+                            try {
+                              await confirmMyCompanyFunds(token!, amount);
+                              setOrderMessage("初始资金已设置");
+                              const nextMarket = await fetchMarket(true);
+                              setMarket(nextMarket);
+                            } catch (e) {
+                              setOrderMessage(`设置失败：${e instanceof Error ? e.message : ""}`);
+                            }
+                          }}
+                        >
+                          确认
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             <div className="segmented">
               <button
                 className={side === "buy" ? "buy active" : ""}
@@ -1296,26 +1327,6 @@ export function TradingWorkspace() {
                                       ))}
                                     </select>
                                     <button className="mini-action" onClick={() => submitSetManager(stock)}>保存</button>
-                                  </div>
-                                </div>
-                                <div className="field">
-                                  <label>公司资金</label>
-                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                    <strong>{fmtMoney(stock.balance || stock.initFunds || 0)}</strong>
-                                    {stock.fundsLocked ? (
-                                      <span className="tag-locked">已锁定</span>
-                                    ) : (
-                                      <>
-                                        <input
-                                          type="number"
-                                          defaultValue="5000"
-                                          onChange={(e) => setFundAmount(e.target.value)}
-                                          style={{ width: 80 }}
-                                          placeholder="金额"
-                                        />
-                                        <button className="mini-action" onClick={() => submitConfirmFunds(stock)}>锁定资金</button>
-                                      </>
-                                    )}
                                   </div>
                                 </div>
                               </div>
