@@ -996,19 +996,19 @@ export function TradingWorkspace() {
                   {fmtMoney(portfolio?.summary.totalAssets ?? user?.balance ?? 0)}
                 </div>
               </div>
-              {/* Portfolio account selector + add company */}
-              {myCompanies.filter((c) => c.fundsLocked).length > 0 ? (
+              {/* Portfolio account selector — all companies shown */}
+              {myCompanies.length > 0 ? (
                 <div className="segmented" style={{ marginBottom: 12 }}>
-                  {myCompanies.filter((c) => c.fundsLocked).map((c) => (
+                  {myCompanies.map((c) => (
                     <button
                       key={c.symbol}
                       className={portfolioCompany === c.symbol ? "active" : ""}
                       onClick={async () => {
                         setPortfolioCompany(c.symbol);
-                        try {
-                          const data = await fetchPortfolio(token!, c.symbol);
-                          setPortfolio(data);
-                        } catch { /* ignore */ }
+                        if (c.fundsLocked) {
+                          try { const data = await fetchPortfolio(token!, c.symbol); setPortfolio(data); }
+                          catch { /* ignore */ }
+                        }
                       }}
                     >
                       {c.name}
@@ -1016,8 +1016,9 @@ export function TradingWorkspace() {
                   ))}
                 </div>
               ) : null}
+              {/* Add company */}
               {availableCompanies.length > 0 ? (
-                <div className="section-caption" style={{ cursor: "pointer", color: "#469fe6", marginBottom: 8 }}
+                <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
                   onClick={async () => {
                     const symbols = availableCompanies.map((c) => `${c.symbol} ${c.name}`).join("\n");
                     const pick = window.prompt(`可添加管理的公司：\n${symbols}\n\n输入要添加的公司代码：`);
@@ -1027,37 +1028,67 @@ export function TradingWorkspace() {
                       const [companies, avail] = await Promise.all([
                         fetchMyCompanies(token!), fetchAvailableCompanies(token!)
                       ]);
-                      setMyCompanies(companies);
-                      setAvailableCompanies(avail);
+                      setMyCompanies(companies); setAvailableCompanies(avail);
                     } catch (e) { /* ignore */ }
                   }}
                 >
                   + 添加管理公司
                 </div>
               ) : null}
-              {!user ? (
-                <div className="empty-state">请先登录交易账号查看资产。</div>
-              ) : (
-                <div className="asset-grid">
-                  <div><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                  <div><span>持仓市值</span><strong>{fmtMoney(portfolio?.summary.marketValue ?? 0)}</strong></div>
-                  <div><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
-                  <div><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
-                </div>
-              )}
-              {portfolio?.positions.length ? (
-                <div className="data-table">
-                  <div className="table-row table-head"><span>公司</span><span>数量</span><span>成本</span><span>市值</span><span>盈亏</span></div>
-                  {portfolio.positions.map((pos) => (
-                    <div className="table-row" key={pos.symbol}>
-                      <span>{pos.name}</span>
-                      <span>{pos.shares}</span>
-                      <span>{fmtMoney(pos.avgCost)}</span>
-                      <span>{fmtMoney(pos.marketValue)}</span>
-                      <span className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</span>
-                    </div>
-                  ))}
-                </div>
+              {/* Company content: fund setup or portfolio */}
+              {portfolioCompany ? (
+                (() => {
+                  const company = myCompanies.find((c) => c.symbol === portfolioCompany);
+                  if (!company) return null;
+                  if (!company.fundsLocked) {
+                    return (
+                      <div className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                        <div className="section-caption">设置「{company.name}」初始资金</div>
+                        <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>设置后不可修改。</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ color: "#aeb9ca" }}>¥</span>
+                          <input type="number" value={companyFundAmount} onChange={(e) => setCompanyFundAmount(e.target.value)} style={{ flex: 1 }} placeholder="输入初始资金" />
+                          <button className="primary" onClick={async () => {
+                            const amount = Number(companyFundAmount);
+                            if (!amount || amount <= 0) return;
+                            if (!window.confirm(`确认「${company.name}」初始资金 ¥${amount.toLocaleString("zh-CN")}？`)) return;
+                            try {
+                              await confirmMyCompanyFunds(token!, amount);
+                              const companies = await fetchMyCompanies(token!);
+                              setMyCompanies(companies);
+                              // Reload portfolio
+                              const data = await fetchPortfolio(token!, company.symbol);
+                              setPortfolio(data);
+                            } catch (e) { /* ignore */ }
+                          }}>确认</button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="asset-grid">
+                        <div><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? 0)}</strong></div>
+                        <div><span>持仓市值</span><strong>{fmtMoney(portfolio?.summary.marketValue ?? 0)}</strong></div>
+                        <div><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? 0)}</strong></div>
+                        <div><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                      </div>
+                      {portfolio?.positions.length ? (
+                        <div className="data-table">
+                          <div className="table-row table-head"><span>公司</span><span>数量</span><span>成本</span><span>市值</span><span>盈亏</span></div>
+                          {portfolio.positions.map((pos) => (
+                            <div className="table-row" key={pos.symbol}>
+                              <span>{pos.name}</span><span>{pos.shares}</span><span>{fmtMoney(pos.avgCost)}</span><span>{fmtMoney(pos.marketValue)}</span>
+                              <span className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div className="empty-state" style={{ padding: "16px 0", fontSize: 13 }}>暂无持仓。</div>}
+                    </>
+                  );
+                })()
+              ) : myCompanies.length > 0 ? (
+                <div className="empty-state" style={{ padding: "16px 0" }}>请选择上方一个公司查看资产。</div>
               ) : null}
             </div>
           </section>
