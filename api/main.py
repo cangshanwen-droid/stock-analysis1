@@ -262,8 +262,7 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     return user
 
 
-@app.get("/health", include_in_schema=False)
-@app.head("/health", include_in_schema=False)
+@app.get("/health")
 def health() -> dict[str, Any]:
     return {
         "ok": True,
