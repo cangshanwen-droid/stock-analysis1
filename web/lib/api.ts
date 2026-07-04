@@ -474,6 +474,32 @@ export async function createFundAccount(token: string, name: string, initialBala
   return data;
 }
 
+export async function updateFundAccountBalance(token: string, accountId: number, balance: number) {
+  const res = await fetchApi(`/fund-accounts/${encodeURIComponent(String(accountId))}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ balance })
+  });
+  if (!res.ok) throw await apiError(res, "update_fund_account_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "update_fund_account_failed");
+  return data;
+}
+
+export async function deleteFundAccount(token: string, accountId: number) {
+  const res = await fetchApi(`/fund-accounts/${encodeURIComponent(String(accountId))}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw await apiError(res, "delete_fund_account_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_fund_account_failed");
+  return data;
+}
+
 export async function fetchAvailableCompanies(token: string) {
   if (!API_BASES.length || token === "demo-token") return [];
   const res = await fetchApi("/available-companies", {

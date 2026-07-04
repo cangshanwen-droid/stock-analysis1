@@ -230,6 +230,10 @@ class CreateFundAccountRequest(BaseModel):
     initial_balance: float = Field(gt=0, le=1_000_000_000_000)
 
 
+class UpdateFundAccountRequest(BaseModel):
+    balance: float = Field(ge=0, le=1_000_000_000_000)
+
+
 def initial_stock_price(revenue: float, total_shares: float, industry_pe: float) -> float:
     return round(revenue * 10000 / total_shares / industry_pe, 2)
 
@@ -258,7 +262,12 @@ def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
         WHERE owner=?
         ORDER BY id
     """, (owner,))
-    if not rows:
+    deleted_before = fetchone(conn, """
+        SELECT id FROM audit_logs
+        WHERE actor=? AND action='delete_fund_account'
+        LIMIT 1
+    """, (owner,))
+    if not rows and not deleted_before:
         user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (owner,)))
         initial_balance = round(float((user_row or {}).get("balance") or 1_000_000), 2)
         fetchone(conn, """
@@ -439,6 +448,62 @@ def create_fund_account(payload: CreateFundAccountRequest, user: dict[str, Any] 
                 (user["username"], "create_fund_account", str(account_id), f"name={name}, initial_balance={amount}"))
         conn.commit()
     return {"accepted": True, "id": account_id, "symbol": str(account_id), "name": name, "balance": amount, "fundsLocked": True}
+
+
+@app.patch("/fund-accounts/{account_id}")
+def update_fund_account(account_id: int, payload: UpdateFundAccountRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if not ENABLE_ORDER_WRITES:
+        return {"accepted": False, "reason": "order_api_not_enabled_yet", "detail": "Set ENABLE_ORDER_WRITES=true to update fund accounts."}
+    amount = round(payload.balance, 2)
+    with connect() as conn:
+        ensure_fund_accounts_schema(conn)
+        account = row_dict(fetchone(conn, "SELECT id,name,balance FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"])))
+        if not account:
+            raise HTTPException(status_code=404, detail="fund_account_not_found")
+        execute(conn, "UPDATE fund_accounts SET balance=? WHERE id=?", (amount, account_id))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "update_fund_account_balance", str(account_id),
+                 f"name={account['name']}, old_balance={float(account['balance'] or 0)}, new_balance={amount}"))
+        conn.commit()
+    return {"accepted": True, "id": account_id, "balance": amount}
+
+
+@app.delete("/fund-accounts/{account_id}")
+def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if not ENABLE_ORDER_WRITES:
+        return {"accepted": False, "reason": "order_api_not_enabled_yet", "detail": "Set ENABLE_ORDER_WRITES=true to delete fund accounts."}
+    trader = f"[账户:{account_id}]"
+    mojibake_trader = f"[璐︽埛:{account_id}]"
+    with connect() as conn:
+        ensure_fund_accounts_schema(conn)
+        account = row_dict(fetchone(conn, "SELECT id,name FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"])))
+        if not account:
+            raise HTTPException(status_code=404, detail="fund_account_not_found")
+        open_orders = fetchone(conn, """
+            SELECT COUNT(*) AS count FROM order_book
+            WHERE username IN (?,?)
+        """, (trader, mojibake_trader))
+        if int(open_orders["count"] or 0) > 0:
+            raise HTTPException(status_code=400, detail="fund_account_has_open_orders")
+        holding_rows = fetchall(conn, """
+            SELECT stock_symbol,
+                   COALESCE(SUM(CASE WHEN trade_type='buy' THEN shares ELSE 0 END),0) AS bought,
+                   COALESCE(SUM(CASE WHEN trade_type IN('sell','force_close') THEN shares ELSE 0 END),0) AS sold
+            FROM transactions
+            WHERE username IN (?,?)
+            GROUP BY stock_symbol
+        """, (trader, mojibake_trader))
+        active_positions = [
+            row for row in holding_rows
+            if int(row["bought"] or 0) - int(row["sold"] or 0) > 0
+        ]
+        if active_positions:
+            raise HTTPException(status_code=400, detail="fund_account_has_positions")
+        execute(conn, "DELETE FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"]))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "delete_fund_account", str(account_id), f"name={account['name']}"))
+        conn.commit()
+    return {"accepted": True, "id": account_id}
 
 
 @app.get("/available-companies")

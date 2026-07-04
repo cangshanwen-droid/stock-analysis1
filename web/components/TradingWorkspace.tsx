@@ -10,6 +10,7 @@ import {
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
+  deleteFundAccount,
   deleteAdminUser,
   fetchAdminOverview,
   fetchAvailableCompanies,
@@ -25,6 +26,7 @@ import {
   runDbMigration,
   setStockManager,
   submitOrder,
+  updateFundAccountBalance,
   updateAdminStock,
   updateAdminUserStatus
 } from "../lib/api";
@@ -34,6 +36,7 @@ import { KlineChart } from "./KlineChart";
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset" | "previous";
 type OrderStatus = "idle" | "success" | "error";
+type FundAccount = { symbol: string; name: string; balance: number; fundsLocked: boolean };
 const MAX_ORDER_SHARES = 1_000_000;
 type OrderFeedback = {
   status: string;
@@ -102,7 +105,7 @@ export function TradingWorkspace() {
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
   const [orderFeedback, setOrderFeedback] = useState<OrderFeedback | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
-  const [myCompanies, setMyCompanies] = useState<Array<{symbol: string; name: string; balance: number; fundsLocked: boolean}>>([]);
+  const [myCompanies, setMyCompanies] = useState<FundAccount[]>([]);
   const [availableCompanies, setAvailableCompanies] = useState<Array<{symbol: string; name: string}>>([]);
   const [tradingCompany, setTradingCompany] = useState<string | null>(null);
   const [portfolioCompany, setPortfolioCompany] = useState<string | null>(null);
@@ -276,6 +279,25 @@ export function TradingWorkspace() {
     if (!stocks.length) return;
     prefetchCandles(stocks.map((stock) => stock.symbol));
   }, [stocks]);
+
+  async function reloadFundAccounts(preferredSymbol?: string | null) {
+    if (!token) return [];
+    const accounts: FundAccount[] = await fetchMyCompanies(token);
+    setMyCompanies(accounts);
+    const nextAccount = accounts.find((account) => account.symbol === preferredSymbol) ?? accounts[0];
+    if (nextAccount) {
+      setTradingCompany(nextAccount.symbol);
+      setPortfolioCompany(nextAccount.symbol);
+      const data = await fetchPortfolio(token, nextAccount.symbol);
+      setPortfolio(data);
+      setUser(data.user);
+    } else {
+      setTradingCompany(null);
+      setPortfolioCompany(null);
+      setPortfolio(null);
+    }
+    return accounts;
+  }
 
   async function submitTrade() {
     if (!user || !current || !token) return;
@@ -984,17 +1006,10 @@ export function TradingWorkspace() {
                   const amountText = window.prompt("输入初始资金金额：", "1000000");
                   const amount = Number(amountText);
                   if (!Number.isFinite(amount) || amount <= 0) return;
-                  if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？确认后不可修改。`)) return;
+                  if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
                   try {
                     await createFundAccount(token!, name.trim(), amount);
-                    const companies = await fetchMyCompanies(token!);
-                    setMyCompanies(companies);
-                    if (companies[0]) {
-                      setTradingCompany(companies[0].symbol);
-                      setPortfolioCompany(companies[0].symbol);
-                      const data = await fetchPortfolio(token!, companies[0].symbol);
-                      setPortfolio(data);
-                    }
+                    await reloadFundAccounts();
                   } catch (e) {
                     setOrderMessage(`创建资金账户失败：${e instanceof Error ? e.message : ""}`);
                   }
@@ -1034,6 +1049,41 @@ export function TradingWorkspace() {
                   }
                   return (
                     <>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                        <button className="ghost" onClick={async () => {
+                          const nextBalanceText = window.prompt(`输入「${company.name}」新的可用资金：`, String(company.balance));
+                          if (nextBalanceText === null) return;
+                          const nextBalance = Number(nextBalanceText);
+                          if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+                            setOrderMessage("资金修改失败：请输入不小于 0 的数字。");
+                            return;
+                          }
+                          if (!window.confirm(`确认将「${company.name}」可用资金修改为 ${fmtMoney(nextBalance)}？`)) return;
+                          try {
+                            await updateFundAccountBalance(token!, Number(company.symbol), nextBalance);
+                            await reloadFundAccounts(company.symbol);
+                            setOrderMessage(`资金账户「${company.name}」可用资金已修改为 ${fmtMoney(nextBalance)}。`);
+                          } catch (e) {
+                            setOrderMessage(`资金修改失败：${e instanceof Error ? e.message : ""}`);
+                          }
+                        }}>修改可用资金</button>
+                        <button className="danger-button" onClick={async () => {
+                          if (!window.confirm(`确认删除资金账户「${company.name}」？有持仓或未完成挂单的账户不能删除。`)) return;
+                          try {
+                            await deleteFundAccount(token!, Number(company.symbol));
+                            await reloadFundAccounts(null);
+                            setOrderMessage(`资金账户「${company.name}」已删除。`);
+                          } catch (e) {
+                            const detail = e instanceof Error ? e.message : "";
+                            const readable = detail.includes("fund_account_has_positions")
+                              ? "该账户仍有持仓，不能删除。"
+                              : detail.includes("fund_account_has_open_orders")
+                                ? "该账户仍有未完成挂单，不能删除。"
+                                : detail;
+                            setOrderMessage(`删除资金账户失败：${readable}`);
+                          }
+                        }}>删除账户</button>
+                      </div>
                       <div className="asset-grid">
                         <div><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? 0)}</strong></div>
                         <div><span>持仓市值</span><strong>{fmtMoney(portfolio?.summary.marketValue ?? 0)}</strong></div>
