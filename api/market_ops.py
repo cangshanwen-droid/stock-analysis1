@@ -67,25 +67,33 @@ def close_market(conn) -> MarketResult:
         total_buy_shares = sum(int(b["shares"]) for b in buys)
         total_sell_shares = sum(int(s["shares"]) for s in sells)
         executable = min(total_buy_shares, total_sell_shares)
-        buy_ratio = executable / total_buy_shares if total_buy_shares else 0
-        sell_ratio = executable / total_sell_shares if total_sell_shares else 0
-        for buy in buys:
-            fill = int(int(buy["shares"]) * buy_ratio)
+
+        # Proportional match, last order absorbs rounding so both sides sum to exactly executable
+        buy_matched = 0
+        for idx, buy in enumerate(buys):
+            raw = int(buy["shares"]) * executable / total_buy_shares
+            fill = executable - buy_matched if idx == len(buys) - 1 else int(raw)
+            fill = min(fill, int(buy["shares"]), executable - buy_matched)
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
             execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                     (buy["username"], symbol, match_price, fill, round_no))
+            buy_matched += fill
             matched_shares += fill
-        for sell in sells:
-            fill = int(int(sell["shares"]) * sell_ratio)
+        sell_matched = 0
+        for idx, sell in enumerate(sells):
+            raw = int(sell["shares"]) * executable / total_sell_shares
+            fill = executable - sell_matched if idx == len(sells) - 1 else int(raw)
+            fill = min(fill, int(sell["shares"]), executable - sell_matched)
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
             execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
                     (sell["username"], symbol, match_price, fill, round_no))
+            sell_matched += fill
     execute(conn, "DELETE FROM order_book")
 
     settled = 0
@@ -101,7 +109,7 @@ def close_market(conn) -> MarketResult:
         txns = fetchall(conn, "SELECT username,trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=?", (symbol, current_round))
         real_txns = [t for t in txns if not is_system_user(t["username"])]
         buy_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
-        sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] == "sell")
+        sell_total = sum(float(t["price"]) * int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
         buy_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] == "buy")
         sell_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
         volume = max(buy_volume, sell_volume)

@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from .db import execute, fetchall, fetchone, row_dict
-from .market_ops import compute_price, is_system_user
 
 MAX_ORDER_SHARES = 1_000_000
 
@@ -32,27 +31,6 @@ def log_action(conn, actor: str, action: str, target: str = "", detail: str = ""
         (actor or "system", action, target or "", detail or ""),
     )
 
-
-def update_live_stock_price(conn, symbol: str, round_no: int) -> float:
-    stocks = fetchall(conn, "SELECT carbon_price FROM stocks WHERE is_deleted=0")
-    carbon_values = [float(row["carbon_price"] or 50) for row in stocks]
-    market_carbon_mean = sum(carbon_values) / len(carbon_values) if carbon_values else 50
-    stock = row_dict(fetchone(conn, "SELECT * FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
-    if not stock:
-        return 0
-    txns = fetchall(conn, """
-        SELECT username,trade_type,price,shares
-        FROM transactions
-        WHERE stock_symbol=? AND round=?
-    """, (symbol, round_no))
-    real_txns = [txn for txn in txns if not is_system_user(txn["username"])]
-    buy_total = sum(float(txn["price"]) * int(txn["shares"]) for txn in real_txns if txn["trade_type"] == "buy")
-    sell_total = sum(float(txn["price"]) * int(txn["shares"]) for txn in real_txns if txn["trade_type"] in ("sell", "force_close"))
-    if buy_total <= 0 and sell_total <= 0:
-        return round(float(stock["current_price"] or 0), 2)
-    next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
-    execute(conn, "UPDATE stocks SET current_price=? WHERE symbol=?", (next_price, symbol))
-    return next_price
 
 
 def _match_buy(conn, username: str, symbol: str, price: float, shares: int, round_no: int, stock_name: str, balance: float) -> TradeResult:
