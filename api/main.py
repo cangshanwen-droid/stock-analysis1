@@ -927,9 +927,11 @@ def admin_set_stock_manager(symbol: str, payload: ManagerRequest, user: dict[str
         if not stock:
             raise HTTPException(status_code=404, detail="stock_not_found")
         if manager:
-            target_user = fetchone(conn, "SELECT username FROM users WHERE username=?", (manager,))
+            target_user = row_dict(fetchone(conn, "SELECT username,role FROM users WHERE username=?", (manager,)))
             if not target_user:
                 raise HTTPException(status_code=404, detail="manager_not_found")
+            if target_user["role"] != "player":
+                raise HTTPException(status_code=400, detail="only_player_can_be_manager")
             # Create company user if not exists
             ensure_company_user(conn, target_symbol, float(stock["init_funds"] or 0))
             execute(conn, "UPDATE stocks SET manager=? WHERE symbol=?", (manager, target_symbol))
