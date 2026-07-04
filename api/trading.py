@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from .db import execute, fetchall, fetchone, row_dict
+from .db import execute, fetchall, fetchone, is_postgres, row_dict
 
 MAX_ORDER_SHARES = 1_000_000
 
@@ -158,6 +158,10 @@ def place_order(conn, username: str, symbol: str, side: str, price: float, share
     price = round(float(stock["current_price"] or 0), 2)
     if price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
+    # Serialize concurrent orders for the same stock via PostgreSQL advisory lock
+    if is_postgres():
+        lock_id = hash(symbol) & 0x7FFFFFFF
+        execute(conn, "SELECT pg_advisory_xact_lock(%s)", (lock_id,))
     if side == "buy":
         user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,)))
         if not user_row:

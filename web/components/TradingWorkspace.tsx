@@ -170,10 +170,10 @@ export function TradingWorkspace() {
 
     const marketTimer = window.setInterval(() => {
       void refreshLiveMarket(true, false);
-    }, 4000);
+    }, 6000);
     const candleTimer = window.setInterval(() => {
       void refreshLiveMarket(true, true);
-    }, 4000);
+    }, 10000);
 
     const onVisible = () => {
       if (!document.hidden) void refreshLiveMarket(true, true);

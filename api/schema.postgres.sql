@@ -91,10 +91,12 @@ CREATE TABLE IF NOT EXISTS order_book (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(username);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_stock ON transactions(username, stock_symbol);
 CREATE INDEX IF NOT EXISTS idx_transactions_stock_round ON transactions(stock_symbol, round);
 CREATE INDEX IF NOT EXISTS idx_kline_stock_round ON kline(stock_symbol, round);
 CREATE INDEX IF NOT EXISTS idx_order_book_user ON order_book(username);
 CREATE INDEX IF NOT EXISTS idx_order_book_stock_side ON order_book(stock_symbol, trade_type);
+CREATE INDEX IF NOT EXISTS idx_rounds_settled ON rounds(is_settled);
 
 INSERT INTO market_state(id, state, round)
 VALUES (1, 'open', 1)

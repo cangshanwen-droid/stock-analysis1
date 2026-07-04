@@ -6,6 +6,7 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", ROOT_DIR / "data" / "stock_analysis.db"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
+_pool = None
 
 
 class DatabaseNotReady(RuntimeError):
@@ -16,12 +17,37 @@ def is_postgres() -> bool:
     return bool(DATABASE_URL)
 
 
+def get_pool():
+    global _pool
+    if is_postgres() and _pool is None:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        try:
+            import psycopg_pool
+
+            _pool = psycopg_pool.ConnectionPool(
+                DATABASE_URL,
+                min_size=1,
+                max_size=10,
+                open=True,
+                timeout=5,
+                kwargs={"row_factory": dict_row},
+            )
+        except ImportError:
+            _pool = None
+    return _pool
+
+
 def bind(sql: str) -> str:
     return sql.replace("?", "%s") if is_postgres() else sql
 
 
 def connect():
     if is_postgres():
+        pool = get_pool()
+        if pool:
+            return pool.connection()
         import psycopg
         from psycopg.rows import dict_row
 

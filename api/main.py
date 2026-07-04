@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+from collections import defaultdict
 from datetime import date, timedelta
 from typing import Any
 
@@ -95,6 +96,38 @@ async def add_public_read_cache_headers(request: Request, call_next):
         elif path.startswith("/stocks/") and path.endswith("/kline"):
             response.headers["Cache-Control"] = "public, max-age=2, stale-while-revalidate=8"
     return response
+
+
+# Rate limiting — in-memory sliding window per IP
+_RATE_WINDOW = 60.0
+_RATE_LIMITS = {"read": 60, "write": 20}
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+def _rate_limit(ip: str, limit: int) -> bool:
+    now = time.monotonic()
+    bucket = _rate_buckets[ip]
+    cutoff = now - _RATE_WINDOW
+    while bucket and bucket[0] < cutoff:
+        bucket.pop(0)
+    if len(bucket) >= limit:
+        return False
+    bucket.append(now)
+    return True
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Skip rate limiting for admin endpoints and health
+    path = request.url.path
+    if path.startswith("/admin") or path in ("/", "/health"):
+        return await call_next(request)
+    client_ip = request.client.host if request.client else "unknown"
+    is_write = request.method in ("POST", "PATCH", "DELETE")
+    limit = _RATE_LIMITS["write"] if is_write else _RATE_LIMITS["read"]
+    if not _rate_limit(client_ip, limit):
+        return JSONResponse(status_code=429, content={"detail": "too_many_requests", "retry_after": 60})
+    return await call_next(request)
 
 
 @app.exception_handler(DatabaseNotReady)
@@ -420,6 +453,10 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
 @app.get("/portfolio")
 def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     username = user["username"]
+    cache_key = f"portfolio:{username}"
+    cached = cache_get(cache_key, 3.0)
+    if cached:
+        return cached
     with connect() as conn:
         stocks = {
             row["symbol"]: row_dict(row)
@@ -492,7 +529,7 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         })
     total_assets = float(user["balance"] or 0) + total_market_value
     total_pnl = total_market_value - total_cost
-    return {
+    result = {
         "user": {"username": username, "role": user["role"], "balance": float(user["balance"] or 0)},
         "summary": {
             "marketValue": round(total_market_value, 2),
@@ -504,6 +541,8 @@ def portfolio(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         "orders": [dict(row) for row in orders],
         "recentTrades": [dict(row) for row in recent],
     }
+    cache_set(f"portfolio:{username}", result, 3.0)
+    return result
 
 
 @app.post("/orders")
