@@ -352,21 +352,27 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 sell_volume = 0
                 last_close = previous_close
                 segment = 0
-                for txn in real_txns:
-                    amount = float(txn["price"] or 0) * int(txn["shares"] or 0)
-                    if txn["trade_type"] == "buy":
-                        buy_total += amount
-                        buy_volume += int(txn["shares"] or 0)
-                    elif txn["trade_type"] in ("sell", "force_close"):
-                        sell_total += amount
-                        sell_volume += int(txn["shares"] or 0)
+                bucket_count = min(24, len(real_txns))
+                buckets: list[list[Any]] = [[] for _ in range(bucket_count)]
+                for idx, txn in enumerate(real_txns):
+                    buckets[int(idx * bucket_count / len(real_txns))].append(txn)
+                for bucket in buckets:
+                    bucket_shares = 0
+                    for txn in bucket:
+                        amount = float(txn["price"] or 0) * int(txn["shares"] or 0)
+                        bucket_shares += int(txn["shares"] or 0)
+                        if txn["trade_type"] == "buy":
+                            buy_total += amount
+                            buy_volume += int(txn["shares"] or 0)
+                        elif txn["trade_type"] in ("sell", "force_close"):
+                            sell_total += amount
+                            sell_volume += int(txn["shares"] or 0)
                     volume = max(buy_volume, sell_volume)
                     live_close = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean) if volume else previous_close
                     high = max(last_close, live_close)
                     low = min(last_close, live_close)
-                    txn_shares = int(txn["shares"] or 0)
                     if live_rows and round(float(live_close), 2) == round(float(last_close), 2):
-                        live_rows[-1]["volume"] = int(live_rows[-1]["volume"] or 0) + txn_shares
+                        live_rows[-1]["volume"] = int(live_rows[-1]["volume"] or 0) + bucket_shares
                         live_rows[-1]["high_price"] = max(float(live_rows[-1]["high_price"] or 0), high)
                         live_rows[-1]["low_price"] = min(float(live_rows[-1]["low_price"] or high), low)
                         continue
@@ -378,7 +384,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                         "high_price": high,
                         "low_price": low,
                         "close_price": live_close,
-                        "volume": txn_shares,
+                        "volume": bucket_shares,
                         "status": "live",
                     })
                     last_close = live_close
