@@ -25,6 +25,7 @@ type DisplayCandle = {
   low: number;
   close: number;
   volume: number;
+  status: "live" | "settled";
 };
 
 const START_DATE_UTC = Date.UTC(2026, 1, 26);
@@ -81,7 +82,8 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
       high: round2(Math.max(candle.high, Math.max(open, close) + wickPad)),
       low: round2(Math.max(0.01, Math.min(candle.low, Math.min(open, close) - lowPad))),
       close,
-      volume: Math.max(0, Math.round(candle.volume || 0))
+      volume: Math.max(0, Math.round(candle.volume || 0)),
+      status: candle.status === "live" ? "live" : "settled"
     };
   });
 }
@@ -281,8 +283,9 @@ function KlineChartCanvas({ candles }: Props) {
 
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
+      const statusText = candle.status === "live" ? "盘中" : "已定稿";
       tooltip.innerHTML = `
-        <div class="kline-tip-head">第 ${candle.round} 轮</div>
+        <div class="kline-tip-head">第 ${candle.round} 轮 · ${statusText}</div>
         <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
         <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
         <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>

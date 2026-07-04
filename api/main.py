@@ -361,10 +361,13 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                     "low_price": low,
                     "close_price": live_close,
                     "volume": volume,
+                    "status": "live",
                 }
         start = date(2000, 1, 1)
-        output_rows = [dict(row) for row in rows]
+        output_rows = [dict(row, status="settled") for row in rows]
         if live_row:
+            # The current round is a live, in-progress candle. Keep one visual candle per round
+            # while marking it as live, so historical settled rounds remain unambiguous.
             output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_row["round"])]
             output_rows.append(live_row)
             output_rows.sort(key=lambda row: int(row["round"] or 0))
@@ -377,6 +380,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                 "low": float(row["low_price"] or 0),
                 "close": float(row["close_price"] or 0),
                 "volume": int(row["volume"] or 0),
+                "status": row.get("status", "settled"),
             }
             for row in output_rows
             if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]

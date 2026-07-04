@@ -14,6 +14,7 @@ export type Candle = {
   low: number;
   close: number;
   volume: number;
+  status?: "live" | "settled";
 };
 
 export type MarketSnapshot = {
