@@ -12,8 +12,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
@@ -759,16 +758,18 @@ def admin_users(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, 
     ]
 
 
-# Serve built frontend if available (for Render deployment)
+# Serve built frontend SPA (for Render deployment, no Vercel needed)
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web-build"
 if FRONTEND_DIR.exists():
-    app.mount("/_next", StaticFiles(directory=str(FRONTEND_DIR / "_next")), name="next-static")
-    index_html = FRONTEND_DIR / "index.html"
-    if index_html.exists():
-
-        @app.get("/{full_path:path}")
-        def serve_frontend(full_path: str):
-            return HTMLResponse(index_html.read_text(encoding="utf-8"))
+    @app.get("/{full_path:path}")
+    def serve_frontend(full_path: str):
+        file_path = FRONTEND_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        index = FRONTEND_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return JSONResponse(status_code=404, content={"detail": "not_found"})
 
 @app.post("/admin/users")
 def admin_create_user(payload: CreateUserRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
