@@ -376,7 +376,10 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
                     })
                     last_close = live_close
         start = date(2000, 1, 1)
-        output_rows = [dict(row, status="settled", segment=0) for row in rows]
+        settled_by_round = {}
+        for row in rows:
+            settled_by_round[int(row["round"] or 0)] = dict(row, status="settled", segment=0)
+        output_rows = list(settled_by_round.values())
         if live_rows:
             output_rows = [row for row in output_rows if int(row["round"] or 0) != int(live_rows[0]["round"])]
             output_rows.extend(live_rows)
