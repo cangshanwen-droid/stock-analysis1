@@ -9,8 +9,8 @@ const API_BASES = Array.from(new Set([PRIMARY_API_BASE, ...API_FALLBACKS].filter
   .map((base) => base.replace(/\/+$/, ""));
 const MARKET_CACHE_KEY = "gipfel:last-market";
 const CANDLE_CACHE_PREFIX = "gipfel:last-candles:";
-const MARKET_CACHE_TTL = 8000;
-const CANDLE_CACHE_TTL = 45000;
+const MARKET_CACHE_TTL = 2500;
+const CANDLE_CACHE_TTL = 8000;
 let pendingMarketRequest: Promise<MarketSnapshot> | null = null;
 const pendingCandleRequests = new Map<string, Promise<Candle[]>>();
 
@@ -103,10 +103,10 @@ async function acceptedJsonOrThrow(res: Response, fallback: string) {
   return data;
 }
 
-export async function fetchMarket(): Promise<MarketSnapshot> {
+export async function fetchMarket(force = false): Promise<MarketSnapshot> {
   const cached = readCache<MarketSnapshot>(MARKET_CACHE_KEY, MARKET_CACHE_TTL);
-  if (cached?.stocks?.length) return cached;
-  if (pendingMarketRequest) return pendingMarketRequest;
+  if (!force && cached?.stocks?.length) return cached;
+  if (!force && pendingMarketRequest) return pendingMarketRequest;
   if (!API_BASES.length) return fallbackMarket;
   pendingMarketRequest = (async () => {
     try {
@@ -127,12 +127,12 @@ export async function fetchMarket(): Promise<MarketSnapshot> {
   return pendingMarketRequest;
 }
 
-export async function fetchCandles(symbol: string): Promise<Candle[]> {
+export async function fetchCandles(symbol: string, force = false): Promise<Candle[]> {
   const cacheKey = `${CANDLE_CACHE_PREFIX}${symbol}`;
   const cached = readCache<Candle[]>(cacheKey, CANDLE_CACHE_TTL);
-  if (cached?.length) return cached;
+  if (!force && cached?.length) return cached;
   const pending = pendingCandleRequests.get(symbol);
-  if (pending) return pending;
+  if (!force && pending) return pending;
   if (!API_BASES.length) return demoCandles(symbol);
   const request = (async () => {
     try {

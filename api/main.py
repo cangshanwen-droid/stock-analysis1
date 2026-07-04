@@ -91,9 +91,9 @@ async def add_public_read_cache_headers(request: Request, call_next):
     if request.method == "GET" and response.status_code == 200:
         path = request.url.path
         if path == "/market":
-            response.headers["Cache-Control"] = "public, max-age=5, stale-while-revalidate=20"
+            response.headers["Cache-Control"] = "public, max-age=2, stale-while-revalidate=8"
         elif path.startswith("/stocks/") and path.endswith("/kline"):
-            response.headers["Cache-Control"] = "public, max-age=20, stale-while-revalidate=60"
+            response.headers["Cache-Control"] = "public, max-age=5, stale-while-revalidate=20"
     return response
 
 
@@ -312,7 +312,7 @@ def market() -> dict[str, Any]:
                 for s in stocks
             ],
         }
-    return cache_get_or_set("market", 5.0, load_market)
+    return cache_get_or_set("market", 2.0, load_market)
 
 
 @app.get("/stocks/{symbol}/kline")
@@ -343,7 +343,7 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
             for row in rows
             if row["open_price"] and row["high_price"] and row["low_price"] and row["close_price"]
         ]
-    return cache_get_or_set(cache_key, 20.0, load_kline)
+    return cache_get_or_set(cache_key, 5.0, load_kline)
 
 
 @app.get("/portfolio")

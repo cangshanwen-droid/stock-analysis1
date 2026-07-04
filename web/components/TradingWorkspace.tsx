@@ -124,12 +124,14 @@ export function TradingWorkspace() {
     carbonPrice: string;
     premiumRate: string;
   }>>({});
+  const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(Date.now());
 
   useEffect(() => {
     let alive = true;
     fetchMarket().then((data) => {
       if (!alive) return;
       setMarket(data);
+      setLastMarketUpdate(Date.now());
       if (data.stocks[0]) setSelected(data.stocks[0].symbol);
     });
     return () => {
@@ -144,6 +146,44 @@ export function TradingWorkspace() {
     });
     return () => {
       alive = false;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    let alive = true;
+    async function refreshLiveMarket(force = false, includeCandles = false) {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        if (force) clearPublicReadCache(includeCandles ? selected : undefined);
+        const [nextMarket, nextCandles] = await Promise.all([
+          fetchMarket(force),
+          includeCandles && selected ? fetchCandles(selected, force) : Promise.resolve<Candle[]>([])
+        ]);
+        if (!alive) return;
+        setMarket(nextMarket);
+        setLastMarketUpdate(Date.now());
+        if (includeCandles && selected) setCandles(nextCandles);
+      } catch {
+        // Keep the last good quote on screen; the next polling tick will retry.
+      }
+    }
+
+    const marketTimer = window.setInterval(() => {
+      void refreshLiveMarket(true, false);
+    }, 4000);
+    const candleTimer = window.setInterval(() => {
+      void refreshLiveMarket(true, true);
+    }, 12000);
+
+    const onVisible = () => {
+      if (!document.hidden) void refreshLiveMarket(true, true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(marketTimer);
+      window.clearInterval(candleTimer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [selected]);
 
@@ -311,8 +351,8 @@ export function TradingWorkspace() {
         try {
           const [data, nextMarket, nextCandles] = await Promise.all([
             fetchPortfolio(token),
-            fetchMarket(),
-            fetchCandles(current.symbol)
+            fetchMarket(true),
+            fetchCandles(current.symbol, true)
           ]);
           setPortfolio(data);
           setUser(data.user);
@@ -365,8 +405,14 @@ export function TradingWorkspace() {
     try {
       const result = await marketControl(token, action, confirmation);
       setAdminMessage(result.detail || result.reason || "操作完成");
-      const nextMarket = await fetchMarket();
+      clearPublicReadCache(selected);
+      const [nextMarket, nextCandles] = await Promise.all([
+        fetchMarket(true),
+        selected ? fetchCandles(selected, true) : Promise.resolve<Candle[]>([])
+      ]);
       setMarket(nextMarket);
+      if (selected) setCandles(nextCandles);
+      setLastMarketUpdate(Date.now());
       setPendingMarketAction(null);
       setMarketConfirmText("");
     } catch (error) {
@@ -475,8 +521,9 @@ export function TradingWorkspace() {
       });
       setAdminMessage(result.initialPrice ? `股票已添加，初始价 ${fmtMoney(result.initialPrice)}` : "股票已添加");
       await refreshAdminOverview();
-      const nextMarket = await fetchMarket();
+      const nextMarket = await fetchMarket(true);
       setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
       setAdminMessage(`添加股票失败：${detail || "请检查代码是否重复或参数是否正确"}`);
@@ -522,8 +569,9 @@ export function TradingWorkspace() {
       await deleteAdminStock(token, stock.symbol);
       setAdminMessage(`${stock.name} 已删除`);
       await refreshAdminOverview();
-      const nextMarket = await fetchMarket();
+      const nextMarket = await fetchMarket(true);
       setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
       if (nextMarket.stocks[0]) setSelected(nextMarket.stocks[0].symbol);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
@@ -572,6 +620,10 @@ export function TradingWorkspace() {
     if (!activeStocks.length) return 50;
     return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
   }, [adminStocks]);
+  const liveUpdateText = useMemo(
+    () => new Date(lastMarketUpdate).toLocaleTimeString("zh-CN", { hour12: false }),
+    [lastMarketUpdate]
+  );
 
   const navItems = user
     ? [
@@ -637,6 +689,7 @@ export function TradingWorkspace() {
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
           </div>
+          <span className="live-refresh">实时 · {liveUpdateText}</span>
         </section>
 
         {(view === "market" || view === "trade") ? (

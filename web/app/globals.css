@@ -150,6 +150,13 @@ button {
   box-shadow: 0 0 0 5px rgba(0, 192, 135, 0.12);
 }
 
+.live-refresh {
+  color: #7f91ad;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .quote-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
