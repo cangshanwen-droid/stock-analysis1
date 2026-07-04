@@ -295,6 +295,7 @@ def market() -> dict[str, Any]:
             stocks = fetchall(conn,
                 "SELECT symbol,name,current_price,previous_close FROM stocks WHERE is_deleted=0 ORDER BY symbol"
             )
+        is_open = (state or {}).get("state") == "open"
         return {
             "round": int((state or {}).get("round") or 1),
             "state": (state or {}).get("state") or "open",
@@ -302,9 +303,9 @@ def market() -> dict[str, Any]:
                 {
                     "symbol": s["symbol"],
                     "name": s["name"],
-                    "price": float(s["current_price"] or 0),
-                    "change": float((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0)),
-                    "changePct": (
+                    "price": float(s["previous_close"] or s["current_price"] or 0) if is_open else float(s["current_price"] or 0),
+                    "change": 0 if is_open else float((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0)),
+                    "changePct": 0 if is_open else (
                         float(((s["current_price"] or 0) - (s["previous_close"] or s["current_price"] or 0))
                               / (s["previous_close"] or s["current_price"] or 1) * 100)
                     ),

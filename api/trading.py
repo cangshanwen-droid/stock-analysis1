@@ -203,6 +203,5 @@ def place_order(conn, username: str, symbol: str, side: str, price: float, share
         if available < shares:
             return TradeResult(False, f"可卖不足：持仓 {holding} 股，已挂单 {int(pending_sell['shares'] or 0)} 股，可用 {available} 股")
         result = _match_sell(conn, username, symbol, price, shares, round_no, str(stock["name"]))
-    live_price = update_live_stock_price(conn, symbol, round_no) if result.ok else price
-    log_action(conn, username, f"trade_{side}", symbol, f"round={round_no}, price={price}, live_price={live_price}, shares={shares}, matched={result.matched}")
+    log_action(conn, username, f"trade_{side}", symbol, f"round={round_no}, price={price}, shares={shares}, matched={result.matched}")
     return result
