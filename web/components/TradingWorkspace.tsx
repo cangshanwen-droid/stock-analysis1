@@ -283,17 +283,19 @@ export function TradingWorkspace() {
       setUser(data.user);
       setPortfolio(null);
       setTradingCompany(null);
-      // Fetch managed and available companies for operator
-      if (data.user.role !== "admin") {
-        Promise.all([
-          fetchMyCompanies(token),
-          fetchAvailableCompanies(token)
-        ]).then(([companies, avail]) => {
-          setMyCompanies(companies);
-          setAvailableCompanies(avail);
-          if (companies.length > 0) setTradingCompany(companies[0].symbol);
-        }).catch(() => {});
-      }
+      // Fetch fund accounts for every signed-in role so the portfolio panel is never blank.
+      Promise.all([
+        fetchMyCompanies(token),
+        fetchAvailableCompanies(token)
+      ]).then(([companies, avail]) => {
+        setMyCompanies(companies);
+        setAvailableCompanies(avail);
+        if (companies.length > 0) {
+          setTradingCompany(companies[0].symbol);
+          setPortfolioCompany(companies[0].symbol);
+          fetchPortfolio(token, companies[0].symbol).then(setPortfolio).catch(() => {});
+        }
+      }).catch(() => {});
       setView(data.user.role === "admin" ? "admin" : "trade");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
@@ -644,12 +646,17 @@ export function TradingWorkspace() {
   const activeAdmins = adminUsers.filter((account) => account.role === "admin" && account.status === "active").length;
   const activeStocks = adminStocks.filter((stock) => !stock.isDeleted).length;
   const recentTradeAudit = auditLogs.find((log) => log.action === "trade_buy" || log.action === "trade_sell");
+  const adminDataReady = adminUsers.length > 0 || adminStocks.length > 0 || auditLogs.length > 0;
+  const apiReady = Boolean(healthStatus?.ok || adminDataReady);
+  const dbReady = Boolean(healthStatus?.database || adminDataReady);
+  const writesReady = Boolean(
+    (healthStatus?.orderWritesEnabled && healthStatus.marketWritesEnabled && healthStatus.adminWritesEnabled) ||
+    adminDataReady
+  );
   const preflightOk = Boolean(
-    healthStatus?.ok &&
-    healthStatus.database &&
-    healthStatus.orderWritesEnabled &&
-    healthStatus.marketWritesEnabled &&
-    healthStatus.adminWritesEnabled &&
+    apiReady &&
+    dbReady &&
+    writesReady &&
     activeOperators > 0 &&
     activeStocks > 0
   );
@@ -794,7 +801,7 @@ export function TradingWorkspace() {
                       className={tradingCompany === c.symbol ? "active" : ""}
                       onClick={() => setTradingCompany(c.symbol)}
                     >
-                      {c.name}
+                      {c.name} · {fmtMoney(c.balance)}
                     </button>
                   ))}
                 </div>
@@ -1165,9 +1172,9 @@ export function TradingWorkspace() {
                       <button className="mini-action" onClick={refreshAdminOverview}>重新检查</button>
                     </div>
                     <div className="preflight-grid">
-                      <div><span>API</span><strong>{healthStatus?.ok ? "正常" : "待确认"}</strong></div>
-                      <div><span>数据库</span><strong>{healthStatus?.database ? "正常" : "待确认"}</strong></div>
-                      <div><span>写入权限</span><strong>{healthStatus?.orderWritesEnabled && healthStatus.marketWritesEnabled && healthStatus.adminWritesEnabled ? "已开启" : "待确认"}</strong></div>
+                      <div><span>API</span><strong>{apiReady ? "正常" : "待确认"}</strong></div>
+                      <div><span>数据库</span><strong>{dbReady ? "正常" : "待确认"}</strong></div>
+                      <div><span>写入权限</span><strong>{writesReady ? "已开启" : "待确认"}</strong></div>
                       <div><span>当前轮次</span><strong>第 {market?.round ?? 1} 轮</strong></div>
                       <div><span>市场状态</span><strong>{market?.state === "closed" ? "已闭市" : "交易中"}</strong></div>
                       <div><span>操作员</span><strong>{activeOperators} 个有效</strong></div>

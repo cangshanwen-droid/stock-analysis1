@@ -54,62 +54,21 @@ function timeKey(time: Time | unknown) {
   return "";
 }
 
-function displayParts(count: number) {
-  if (count <= 6) return 5;
-  if (count <= 12) return 4;
-  if (count <= 22) return 2;
-  return 1;
-}
-
 function expandCandles(candles: Candle[]): DisplayCandle[] {
-  const parts = displayParts(candles.length);
-  const expanded: DisplayCandle[] = [];
-
-  candles.forEach((candle) => {
-    const rawOpen = round2(candle.open);
-    const rawClose = round2(candle.close);
-    const rawHigh = round2(Math.max(candle.high, rawOpen, rawClose));
-    const rawLow = round2(Math.min(candle.low, rawOpen, rawClose));
-    const volume = Math.max(0, Math.round(candle.volume || 0));
-    const priceBase = Math.max(Math.abs(rawClose || rawOpen), 1);
-    const flat = Math.abs(rawClose - rawOpen) < 0.005 && Math.abs(rawHigh - rawLow) < 0.005;
-    const visualRange = flat
-      ? priceBase * 0.006
-      : Math.max(rawHigh - rawLow, Math.abs(rawClose - rawOpen), priceBase * 0.002);
-    let previousClose = rawOpen;
-
-    for (let part = 1; part <= parts; part += 1) {
-      const progress = part / parts;
-      const eased = progress * progress * (3 - 2 * progress);
-      const wave = parts === 1 || part === parts ? 0 : Math.sin(progress * Math.PI * 1.5) * visualRange * 0.18;
-      const localClose = part === parts ? rawClose : round2(rawOpen + (rawClose - rawOpen) * eased + wave);
-      const localOpen = previousClose;
-      const wickBias = visualRange * (0.16 + (part % 2) * 0.06);
-      let localHigh = Math.max(localOpen, localClose) + wickBias;
-      let localLow = Math.min(localOpen, localClose) - wickBias;
-
-      if (part === Math.ceil(parts * 0.45)) localHigh = Math.max(localHigh, rawHigh);
-      if (part === Math.ceil(parts * 0.72)) localLow = Math.min(localLow, rawLow);
-      if (flat) {
-        localHigh = Math.max(localHigh, rawClose + visualRange * 0.42);
-        localLow = Math.min(localLow, rawClose - visualRange * 0.42);
-      }
-
-      expanded.push({
-        round: candle.round,
-        label: parts === 1 ? `R${candle.round}` : `R${candle.round}.${part}`,
-        time: dateForIndex(expanded.length),
-        open: round2(localOpen),
-        high: round2(Math.max(localHigh, localOpen, localClose)),
-        low: round2(Math.max(0.01, Math.min(localLow, localOpen, localClose))),
-        close: round2(localClose),
-        volume: Math.max(1, Math.round(volume / parts)),
-      });
-      previousClose = localClose;
-    }
+  return candles.map((candle, index) => {
+    const open = round2(candle.open);
+    const close = round2(candle.close);
+    return {
+      round: candle.round,
+      label: `R${candle.round}`,
+      time: dateForIndex(index),
+      open,
+      high: round2(Math.max(candle.high, open, close)),
+      low: round2(Math.max(0.01, Math.min(candle.low, open, close))),
+      close,
+      volume: Math.max(0, Math.round(candle.volume || 0)),
+    };
   });
-
-  return expanded;
 }
 
 function movingAverage(candles: DisplayCandle[], windowSize: number) {
