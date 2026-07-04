@@ -209,6 +209,15 @@ export async function login(username: string, password: string): Promise<LoginRe
   return res.json();
 }
 
+export async function fetchMyCompanies(token: string) {
+  if (!API_BASES.length || token === "demo-token") return [];
+  const res = await fetchApi("/my-companies", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function fetchPortfolio(token: string): Promise<PortfolioSnapshot> {
   if (!API_BASES.length || token === "demo-token") {
     return {
@@ -233,6 +242,7 @@ export async function submitOrder(token: string, order: {
   side: "buy" | "sell";
   price: number;
   shares: number;
+  company_symbol?: string;
 }) {
   if (!API_BASES.length || token === "demo-token") {
     return {

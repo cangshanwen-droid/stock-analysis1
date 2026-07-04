@@ -153,12 +153,18 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
     return TradeResult(True, f"成交 {stock_name} {remaining} 股 @ {price:.2f}", 0, round_no)
 
 
+def get_managed_companies(conn, username: str) -> list[dict[str, Any]]:
+    """Return all stocks managed by username with locked funds."""
+    rows = fetchall(conn,
+        "SELECT symbol,balance,funds_locked FROM stocks WHERE manager=? AND is_deleted=0 ORDER BY symbol",
+        (username,))
+    return [row_dict(r) for r in rows]
+
+
 def get_managed_company(conn, username: str) -> dict[str, Any] | None:
-    """Return the stock record if username manages a company with locked funds."""
-    stock = row_dict(fetchone(conn,
-        "SELECT symbol,balance,funds_locked FROM stocks WHERE manager=? AND is_deleted=0",
-        (username,)))
-    return stock
+    """Return the first managed stock (legacy single-company support)."""
+    companies = get_managed_companies(conn, username)
+    return companies[0] if companies else None
 
 
 def ensure_company_user(conn, stock_symbol: str, init_funds: float) -> str:
@@ -171,7 +177,7 @@ def ensure_company_user(conn, stock_symbol: str, init_funds: float) -> str:
     return company_user
 
 
-def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int, is_admin: bool = False) -> TradeResult:
+def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int, is_admin: bool = False, company_symbol: str | None = None) -> TradeResult:
     if shares > MAX_ORDER_SHARES:
         return TradeResult(False, f"单笔委托数量不能超过 {MAX_ORDER_SHARES} 股")
     symbol = symbol.upper()
@@ -187,16 +193,21 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
         return TradeResult(False, "股票当前价异常，无法交易")
 
     # Determine trader: company-account or personal
-    company = get_managed_company(conn, operator)
-    if company:
+    if company_symbol:
+        # Company-account trade
+        company = row_dict(fetchone(conn,
+            "SELECT symbol,balance,funds_locked FROM stocks WHERE symbol=? AND manager=? AND is_deleted=0",
+            (company_symbol.upper(), operator)))
+        if not company:
+            return TradeResult(False, "你没有管理该公司或无此公司")
         if not company.get("funds_locked"):
-            return TradeResult(False, "公司初始资金未锁定，请先联系管理员设置资金")
+            return TradeResult(False, "公司初始资金未锁定")
         if company["symbol"] == symbol:
-            return TradeResult(False, "公司不能交易自己的股票")
+            return TradeResult(False, "公司账户不能交易自己的股票")
+        company = row_dict(company)
         trader = f"{COMPANY_USER_PREFIX}{company['symbol']}]"
-    elif not is_admin:
-        return TradeResult(False, "没有管理的公司，无法交易")
     else:
+        # Personal-account trade (operator uses their own balance)
         company = None
         trader = operator
 

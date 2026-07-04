@@ -13,6 +13,7 @@ import {
   fetchCandles,
   fetchHealth,
   fetchMarket,
+  fetchMyCompanies,
   fetchPortfolio,
   login,
   marketControl,
@@ -98,6 +99,8 @@ export function TradingWorkspace() {
   const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
   const [orderFeedback, setOrderFeedback] = useState<OrderFeedback | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [myCompanies, setMyCompanies] = useState<Array<{symbol: string; name: string; balance: number; fundsLocked: boolean}>>([]);
+  const [tradingCompany, setTradingCompany] = useState<string | null>(null);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
@@ -276,9 +279,19 @@ export function TradingWorkspace() {
     setLoginError("");
     try {
       const data = await login(loginName.trim(), loginPassword);
-      setToken(data.accessToken);
+      const token = data.accessToken;
+      setToken(token);
       setUser(data.user);
       setPortfolio(null);
+      setTradingCompany(null);
+      // Fetch managed companies for operator
+      if (data.user.role !== "admin") {
+        fetchMyCompanies(token).then((companies) => {
+          setMyCompanies(companies);
+          // Auto-select first company if any
+          if (companies.length > 0) setTradingCompany(companies[0].symbol);
+        }).catch(() => {});
+      }
       setView(data.user.role === "admin" ? "admin" : "trade");
     } catch (error) {
       const detail = error instanceof Error ? error.message : "";
@@ -287,8 +300,10 @@ export function TradingWorkspace() {
   }
 
   const stocks = market?.stocks ?? [];
-  const myCompany = useMemo(() => user ? stocks.find((s) => s.manager === user.username) : undefined, [user, stocks]);
-  const tradableStocks = useMemo(() => myCompany ? stocks.filter((s) => s.symbol !== myCompany.symbol) : stocks, [myCompany, stocks]);
+  const tradableStocks = useMemo(() => {
+    if (!tradingCompany) return stocks; // Personal account: all stocks
+    return stocks.filter((s) => s.symbol !== tradingCompany); // Company: exclude own stock
+  }, [stocks, tradingCompany]);
   const current: StockQuote | undefined = useMemo(
     () => tradableStocks.find((s) => s.symbol === selected) ?? tradableStocks[0] ?? stocks[0],
     [selected, tradableStocks, stocks]
@@ -337,7 +352,8 @@ export function TradingWorkspace() {
         symbol: current.symbol,
         side,
         price,
-        shares: normalizedShares
+        shares: normalizedShares,
+        ...(tradingCompany ? { company_symbol: tradingCompany } : {})
       });
       if (result.accepted) {
         const detail = result.detail || "订单已受理";
@@ -764,72 +780,84 @@ export function TradingWorkspace() {
             )}
             {user && (
               <>
+              {/* Trading account selector */}
+              {myCompanies.length > 0 ? (
+                <div className="segmented" style={{ marginBottom: 8 }}>
+                  <button
+                    className={!tradingCompany ? "active" : ""}
+                    onClick={() => setTradingCompany(null)}
+                  >
+                    个人账户
+                  </button>
+                  {myCompanies.map((c) => (
+                    <button
+                      key={c.symbol}
+                      className={tradingCompany === c.symbol ? "active" : ""}
+                      onClick={() => setTradingCompany(c.symbol)}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="account-box">
                 <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
                 <div className="row"><span>角色</span><strong>{user.role === "admin" ? "管理员" : "操作员"}</strong></div>
-                {(() => {
-                  const company = stocks.find((s) => s.manager === user.username);
-                  if (company && user.role !== "admin") {
-                    return (
+                {tradingCompany ? (
+                  (() => {
+                    const company = myCompanies.find((c) => c.symbol === tradingCompany);
+                    return company ? (
                       <>
-                        <div className="row"><span>管理公司</span><strong>{company.name}</strong></div>
-                        {company.fundsLocked ? (
-                          <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.companyBalance)}</strong></div>
-                        ) : null}
+                        <div className="row"><span>交易账户</span><strong>{company.name}</strong></div>
+                        <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
                       </>
-                    );
-                  }
-                  return (
-                    <>
-                      <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                      <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
-                      <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
-                    </>
-                  );
-                })()}
+                    ) : null;
+                  })()
+                ) : (
+                  <>
+                    <div className="row"><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                    <div className="row"><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? user.balance)}</strong></div>
+                    <div className="row"><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                  </>
+                )}
               </div>
-              {(() => {
-                const company = stocks.find((s) => s.manager === user.username);
-                if (company && !company.fundsLocked && user.role !== "admin") {
-                  return (
-                    <div className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                      <div className="section-caption">设置初始资金</div>
-                      <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>
-                        请为「{company.name}」设置初始资金，确认后不可修改。
-                      </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ color: "#aeb9ca" }}>¥</span>
-                        <input
-                          type="number"
-                          value={companyFundAmount}
-                          onChange={(e) => setCompanyFundAmount(e.target.value)}
-                          style={{ flex: 1 }}
-                          placeholder="输入初始资金"
-                        />
-                        <button
-                          className="primary"
-                          onClick={async () => {
-                            const amount = Number(companyFundAmount);
-                            if (!amount || amount <= 0) { setOrderMessage("请输入有效的金额"); return; }
-                            if (!window.confirm(`确认设置初始资金 ¥${amount.toLocaleString("zh-CN")}？设置后不可修改。`)) return;
-                            try {
-                              await confirmMyCompanyFunds(token!, amount);
-                              setOrderMessage("初始资金已设置");
-                              const nextMarket = await fetchMarket(true);
-                              setMarket(nextMarket);
-                            } catch (e) {
-                              setOrderMessage(`设置失败：${e instanceof Error ? e.message : ""}`);
-                            }
-                          }}
-                        >
-                          确认
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+              {/* Fund setup for unlocked companies */}
+              {myCompanies.filter((c) => !c.fundsLocked).map((company) => (
+                <div key={company.symbol} className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div className="section-caption">设置「{company.name}」初始资金</div>
+                  <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>
+                    设置后不可修改。
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: "#aeb9ca" }}>¥</span>
+                    <input
+                      type="number"
+                      value={companyFundAmount}
+                      onChange={(e) => setCompanyFundAmount(e.target.value)}
+                      style={{ flex: 1 }}
+                      placeholder="输入初始资金"
+                    />
+                    <button
+                      className="primary"
+                      onClick={async () => {
+                        const amount = Number(companyFundAmount);
+                        if (!amount || amount <= 0) { setOrderMessage("请输入有效的金额"); return; }
+                        if (!window.confirm(`确认「${company.name}」初始资金 ¥${amount.toLocaleString("zh-CN")}？设置后不可修改。`)) return;
+                        try {
+                          await confirmMyCompanyFunds(token!, amount);
+                          setOrderMessage(`「${company.name}」初始资金已设置`);
+                          const companies = await fetchMyCompanies(token!);
+                          setMyCompanies(companies);
+                        } catch (e) {
+                          setOrderMessage(`设置失败：${e instanceof Error ? e.message : ""}`);
+                        }
+                      }}
+                    >
+                      确认
+                    </button>
+                  </div>
+                </div>
+              ))}
             <div className="segmented">
               <button
                 className={side === "buy" ? "buy active" : ""}

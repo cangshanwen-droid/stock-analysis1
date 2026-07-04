@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
-from .trading import ensure_company_user, get_managed_company, place_order
+from .trading import ensure_company_user, get_managed_companies, place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
@@ -166,6 +166,7 @@ class TradeRequest(BaseModel):
     side: str = Field(pattern="^(buy|sell)$")
     price: float = Field(gt=0)
     shares: int = Field(gt=0, le=1_000_000)
+    company_symbol: str | None = Field(default=None, max_length=16)
 
 
 class LoginRequest(BaseModel):
@@ -336,6 +337,24 @@ def login(payload: LoginRequest) -> dict[str, Any]:
             "balance": float(user["balance"] or 0),
         },
     }
+
+
+@app.get("/my-companies")
+def my_companies(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    """List companies managed by the current user."""
+    with connect() as conn:
+        rows = fetchall(conn,
+            "SELECT symbol,name,balance,funds_locked FROM stocks WHERE manager=? AND is_deleted=0 ORDER BY symbol",
+            (user["username"],))
+    return [
+        {
+            "symbol": r["symbol"],
+            "name": r["name"],
+            "balance": float(r["balance"] or 0),
+            "fundsLocked": bool(r["funds_locked"]),
+        }
+        for r in rows
+    ]
 
 
 @app.get("/auth/me")
@@ -519,7 +538,8 @@ def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_u
             "order": payload.model_dump(),
         }
     with connect() as conn:
-        result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares, is_admin=(user["role"] == "admin"))
+        result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares,
+                            is_admin=(user["role"] == "admin"), company_symbol=payload.company_symbol)
         if result.ok:
             conn.commit()
             clear_read_cache()
