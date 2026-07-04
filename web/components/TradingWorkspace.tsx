@@ -6,6 +6,7 @@ import {
   claimCompany,
   clearPublicReadCache,
   confirmMyCompanyFunds,
+  createFundAccount,
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
@@ -320,6 +321,12 @@ export function TradingWorkspace() {
 
   async function submitTrade() {
     if (!user || !current || !token) return;
+    if (!tradingCompany) {
+      setOrderStatus("error");
+      setOrderMessage("请先创建并选择一个资金账户");
+      setOrderFeedback(null);
+      return;
+    }
     const price = Number(current.price);
     const shares = Number(orderShares);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
@@ -356,7 +363,8 @@ export function TradingWorkspace() {
         symbol: current.symbol,
         side,
         price,
-        shares: normalizedShares
+        shares: normalizedShares,
+        ...(tradingCompany ? { account_id: Number(tradingCompany) } : {})
       });
       if (result.accepted) {
         const detail = result.detail || "订单已受理";
@@ -376,7 +384,7 @@ export function TradingWorkspace() {
         clearPublicReadCache(current.symbol);
         try {
           const [data, nextMarket, nextCandles] = await Promise.all([
-            fetchPortfolio(token),
+            fetchPortfolio(token, tradingCompany ?? undefined),
             fetchMarket(true),
             fetchCandles(current.symbol, true)
           ]);
@@ -798,7 +806,7 @@ export function TradingWorkspace() {
                 </div>
               ) : (
                 <div className="empty-state" style={{ fontSize: 13, padding: "12px 0" }}>
-                  还没有管理的公司，请先添加公司。
+                  还没有资金账户，请先到持仓资产页创建。
                 </div>
               )}
               {tradingCompany ? (
@@ -807,8 +815,8 @@ export function TradingWorkspace() {
                   return company ? (
                     <div className="account-box">
                       <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                      <div className="row"><span>交易账户</span><strong>{company.name}</strong></div>
-                      <div className="row"><span>公司资金</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
+                      <div className="row"><span>资金账户</span><strong>{company.name}</strong></div>
+                      <div className="row"><span>账户余额</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
                     </div>
                   ) : null;
                 })()
@@ -1012,25 +1020,31 @@ export function TradingWorkspace() {
                   ))}
                 </div>
               ) : null}
-              {/* Add company */}
-              {availableCompanies.length > 0 ? (
-                <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
-                  onClick={async () => {
-                    const symbols = availableCompanies.map((c) => `${c.symbol} ${c.name}`).join("\n");
-                    const pick = window.prompt(`可添加管理的公司：\n${symbols}\n\n输入要添加的公司代码：`);
-                    if (!pick) return;
-                    try {
-                      await claimCompany(token!, pick.trim().toUpperCase());
-                      const [companies, avail] = await Promise.all([
-                        fetchMyCompanies(token!), fetchAvailableCompanies(token!)
-                      ]);
-                      setMyCompanies(companies); setAvailableCompanies(avail);
-                    } catch (e) { /* ignore */ }
-                  }}
-                >
-                  + 添加管理公司
-                </div>
-              ) : null}
+              <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
+                onClick={async () => {
+                  const name = window.prompt("输入资金账户名称：");
+                  if (!name?.trim()) return;
+                  const amountText = window.prompt("输入初始资金金额：", "1000000");
+                  const amount = Number(amountText);
+                  if (!Number.isFinite(amount) || amount <= 0) return;
+                  if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？确认后不可修改。`)) return;
+                  try {
+                    await createFundAccount(token!, name.trim(), amount);
+                    const companies = await fetchMyCompanies(token!);
+                    setMyCompanies(companies);
+                    if (companies[0]) {
+                      setTradingCompany(companies[0].symbol);
+                      setPortfolioCompany(companies[0].symbol);
+                      const data = await fetchPortfolio(token!, companies[0].symbol);
+                      setPortfolio(data);
+                    }
+                  } catch (e) {
+                    setOrderMessage(`创建资金账户失败：${e instanceof Error ? e.message : ""}`);
+                  }
+                }}
+              >
+                + 创建资金账户
+              </div>
               {/* Company content: fund setup or portfolio */}
               {portfolioCompany ? (
                 (() => {

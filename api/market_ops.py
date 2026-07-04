@@ -3,6 +3,8 @@ from typing import Any
 
 from .db import execute, fetchall, fetchone
 
+ACCOUNT_USER_PREFIX = "[账户:"
+
 SYSTEM_USERNAMES = {"[系统]", "[ϵͳ]", "[绯荤粺]"}
 
 
@@ -162,6 +164,10 @@ def open_market(conn) -> MarketResult:
 
 def rebuild_balances_before_round(conn, round_no: int) -> None:
     execute(conn, "UPDATE users SET balance=1000000 WHERE role='player'")
+    try:
+        execute(conn, "UPDATE fund_accounts SET balance=initial_balance")
+    except Exception:
+        pass
     txns = fetchall(conn, """
         SELECT username,trade_type,price,shares
         FROM transactions
@@ -173,9 +179,17 @@ def rebuild_balances_before_round(conn, round_no: int) -> None:
         if amount <= 0:
             continue
         if txn["trade_type"] == "buy":
-            execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, txn["username"]))
+            username = str(txn["username"] or "")
+            if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+                execute(conn, "UPDATE fund_accounts SET balance=balance-? WHERE id=?", (amount, int(username[len(ACCOUNT_USER_PREFIX):-1])))
+            else:
+                execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, txn["username"]))
         elif txn["trade_type"] in ("sell", "force_close"):
-            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, txn["username"]))
+            username = str(txn["username"] or "")
+            if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+                execute(conn, "UPDATE fund_accounts SET balance=balance+? WHERE id=?", (amount, int(username[len(ACCOUNT_USER_PREFIX):-1])))
+            else:
+                execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, txn["username"]))
 
 
 def stock_initial_price(stock: dict[str, Any]) -> float:

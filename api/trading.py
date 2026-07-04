@@ -5,6 +5,7 @@ from .db import execute, fetchall, fetchone, is_postgres, row_dict
 
 MAX_ORDER_SHARES = 1_000_000
 COMPANY_USER_PREFIX = "[公司:"
+ACCOUNT_USER_PREFIX = "[账户:"
 
 
 @dataclass
@@ -40,6 +41,9 @@ def _update_balance(conn, trader: str, amount: float, direction: str) -> None:
     if trader.startswith(COMPANY_USER_PREFIX) and trader.endswith("]"):
         sym = trader[len(COMPANY_USER_PREFIX):-1]
         execute(conn, f"UPDATE stocks SET balance=balance{direction}? WHERE symbol=?", (amount, sym))
+    if trader.startswith(ACCOUNT_USER_PREFIX) and trader.endswith("]"):
+        account_id = int(trader[len(ACCOUNT_USER_PREFIX):-1])
+        execute(conn, f"UPDATE fund_accounts SET balance=balance{direction}? WHERE id=?", (amount, account_id))
     execute(conn, f"UPDATE users SET balance=balance{direction}? WHERE username=?", (amount, trader))
 
 
@@ -117,7 +121,11 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
         fill = min(remaining, int(buy_order["shares"]))
         match_price = price
         amount = round(fill * match_price, 2)
-        buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
+        if str(buy_order["username"]).startswith(ACCOUNT_USER_PREFIX):
+            buyer_id = int(str(buy_order["username"])[len(ACCOUNT_USER_PREFIX):-1])
+            buyer = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (buyer_id,))
+        else:
+            buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
         if not buyer or float(buyer["balance"] or 0) < amount:
             execute(conn, "DELETE FROM order_book WHERE id=?", (buy_order["id"],))
             log_action(conn, "system", "cancel_order", buy_order["username"],
@@ -177,7 +185,11 @@ def ensure_company_user(conn, stock_symbol: str, init_funds: float) -> str:
     return company_user
 
 
-def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int, is_admin: bool = False, company_symbol: str | None = None) -> TradeResult:
+def account_trader(account_id: int) -> str:
+    return f"{ACCOUNT_USER_PREFIX}{account_id}]"
+
+
+def place_order(conn, operator: str, symbol: str, side: str, price: float, shares: int, is_admin: bool = False, company_symbol: str | None = None, account_id: int | None = None) -> TradeResult:
     if shares > MAX_ORDER_SHARES:
         return TradeResult(False, f"单笔委托数量不能超过 {MAX_ORDER_SHARES} 股")
     symbol = symbol.upper()
@@ -192,11 +204,16 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
     if price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
 
-    # Operators always trade as independent personal accounts. A managed company,
-    # when provided by older clients, is only context and must not restrict symbols
-    # or switch funds into a separate company account.
+    if account_id is None and company_symbol and str(company_symbol).isdigit():
+        account_id = int(company_symbol)
     company = None
+    account = None
     trader = operator
+    if account_id:
+        account = row_dict(fetchone(conn, "SELECT id,owner,balance FROM fund_accounts WHERE id=? AND owner=? AND locked=1", (account_id, operator)))
+        if not account:
+            return TradeResult(False, "资金账户不存在或未锁定")
+        trader = account_trader(int(account["id"]))
 
     # Serialize concurrent orders for the same stock via PostgreSQL advisory lock
     if is_postgres():
@@ -207,7 +224,10 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
         if company:
             balance = float(company["balance"] or 0)
         else:
-            user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (operator,)))
+            if account:
+                user_row = account
+            else:
+                user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (operator,)))
             if not user_row:
                 return TradeResult(False, "用户不存在")
             balance = float(user_row["balance"] or 0)

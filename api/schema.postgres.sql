@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS users (
     balance DOUBLE PRECISION DEFAULT 1000000
 );
 
+CREATE TABLE IF NOT EXISTS fund_accounts (
+    id BIGSERIAL PRIMARY KEY,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    initial_balance DOUBLE PRECISION DEFAULT 0,
+    balance DOUBLE PRECISION DEFAULT 0,
+    locked INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS stocks (
     id BIGSERIAL PRIMARY KEY,
     symbol TEXT UNIQUE NOT NULL,
@@ -94,6 +104,7 @@ CREATE TABLE IF NOT EXISTS order_book (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(username);
+CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_stock ON transactions(username, stock_symbol);
 CREATE INDEX IF NOT EXISTS idx_transactions_stock_round ON transactions(stock_symbol, round);
 CREATE INDEX IF NOT EXISTS idx_kline_stock_round ON kline(stock_symbol, round);

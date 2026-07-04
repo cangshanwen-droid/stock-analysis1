@@ -244,6 +244,7 @@ export async function submitOrder(token: string, order: {
   price: number;
   shares: number;
   company_symbol?: string;
+  account_id?: number;
 }) {
   if (!API_BASES.length || token === "demo-token") {
     return {
@@ -446,6 +447,21 @@ export async function confirmMyCompanyFunds(token: string, initFunds: number) {
   });
   if (!res.ok) throw await apiError(res, "confirm_funds_failed");
   return res.json();
+}
+
+export async function createFundAccount(token: string, name: string, initialBalance: number) {
+  const res = await fetchApi("/fund-accounts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ name, initial_balance: initialBalance })
+  });
+  if (!res.ok) throw await apiError(res, "create_fund_account_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "create_fund_account_failed");
+  return data;
 }
 
 export async function fetchAvailableCompanies(token: string) {

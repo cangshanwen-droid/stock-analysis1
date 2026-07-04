@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
-from .trading import COMPANY_USER_PREFIX, ensure_company_user, get_managed_companies, place_order
+from .trading import COMPANY_USER_PREFIX, account_trader, ensure_company_user, get_managed_companies, place_order
 
 TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "change-me-before-production")
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
@@ -171,6 +171,7 @@ class TradeRequest(BaseModel):
     price: float = Field(gt=0)
     shares: int = Field(gt=0, le=1_000_000)
     company_symbol: str | None = Field(default=None, max_length=16)
+    account_id: int | None = Field(default=None, gt=0)
 
 
 class LoginRequest(BaseModel):
@@ -224,8 +225,52 @@ class ConfirmFundsRequest(BaseModel):
     init_funds: float = Field(gt=0)
 
 
+class CreateFundAccountRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    initial_balance: float = Field(gt=0, le=1_000_000_000_000)
+
+
 def initial_stock_price(revenue: float, total_shares: float, industry_pe: float) -> float:
     return round(revenue * 10000 / total_shares / industry_pe, 2)
+
+
+def ensure_fund_accounts_schema(conn) -> None:
+    id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    execute(conn, f"""
+        CREATE TABLE IF NOT EXISTS fund_accounts (
+            id {id_type},
+            owner TEXT NOT NULL,
+            name TEXT NOT NULL,
+            initial_balance DOUBLE PRECISION DEFAULT 0,
+            balance DOUBLE PRECISION DEFAULT 0,
+            locked INTEGER DEFAULT 1,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
+
+
+def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
+    ensure_fund_accounts_schema(conn)
+    rows = fetchall(conn, """
+        SELECT id,owner,name,initial_balance,balance,locked,created_at
+        FROM fund_accounts
+        WHERE owner=?
+        ORDER BY id
+    """, (owner,))
+    return [
+        {
+            "id": int(row["id"]),
+            "symbol": str(row["id"]),
+            "owner": row["owner"],
+            "name": row["name"],
+            "initialBalance": float(row["initial_balance"] or 0),
+            "balance": float(row["balance"] or 0),
+            "fundsLocked": bool(row["locked"]),
+            "createdAt": str(row["created_at"]),
+        }
+        for row in rows
+    ]
 
 
 def b64url(data: bytes) -> str:
@@ -345,20 +390,37 @@ def login(payload: LoginRequest) -> dict[str, Any]:
 
 @app.get("/my-companies")
 def my_companies(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
-    """List companies managed by the current user."""
     with connect() as conn:
-        rows = fetchall(conn,
-            "SELECT symbol,name,balance,funds_locked FROM stocks WHERE manager=? AND is_deleted=0 ORDER BY symbol",
-            (user["username"],))
-    return [
-        {
-            "symbol": r["symbol"],
-            "name": r["name"],
-            "balance": float(r["balance"] or 0),
-            "fundsLocked": bool(r["funds_locked"]),
-        }
-        for r in rows
-    ]
+        return list_fund_accounts(conn, user["username"])
+
+
+@app.get("/fund-accounts")
+def fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    with connect() as conn:
+        return list_fund_accounts(conn, user["username"])
+
+
+@app.post("/fund-accounts")
+def create_fund_account(payload: CreateFundAccountRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    if not ENABLE_ORDER_WRITES:
+        return {"accepted": False, "reason": "order_api_not_enabled_yet", "detail": "Set ENABLE_ORDER_WRITES=true to create fund accounts."}
+    name = payload.name.strip()
+    amount = round(payload.initial_balance, 2)
+    with connect() as conn:
+        ensure_fund_accounts_schema(conn)
+        existing = fetchone(conn, "SELECT id FROM fund_accounts WHERE owner=? AND name=?", (user["username"], name))
+        if existing:
+            raise HTTPException(status_code=409, detail="fund_account_exists")
+        row = fetchone(conn, """
+            INSERT INTO fund_accounts(owner,name,initial_balance,balance,locked)
+            VALUES(?,?,?,?,1)
+            RETURNING id
+        """, (user["username"], name, amount, amount))
+        account_id = int(row["id"])
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "create_fund_account", str(account_id), f"name={name}, initial_balance={amount}"))
+        conn.commit()
+    return {"accepted": True, "id": account_id, "symbol": str(account_id), "name": name, "balance": amount, "fundsLocked": True}
 
 
 @app.get("/available-companies")
@@ -470,12 +532,20 @@ def stock_kline(symbol: str) -> list[dict[str, Any]]:
 
 @app.get("/portfolio")
 def portfolio(company: str | None = None, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    # Determine trader identity: personal or company account
-    if company:
-        company = company.upper()
-        username = f"{COMPANY_USER_PREFIX}{company}]"
+    account = None
+    if company and str(company).isdigit():
+        with connect() as conn:
+            ensure_fund_accounts_schema(conn)
+            account = row_dict(fetchone(conn, "SELECT id,name,balance FROM fund_accounts WHERE id=? AND owner=?", (int(company), user["username"])))
+        if not account:
+            raise HTTPException(status_code=404, detail="fund_account_not_found")
+        username = account_trader(int(account["id"]))
+        display_name = str(account["name"])
+        cash_balance = float(account["balance"] or 0)
     else:
         username = user["username"]
+        display_name = user["username"]
+        cash_balance = float(user["balance"] or 0)
 
     cache_key = f"portfolio:{username}"
     cached = cache_get(cache_key, 3.0)
@@ -551,10 +621,10 @@ def portfolio(company: str | None = None, user: dict[str, Any] = Depends(current
             "pnl": round(pnl, 2),
             "pnlRatio": round(pnl / (avg_cost * shares) * 100, 2) if avg_cost and shares else 0,
         })
-    total_assets = float(user["balance"] or 0) + total_market_value
+    total_assets = cash_balance + total_market_value
     total_pnl = total_market_value - total_cost
     result = {
-        "user": {"username": username, "role": user["role"], "balance": float(user["balance"] or 0)},
+        "user": {"username": display_name, "role": user["role"], "balance": cash_balance},
         "summary": {
             "marketValue": round(total_market_value, 2),
             "totalAssets": round(total_assets, 2),
@@ -582,7 +652,7 @@ def create_order(payload: TradeRequest, user: dict[str, Any] = Depends(current_u
         }
     with connect() as conn:
         result = place_order(conn, payload.username, payload.symbol, payload.side, payload.price, payload.shares,
-                            is_admin=(user["role"] == "admin"), company_symbol=payload.company_symbol)
+                            is_admin=(user["role"] == "admin"), company_symbol=payload.company_symbol, account_id=payload.account_id)
         if result.ok:
             conn.commit()
             clear_read_cache()
@@ -1084,6 +1154,7 @@ def admin_db_migrate(user: dict[str, Any] = Depends(current_user)):
                 execute(conn, bind(stmt))
             except Exception:
                 pass  # Column might already exist
+        ensure_fund_accounts_schema(conn)
         # Set balance = init_funds for existing stocks where balance = 0
         execute(conn, "UPDATE stocks SET balance=init_funds WHERE balance=0 AND init_funds>0")
         conn.commit()
