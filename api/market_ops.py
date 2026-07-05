@@ -26,7 +26,16 @@ def row_get(row: Any, key: str, default=None):
 
 def is_system_user(username: Any) -> bool:
     text = str(username or "")
-    return text in SYSTEM_USERNAMES or (text.startswith("[") and text.endswith("]"))
+    if text in SYSTEM_USERNAMES:
+        return True
+    # Bracketed usernames that are NOT fund-account or company traders
+    if text.startswith("[") and text.endswith("]"):
+        if text.startswith(ACCOUNT_USER_PREFIX):
+            return False
+        if text.startswith("[公司:"):
+            return False
+        return True
+    return False
 
 
 def compute_price(stock: dict[str, Any], carbon_mean: float | None = None) -> float:
