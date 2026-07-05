@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
 import {
   claimCompany,
@@ -141,6 +141,7 @@ export function TradingWorkspace() {
     premiumRate: string;
   }>>({});
   const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
+  const loginRef = useRef<string>("");
 
   useEffect(() => {
     let alive = true;
@@ -248,6 +249,7 @@ export function TradingWorkspace() {
       setUser(data.user);
       setPortfolio(null);
       setTradingCompany(null);
+      loginRef.current = data.user.username;
       // Fetch fund accounts for every signed-in role so the portfolio panel is never blank.
       Promise.all([
         fetchMyCompanies(token),
@@ -290,7 +292,7 @@ export function TradingWorkspace() {
       setPortfolioCompany(nextAccount.symbol);
       const data = await fetchPortfolio(token, nextAccount.symbol);
       setPortfolio(data);
-      setUser(data.user);
+      setUser({ ...data.user, username: loginRef.current || data.user.username });
     } else {
       setTradingCompany(null);
       setPortfolioCompany(null);
@@ -365,7 +367,7 @@ export function TradingWorkspace() {
         try {
           const data = await fetchPortfolio(token, tradingCompany ?? undefined);
           setPortfolio(data);
-          setUser(data.user);
+          setUser({ ...data.user, username: loginRef.current || data.user.username });
           setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产已刷新，行情和 K 线将在收盘结算后更新。`);
         } catch {
           setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
@@ -704,7 +706,7 @@ export function TradingWorkspace() {
           </div>
           {user ? (
             <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); }}>
-              {user.username} · 退出
+              {(loginRef.current || user.username)} · 退出
             </button>
           ) : (
             <button className="ghost" onClick={() => setView("trade")}>操作员入口</button>
@@ -1005,7 +1007,7 @@ export function TradingWorkspace() {
                             try {
                               const data = await fetchPortfolio(token!, c.symbol);
                               setPortfolio(data);
-                              setUser(data.user);
+                              setUser({ ...data.user, username: loginRef.current || data.user.username });
                               setOrderMessage(`已切换到资金账户「${c.name}」。`);
                             } catch {
                               setOrderMessage(`资金账户「${c.name}」切换失败，请稍后重试。`);
