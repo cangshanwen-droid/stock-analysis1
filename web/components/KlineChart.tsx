@@ -61,10 +61,10 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
     return {
       round: candle.round,
       label: `R${candle.round}`,
-      time: dateForIndex(index),
+      time: candle.time as Time,
       open,
-      high: round2(Math.max(candle.high, open, close)),
-      low: round2(Math.max(0.01, Math.min(candle.low, open, close))),
+      high: round2(candle.high),
+      low: round2(Math.max(0.01, candle.low)),
       close,
       volume: Math.max(0, Math.round(candle.volume || 0)),
     };
@@ -297,11 +297,15 @@ function KlineChartCanvas({ candles }: Props) {
     roundLabelRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle.label]));
     candleLookupRef.current = new Map(displayCandles.map((candle) => [timeKey(candle.time), candle]));
     candleRef.current.setData(candleData);
-    volumeRef.current.setData(displayCandles.map((candle) => ({
+    const volumeData = displayCandles.map((candle) => ({
       time: candle.time,
       value: candle.volume,
       color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
-    })));
+    }));
+    const allZeroVol = volumeData.every((d) => d.value <= 0);
+    volumeRef.current.setData(allZeroVol
+      ? volumeData.map((d) => ({ ...d, value: 0.5 }))
+      : volumeData);
 
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,
