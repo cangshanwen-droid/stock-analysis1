@@ -1104,7 +1104,11 @@ export function TradingWorkspace() {
                             const detail = e instanceof Error ? e.message : "";
                             const readable = detail.includes("fund_account_has_open_orders")
                                 ? "该账户仍有未完成挂单，不能删除。"
-                                : detail;
+                                : detail.includes("fund_account_not_found")
+                                  ? "该账户不存在，可能已被删除。"
+                                  : detail.includes("api_")
+                                    ? "网络请求失败，请稍后重试。"
+                                    : detail;
                             setOrderMessage(`删除资金账户失败：${readable}`);
                           }
                         }}>删除账户</button>

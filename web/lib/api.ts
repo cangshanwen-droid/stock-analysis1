@@ -79,7 +79,7 @@ async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
       const res = await fetchWithRetry(`${base}${path}`, init);
       if (res.ok) return res;
       lastError = new Error(`api_${res.status}`);
-      if (res.status === 401 || res.status === 403 || res.status === 400 || res.status === 409) return res;
+      if (res.status === 401 || res.status === 403 || res.status === 400 || res.status === 404 || res.status === 409) return res;
     } catch (error) {
       lastError = error;
     }
