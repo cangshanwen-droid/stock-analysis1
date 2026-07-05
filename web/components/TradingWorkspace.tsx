@@ -777,9 +777,13 @@ export function TradingWorkspace() {
                     <button
                       key={c.symbol}
                       className={tradingCompany === c.symbol ? "active" : ""}
-                      onClick={() => setTradingCompany(c.symbol)}
+                      onClick={() => {
+                        setTradingCompany(c.symbol);
+                        setOrderMessage(`已切换到资金账户「${c.name}」`);
+                      }}
                     >
                       {c.name} · {fmtMoney(c.balance)}
+                      {tradingCompany === c.symbol ? <span className="active-badge"> ✓ 当前使用</span> : null}
                     </button>
                   ))}
                 </div>
@@ -792,9 +796,9 @@ export function TradingWorkspace() {
                 (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (
-                    <div className="account-box">
+                    <div className="account-box" style={{ border: "1px solid rgba(70,159,230,0.3)" }}>
                       <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                      <div className="row"><span>资金账户</span><strong>{company.name}</strong></div>
+                      <div className="row"><span>资金账户</span><strong>{company.name} <span style={{color:"#469fe6",fontSize:12}}>✓ 当前</span></strong></div>
                       <div className="row"><span>账户余额</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
                     </div>
                   ) : null;
