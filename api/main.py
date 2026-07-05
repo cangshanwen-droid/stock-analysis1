@@ -498,6 +498,8 @@ def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_fund_account", str(account_id), f"name={account['name']}"))
         conn.commit()
+    clear_read_cache()
+    return {"accepted": True, "id": account_id}
 
 
 @app.get("/available-companies")

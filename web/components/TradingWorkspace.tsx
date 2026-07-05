@@ -297,6 +297,7 @@ export function TradingWorkspace() {
       setTradingCompany(null);
       setPortfolioCompany(null);
       setPortfolio(null);
+      setPortfolio(null);
     }
     return accounts;
   }
