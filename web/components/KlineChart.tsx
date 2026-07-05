@@ -262,13 +262,13 @@ function KlineChartCanvas({ candles }: Props) {
       const change = candle.close - candle.open;
       const changePct = candle.open ? (change / candle.open) * 100 : 0;
       tooltip.innerHTML = `
-        <div class="kline-tip-head">Round ${candle.round}</div>
-        <div><span>Open</span><strong>¥${candle.open.toFixed(2)}</strong></div>
-        <div><span>High</span><strong>¥${candle.high.toFixed(2)}</strong></div>
-        <div><span>Low</span><strong>¥${candle.low.toFixed(2)}</strong></div>
-        <div><span>Close</span><strong>¥${candle.close.toFixed(2)}</strong></div>
-        <div><span>Change</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
-        <div><span>Volume</span><strong>${candle.volume}</strong></div>
+        <div class="kline-tip-head">第 ${candle.round} 轮</div>
+        <div><span>开盘</span><strong>¥${candle.open.toFixed(2)}</strong></div>
+        <div><span>最高</span><strong>¥${candle.high.toFixed(2)}</strong></div>
+        <div><span>最低</span><strong>¥${candle.low.toFixed(2)}</strong></div>
+        <div><span>收盘</span><strong>¥${candle.close.toFixed(2)}</strong></div>
+        <div><span>涨跌</span><strong class="${change >= 0 ? "up" : "down"}">${change >= 0 ? "+" : ""}${change.toFixed(2)} (${changePct.toFixed(2)}%)</strong></div>
+        <div><span>成交量</span><strong>${candle.volume}</strong></div>
       `;
 
       const x = param.point.x > ref.current.clientWidth - 190 ? param.point.x - 184 : param.point.x + 16;
@@ -302,10 +302,7 @@ function KlineChartCanvas({ candles }: Props) {
       value: candle.volume,
       color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
     }));
-    const allZeroVol = volumeData.every((d) => d.value <= 0);
-    volumeRef.current.setData(allZeroVol
-      ? volumeData.map((d) => ({ ...d, value: 0.5 }))
-      : volumeData);
+    volumeRef.current.setData(volumeData);
 
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,
