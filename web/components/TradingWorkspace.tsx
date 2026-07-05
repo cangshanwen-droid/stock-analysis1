@@ -1092,16 +1092,14 @@ export function TradingWorkspace() {
                           }
                         }}>修改可用资金</button>
                         <button className="danger-button" onClick={async () => {
-                          if (!window.confirm(`确认删除资金账户「${company.name}」？有持仓或未完成挂单的账户不能删除。`)) return;
+                          if (!window.confirm(`确认删除资金账户「${company.name}」？有持仓会自动按市价清仓，不能撤销。`)) return;
                           try {
                             await deleteFundAccount(token!, Number(company.symbol));
                             await reloadFundAccounts(null);
                             setOrderMessage(`资金账户「${company.name}」已删除。`);
                           } catch (e) {
                             const detail = e instanceof Error ? e.message : "";
-                            const readable = detail.includes("fund_account_has_positions")
-                              ? "该账户仍有持仓，不能删除。"
-                              : detail.includes("fund_account_has_open_orders")
+                            const readable = detail.includes("fund_account_has_open_orders")
                                 ? "该账户仍有未完成挂单，不能删除。"
                                 : detail;
                             setOrderMessage(`删除资金账户失败：${readable}`);

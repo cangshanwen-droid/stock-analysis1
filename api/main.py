@@ -497,8 +497,21 @@ def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_
             row for row in holding_rows
             if int(row["bought"] or 0) - int(row["sold"] or 0) > 0
         ]
-        if active_positions:
-            raise HTTPException(status_code=400, detail="fund_account_has_positions")
+        # Liquidate any open positions at current market price
+        for pos in active_positions:
+            sym = pos["stock_symbol"]
+            shares = int(pos["bought"] or 0) - int(pos["sold"] or 0)
+            if shares <= 0:
+                continue
+            stock = row_dict(fetchone(conn, "SELECT current_price FROM stocks WHERE symbol=? AND is_deleted=0", (sym,)))
+            price = float(stock["current_price"] or 0)
+            amount = round(price * shares, 2)
+            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, trader))
+            execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'force_close',?,?,0)",
+                    (trader, sym, price, shares))
+            execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                    (user["username"], "liquidate_position", f"{sym}:{account_id}",
+                     f"liquidated {shares} shares at {price}, proceeds {amount}"))
         execute(conn, "DELETE FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"]))
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_fund_account", str(account_id), f"name={account['name']}"))
