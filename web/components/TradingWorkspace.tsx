@@ -988,7 +988,7 @@ export function TradingWorkspace() {
                   <div className="meta">资金、持仓、市值和浮动盈亏</div>
                 </div>
                 <div className={cls(portfolio?.summary.totalPnl ?? 0)}>
-                  {fmtMoney(portfolio?.summary.totalAssets ?? user?.balance ?? 0)}
+                  {portfolio ? fmtMoney(portfolio.summary.totalAssets) : "请选择资金账户"}
                 </div>
               </div>
               {/* Portfolio account selector — all companies shown */}
