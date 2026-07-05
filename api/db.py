@@ -34,8 +34,8 @@ def get_pool():
 
             _pool = psycopg_pool.ConnectionPool(
                 DATABASE_URL,
-                min_size=2,
-                max_size=20,
+                min_size=1,
+                max_size=6,
                 open=True,
                 timeout=10,
                 kwargs={"row_factory": dict_row},
