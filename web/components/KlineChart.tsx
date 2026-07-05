@@ -304,6 +304,8 @@ function KlineChartCanvas({ candles }: Props) {
       color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
     }));
     volumeRef.current.setData(volumeData);
+    volumeRef.current.priceScale().applyOptions({ autoScale: false });
+    volumeRef.current.setData(volumeData);
 
     const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,

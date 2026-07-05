@@ -724,7 +724,7 @@ export function TradingWorkspace() {
         {(view === "market" || view === "trade") ? (
           <section className="quote-grid">
             {stocks.map((stock) => {
-              const tag = ({ YLIAO:"#0EA5E9", JXIAO:"#A855F7", JGONG:"#F97316", WULIU:"#14B8A6" })[stock.symbol] ?? "#94A3B8";
+              const tag = ["#0EA5E9","#A855F7","#F97316","#14B8A6","#EC4899","#8B5CF6","#F59E0B","#06B6D4"][Array.from(stock.symbol).reduce((s,c)=>s+c.charCodeAt(0),0)%8];
               return <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
                 <div className="symbol"><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:tag,marginRight:6}} />{stock.symbol}</div>
                 <div className="name">{stock.name}</div>
