@@ -137,8 +137,11 @@ def close_market(conn) -> MarketResult:
         sell_volume = sum(int(t["shares"]) for t in real_txns if t["trade_type"] in ("sell", "force_close"))
         volume = max(buy_volume, sell_volume)
         trade_prices = [float(t["price"]) for t in real_txns if float(t["price"] or 0) > 0]
-        next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
-        previous_close = float(stock["previous_close"] or stock["current_price"] or next_price)
+        previous_close = float(stock["previous_close"] or stock["current_price"] or 0)
+        if volume > 0:
+            next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
+        else:
+            next_price = previous_close
         high = max([next_price, previous_close, *trade_prices])
         low = min([next_price, previous_close, *trade_prices])
         change_pct = round((next_price - previous_close) / previous_close * 100, 2) if previous_close else 0
