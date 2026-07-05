@@ -801,19 +801,12 @@ export function TradingWorkspace() {
               {(tradingCompany ? (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (
-                    <div className="account-box" style={{ border: "1px solid rgba(70,159,230,0.3)" }}>
-                      <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                      <div className="row"><span>资金账户</span><strong>{company.name} <span style={{color:"#469fe6",fontSize:12}}>✓ 当前</span></strong></div>
-                      <div className="row"><span>账户余额</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
+                    <div className="account-box" style={{border:"1px solid rgba(70,159,230,0.3)",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                      <div><strong>{company.name}</strong> <span style={{color:"#469fe6",fontSize:11}}>✓ 当前</span></div>
+                      <div><strong className="up">{fmtMoney(company.balance)}</strong></div>
                     </div>
                   ) : null;
-                })() : (
-                  <div className="account-box" style={{ border: "1px solid rgba(148,163,184,0.2)" }}>
-                    <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
-                    <div className="row"><span>可用余额</span><strong className="up">{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
-                    <div className="row"><span>委托模式</span><strong>直接交易</strong></div>
-                  </div>
-                ))}
+                })() : null)}
               {/* Company management moved to Portfolio page */}
               {/* Fund setup for unlocked companies */}
               {myCompanies.filter((c) => !c.fundsLocked).map((company) => (
