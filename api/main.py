@@ -515,15 +515,6 @@ def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_
         execute(conn, "DELETE FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"]))
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_fund_account", str(account_id), f"name={account['name']}"))
-        # If last account, auto-create a new one so operator can still manage
-        remaining = fetchone(conn, "SELECT COUNT(*) AS cnt FROM fund_accounts WHERE owner=?", (user["username"],))
-        if remaining and int(remaining["cnt"] or 0) == 0:
-            execute(conn, "DELETE FROM audit_logs WHERE actor=? AND action='delete_fund_account'", (user["username"],))
-            user_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (user["username"],))
-            init_bal = round(float((user_row or {}).get("balance") or 1_000_000), 2)
-            fetchone(conn, """INSERT INTO fund_accounts(owner,name,initial_balance,balance,locked)
-                VALUES(?,?,?,?,1) RETURNING id""",
-                (user["username"], f"{user['username']} 的资金", init_bal, init_bal))
         conn.commit()
 
 
