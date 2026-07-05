@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -7,6 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", ROOT_DIR / "data" / "stock_analysis.db"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 _pool = None
+_pool_lock = threading.Lock()
 
 
 class DatabaseNotReady(RuntimeError):
@@ -19,19 +21,23 @@ def is_postgres() -> bool:
 
 def get_pool():
     global _pool
-    if is_postgres() and _pool is None:
-        import psycopg
-        from psycopg.rows import dict_row
-
+    if not is_postgres():
+        return None
+    if _pool is not None:
+        return _pool
+    with _pool_lock:
+        if _pool is not None:
+            return _pool
         try:
             import psycopg_pool
+            from psycopg.rows import dict_row
 
             _pool = psycopg_pool.ConnectionPool(
                 DATABASE_URL,
-                min_size=1,
-                max_size=10,
+                min_size=2,
+                max_size=20,
                 open=True,
-                timeout=5,
+                timeout=10,
                 kwargs={"row_factory": dict_row},
             )
         except ImportError:
