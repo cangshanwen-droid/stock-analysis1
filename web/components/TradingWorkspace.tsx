@@ -780,7 +780,7 @@ export function TradingWorkspace() {
               <>
               {/* Company account selector — operators only use company accounts */}
               {myCompanies.length > 0 ? (
-                <div className="segmented" style={{ marginBottom: 8 }}>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
                   {myCompanies.map((c) => (
                     <button
                       key={c.symbol}
@@ -789,15 +789,14 @@ export function TradingWorkspace() {
                         setTradingCompany(c.symbol);
                         setOrderMessage(`已切换到资金账户「${c.name}」`);
                       }}
+                      style={{ padding:"6px 10px", fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
                     >
                       {c.name} · {fmtMoney(c.balance)}
-                      {tradingCompany === c.symbol ? <span className="active-badge"> ✓ 当前使用</span> : null}
+                      {tradingCompany === c.symbol ? <span style={{marginLeft:4,color:"#38BDF8",fontSize:11}}>✓ 当前</span> : null}
                     </button>
                   ))}
                 </div>
-              ) : (
-                null
-              )}
+              ) : null}
               {(tradingCompany ? (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (

@@ -268,6 +268,7 @@ def reset_to_round1(conn) -> MarketResult:
     execute(conn, "DELETE FROM order_book")
     execute(conn, "DELETE FROM kline")
     execute(conn, "DELETE FROM rounds")
+    execute(conn, "DELETE FROM fund_accounts")
     rebuild_balances_before_round(conn, 1)
     for stock in stocks:
         init_price = stock_initial_price(stock)
