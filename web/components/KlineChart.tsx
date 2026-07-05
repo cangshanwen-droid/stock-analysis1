@@ -274,7 +274,7 @@ function KlineChartCanvas({ candles }: Props) {
             const tipX = param.point.x + 16;
       const maxX = (ref.current.clientWidth || 600) - 190;
       tooltip.style.left = (tipX > maxX ? (param.point.x - 182) : tipX) + "px";
-      tooltip.style.top = "8px";
+      tooltip.style.top = "36px";
       tooltip.style.right = "auto";
       tooltip.style.transform = "none";
       tooltip.style.opacity = "1";
