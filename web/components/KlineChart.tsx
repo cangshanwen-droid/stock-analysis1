@@ -300,14 +300,16 @@ function KlineChartCanvas({ candles }: Props) {
     candleRef.current.setData(candleData);
     const volumeData = displayCandles.map((candle) => ({
       time: candle.time,
-      value: candle.volume,
+      value: Math.max(0.01, candle.volume),
       color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
     }));
-    volumeRef.current.setData(volumeData);
-    volumeRef.current.priceScale().applyOptions({ autoScale: false });
-    volumeRef.current.setData(volumeData);
-
-    const ma5WithCrossColor = ma5Data.map((point, index) => ({
+    const volMax = Math.max(...volumeData.map((d) => d.value));
+    if (volMax <= 0.01) {
+      volumeRef.current.priceScale().applyOptions({ autoScale: false });
+      volumeRef.current.setData(volumeData.map((d) => ({ ...d, value: 10 })));
+    } else {
+      volumeRef.current.setData(volumeData);
+    }const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,
       color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : MA5_COLOR
     }));
