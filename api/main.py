@@ -506,7 +506,7 @@ def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_
             stock = row_dict(fetchone(conn, "SELECT current_price FROM stocks WHERE symbol=? AND is_deleted=0", (sym,)))
             price = float(stock["current_price"] or 0)
             amount = round(price * shares, 2)
-            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, trader))
+            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, user["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'force_close',?,?,0)",
                     (trader, sym, price, shares))
             execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
