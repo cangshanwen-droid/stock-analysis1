@@ -303,7 +303,12 @@ export function TradingWorkspace() {
 
   async function submitTrade() {
     if (!user || !current || !token) return;
-    // No fund account required - trade directly from user balance
+    if (!tradingCompany) {
+      setOrderStatus("error");
+      setOrderMessage("请先创建并选择一个资金账户");
+      setOrderFeedback(null);
+      return;
+    }
     const price = Number(current.price);
     const shares = Number(orderShares);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
