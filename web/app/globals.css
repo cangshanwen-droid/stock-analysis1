@@ -473,10 +473,11 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 60px;
   background: #151C2B;
   border: 0.8px solid #2E3A54;
   border-radius: 12px;
-  padding: 16px 22px;
+  padding: 18px 24px;
   margin-bottom: 14px;
   transition: background 0.15s ease;
   cursor: default;
@@ -487,32 +488,39 @@ button {
 .account-box.compact .acct-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
 }
 .account-box.compact .acct-id {
   color: #F1F5F9;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
+  font-family: "Roboto Mono", monospace;
+  white-space: nowrap;
 }
 .account-box.compact .acct-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   color: #38BDF8;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
+  white-space: nowrap;
 }
 .account-box.compact .acct-badge svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   fill: #38BDF8;
+  flex-shrink: 0;
 }
 .account-box.compact .acct-balance {
   color: #F87171;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 850;
   font-family: "Roboto Mono", monospace;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .error-text {

@@ -49,7 +49,7 @@ type OrderFeedback = {
 };
 
 function fmtMoney(value: number) {
-  return `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
+  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function cls(value: number) {

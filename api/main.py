@@ -263,29 +263,6 @@ def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
         WHERE owner=?
         ORDER BY id
     """, (owner,))
-    deleted_before = fetchone(conn, """
-        SELECT id FROM audit_logs
-        WHERE actor=? AND action='delete_fund_account'
-        LIMIT 1
-    """, (owner,))
-    if not rows and not deleted_before:
-        user_row = row_dict(fetchone(conn, "SELECT balance FROM users WHERE username=?", (owner,)))
-        initial_balance = round(float((user_row or {}).get("balance") or 1_000_000), 2)
-        fetchone(conn, """
-            INSERT INTO fund_accounts(owner,name,initial_balance,balance,locked)
-            VALUES(?,?,?,?,1)
-            RETURNING id
-        """, (owner, f"{owner} 的资金", initial_balance, initial_balance))
-        try:
-            conn.commit()
-        except Exception:
-            pass
-        rows = fetchall(conn, """
-            SELECT id,owner,name,initial_balance,balance,locked,created_at
-            FROM fund_accounts
-            WHERE owner=?
-            ORDER BY id
-        """, (owner,))
     return [
         {
             "id": int(row["id"]),
