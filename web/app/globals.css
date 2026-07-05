@@ -286,8 +286,8 @@ button {
 .kline-tooltip {
   position: absolute;
   z-index: 5;
-  top: 8px;
-  right: 8px;
+  top: 38px;
+  right: 22px;
   left: auto;
   width: 176px;
   pointer-events: none;
