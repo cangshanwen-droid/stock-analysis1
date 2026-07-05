@@ -252,6 +252,7 @@ def ensure_fund_accounts_schema(conn) -> None:
         )
     """)
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
+    execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
 
 
 def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
@@ -512,7 +513,12 @@ def delete_fund_account(account_id: int, user: dict[str, Any] = Depends(current_
             execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                     (user["username"], "liquidate_position", f"{sym}:{account_id}",
                      f"liquidated {shares} shares at {price}, proceeds {amount}"))
+        # Remove all traces: fund_account record, orders, transactions, audit trail
         execute(conn, "DELETE FROM fund_accounts WHERE id=? AND owner=?", (account_id, user["username"]))
+        for variant in [trader, mojibake_trader]:
+            execute(conn, "DELETE FROM order_book WHERE username=?", (variant,))
+            execute(conn, "DELETE FROM transactions WHERE username=?", (variant,))
+            execute(conn, "DELETE FROM audit_logs WHERE actor=?", (variant,))
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_fund_account", str(account_id), f"name={account['name']}"))
         conn.commit()

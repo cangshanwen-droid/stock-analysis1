@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from .db import execute, fetchall, fetchone
+from .db import execute, fetchall, fetchone, is_postgres
 
 ACCOUNT_USER_PREFIX = "[账户:"
 
@@ -15,6 +15,13 @@ class MarketResult:
     round: int = 0
     settled_stocks: int = 0
     matched_shares: int = 0
+
+
+def log_action(conn, actor: str, action: str, target: str = "", detail: str = "") -> None:
+    execute(conn,
+        "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+        (actor or "system", action, target or "", detail or ""),
+    )
 
 
 def row_get(row: Any, key: str, default=None):
@@ -105,6 +112,11 @@ def close_market(conn) -> MarketResult:
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
+            buyer_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy["username"],))
+            if not buyer_row or float(buyer_row["balance"] or 0) < amount:
+                log_action(conn, "system", "settle_skip", buy["username"],
+                    f"insufficient balance for {fill}x{match_price} ({symbol} round {round_no})")
+                continue
             execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                     (buy["username"], symbol, match_price, fill, round_no))
