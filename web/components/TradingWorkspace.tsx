@@ -303,12 +303,7 @@ export function TradingWorkspace() {
 
   async function submitTrade() {
     if (!user || !current || !token) return;
-    if (!tradingCompany) {
-      setOrderStatus("error");
-      setOrderMessage("请先创建并选择一个资金账户");
-      setOrderFeedback(null);
-      return;
-    }
+    // No fund account required - trade directly from user balance
     const price = Number(current.price);
     const shares = Number(orderShares);
     if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
@@ -796,12 +791,9 @@ export function TradingWorkspace() {
                   ))}
                 </div>
               ) : (
-                <div className="empty-state" style={{ fontSize: 13, padding: "12px 0" }}>
-                  还没有资金账户，请先到持仓资产页创建。
-                </div>
+                null
               )}
-              {tradingCompany ? (
-                (() => {
+              {(tradingCompany ? (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (
                     <div className="account-box" style={{ border: "1px solid rgba(70,159,230,0.3)" }}>
@@ -810,8 +802,13 @@ export function TradingWorkspace() {
                       <div className="row"><span>账户余额</span><strong className="up">{fmtMoney(company.balance)}</strong></div>
                     </div>
                   ) : null;
-                })()
-              ) : null}
+                })() : (
+                  <div className="account-box" style={{ border: "1px solid rgba(148,163,184,0.2)" }}>
+                    <div className="row"><span>操作员</span><strong>{user.username}</strong></div>
+                    <div className="row"><span>可用余额</span><strong className="up">{fmtMoney(portfolio?.user.balance ?? user.balance)}</strong></div>
+                    <div className="row"><span>委托模式</span><strong>直接交易</strong></div>
+                  </div>
+                ))}
               {/* Company management moved to Portfolio page */}
               {/* Fund setup for unlocked companies */}
               {myCompanies.filter((c) => !c.fundsLocked).map((company) => (
