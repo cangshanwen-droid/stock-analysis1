@@ -801,9 +801,15 @@ export function TradingWorkspace() {
               {(tradingCompany ? (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (
-                    <div className="account-box" style={{border:"1px solid rgba(70,159,230,0.3)",padding:"8px 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                      <div><strong>{company.name}</strong> <span style={{color:"#469fe6",fontSize:11}}>✓ 当前</span></div>
-                      <div><strong className="up">{fmtMoney(company.balance)}</strong></div>
+                    <div className="account-box compact">
+                      <div className="acct-left">
+                        <span className="acct-id">{company.name}</span>
+                        <span className="acct-badge">
+                          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                          当前可用账户
+                        </span>
+                      </div>
+                      <div className="acct-balance">{fmtMoney(company.balance)}</div>
                     </div>
                   ) : null;
                 })() : null)}
