@@ -271,9 +271,11 @@ function KlineChartCanvas({ candles }: Props) {
         <div><span>成交量</span><strong>${candle.volume}</strong></div>
       `;
 
-            tooltip.style.top = "38px";
-      tooltip.style.right = "22px";
-      tooltip.style.left = "auto";
+            const tipX = param.point.x + 16;
+      const maxX = (ref.current.clientWidth || 600) - 190;
+      tooltip.style.left = (tipX > maxX ? (param.point.x - 182) : tipX) + "px";
+      tooltip.style.top = "8px";
+      tooltip.style.right = "auto";
       tooltip.style.transform = "none";
       tooltip.style.opacity = "1";
     });
