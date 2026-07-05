@@ -274,8 +274,7 @@ button {
 .chart-shell {
   position: relative;
   padding-right: 14px;
-  background:
-    linear-gradient(180deg, rgba(8, 13, 22, 0.99), rgba(6, 10, 18, 0.99));
+  background: #0F141E;
   box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.05);
 }
 
@@ -287,8 +286,9 @@ button {
 .kline-tooltip {
   position: absolute;
   z-index: 5;
-  top: 30px;
-  left: 0;
+  top: 8px;
+  right: 8px;
+  left: auto;
   width: 176px;
   pointer-events: none;
   opacity: 0;
@@ -357,11 +357,22 @@ button {
 }
 
 .legend-ma5 {
-  color: #f9c42f;
+  color: #FFC107;
 }
 
 .legend-ma10 {
-  color: #469fe6;
+  color: #0EA5E9;
+}
+
+.legend-vol {
+  color: #94A3B8;
+}
+
+.legend-val {
+  font-weight: 400;
+  opacity: 0.7;
+  margin-left: 3px;
+  font-size: 11px;
 }
 
 .legend-ohlc {

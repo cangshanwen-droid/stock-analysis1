@@ -723,16 +723,16 @@ export function TradingWorkspace() {
 
         {(view === "market" || view === "trade") ? (
           <section className="quote-grid">
-            {stocks.map((stock) => (
-              <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
-                <div className="symbol">{stock.symbol}</div>
+            {stocks.map((stock) => {
+              const tag = ({ YLIAO:"#0EA5E9", JXIAO:"#A855F7", JGONG:"#F97316", WULIU:"#14B8A6" })[stock.symbol] ?? "#94A3B8";
+              return <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
+                <div className="symbol"><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:tag,marginRight:6}} />{stock.symbol}</div>
                 <div className="name">{stock.name}</div>
                 <div className={`price ${cls(stock.change)}`}>{fmtMoney(stock.price)}</div>
                 <div className={cls(stock.change)}>
                   {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePct.toFixed(2)}%)
                 </div>
-              </button>
-            ))}
+              </button>})}
           </section>
         ) : null}
 
@@ -741,10 +741,16 @@ export function TradingWorkspace() {
             <div className="chart-card">
               <div className="chart-head">
                 <div className="chart-title-stack">
-                  <strong>{current?.name ?? "公司"} · {current?.symbol ?? "-"}</strong>
-                </div>
-                <div className={`chart-price-badge ${cls(current?.change ?? 0)}`}>
-                  {current ? fmtMoney(current.price) : "--"}
+                  <strong>{current?.name ?? "公司"} ({current?.symbol ?? "-"})</strong>
+                  <span className="meta" style={{ margin: "0 8px" }}>|</span>
+                  <span className={cls(current?.change ?? 0)} style={{ fontWeight: 700 }}>
+                    现价 {current ? fmtMoney(current.price) : "--"}
+                    {current ? ` ${current.change >= 0 ? "+" : ""}${current.changePct.toFixed(2)}%` : ""}
+                  </span>
+                  <span className="meta" style={{ margin: "0 8px" }}>|</span>
+                  <span className="meta">
+                    开 {candles[candles.length-1]?.open.toFixed(2) ?? "--"} 高 {candles[candles.length-1]?.high.toFixed(2) ?? "--"} 低 {candles[candles.length-1]?.low.toFixed(2) ?? "--"} 收 {candles[candles.length-1]?.close.toFixed(2) ?? "--"}
+                  </span>
                 </div>
               </div>
               <KlineChart candles={candles} />

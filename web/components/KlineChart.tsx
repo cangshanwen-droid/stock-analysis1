@@ -29,13 +29,13 @@ type DisplayCandle = {
 };
 
 const START_DATE_UTC = Date.UTC(2026, 1, 26);
-const CHART_BACKGROUND = "#080d16";
-const GRID_MAJOR = "rgba(164, 180, 205, 0.09)";
-const GRID_MINOR = "rgba(164, 180, 205, 0.025)";
-const UP_COLOR = "#f23645";
-const DOWN_COLOR = "#00b050";
-const MA5_COLOR = "#f9c42f";
-const MA10_COLOR = "#469fe6";
+const CHART_BACKGROUND = "#0F141E";
+const GRID_MAJOR = "#232B3B";
+const GRID_MINOR = "#232B3B";
+const UP_COLOR = "#F24957";
+const DOWN_COLOR = "#2CB67D";
+const MA5_COLOR = "#FFC107";
+const MA10_COLOR = "#0EA5E9";
 
 function round2(value: number) {
   return Number(value.toFixed(2));
@@ -142,7 +142,7 @@ function KlineChartCanvas({ candles }: Props) {
       layout: {
         background: { type: ColorType.Solid, color: CHART_BACKGROUND },
         textColor: "#aeb9ca",
-        fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        fontFamily: "Inter, Roboto Mono, system-ui, sans-serif",
         attributionLogo: false
       },
       localization: {
@@ -157,17 +157,17 @@ function KlineChartCanvas({ candles }: Props) {
         }
       },
       grid: {
-        vertLines: { color: GRID_MINOR, style: LineStyle.Solid, visible: false },
-        horzLines: { color: GRID_MAJOR, style: LineStyle.Solid, visible: true }
+        vertLines: { color: GRID_MINOR, style: LineStyle.Dashed, visible: false },
+        horzLines: { color: GRID_MAJOR, style: LineStyle.Dashed, visible: true }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "rgba(137, 164, 198, 0.42)", width: 1, labelVisible: true, style: LineStyle.LargeDashed },
-        horzLine: { color: "rgba(137, 164, 198, 0.42)", width: 1, labelVisible: true, style: LineStyle.LargeDashed }
+        vertLine: { color: "rgba(226, 232, 240, 0.20)", width: 1, labelVisible: true, style: LineStyle.LargeDashed },
+        horzLine: { color: "rgba(226, 232, 240, 0.20)", width: 1, labelVisible: true, style: LineStyle.LargeDashed }
       },
       rightPriceScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
-        scaleMargins: { top: 0.08, bottom: 0.28 }
+        scaleMargins: { top: 0.08, bottom: 0.30 }
       },
       timeScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
@@ -206,7 +206,7 @@ function KlineChartCanvas({ candles }: Props) {
       priceLineVisible: false
     });
     volumeSeries.priceScale().applyOptions({
-      scaleMargins: { top: 0.74, bottom: 0.02 }
+      scaleMargins: { top: 0.72, bottom: 0.02 }
     });
 
     const ma5Series = chart.addLineSeries({
@@ -271,9 +271,10 @@ function KlineChartCanvas({ candles }: Props) {
         <div><span>成交量</span><strong>${candle.volume}</strong></div>
       `;
 
-      const x = param.point.x > ref.current.clientWidth - 190 ? param.point.x - 184 : param.point.x + 16;
-      const y = Math.max(12, Math.min(param.point.y + 12, ref.current.clientHeight - 190));
-      tooltip.style.transform = `translate(${x}px, ${y}px)`;
+      tooltip.style.top = "8px";
+      tooltip.style.right = "8px";
+      tooltip.style.left = "auto";
+      tooltip.style.transform = "none";
       tooltip.style.opacity = "1";
     });
 
@@ -319,10 +320,10 @@ function KlineChartCanvas({ candles }: Props) {
     if (last) {
       const currentLine = candleRef.current.createPriceLine({
         price: last.close,
-        color: MA5_COLOR,
-        lineWidth: 1,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: false,
+        color: "#FFFFFF",
+        lineWidth: 2,
+        lineStyle: LineStyle.LargeDashed,
+        axisLabelVisible: true,
         title: ""
       });
       priceLinesRef.current.push(currentLine);
@@ -358,9 +359,9 @@ function KlineChartCanvas({ candles }: Props) {
   return (
     <div className="chart-shell">
       <div className="chart-legend">
-        <span className="legend-ma5">MA5</span>
-        <span className="legend-ma10">MA10</span>
-        <span>VOL</span>
+        <span className="legend-ma5">MA5<span className="legend-val">{ma5Data[ma5Data.length-1]?.value.toFixed(2) ?? "--"}</span></span>
+        <span className="legend-ma10">MA10<span className="legend-val">{ma10Data[ma10Data.length-1]?.value.toFixed(2) ?? "--"}</span></span>
+        <span className="legend-vol">VOL<span className="legend-val">{latest ? String(Math.round(latest.volume)) : "0"}</span></span>
         {latest ? (
           <span className="legend-ohlc">
             O {latest.open.toFixed(2)} H {latest.high.toFixed(2)} L {latest.low.toFixed(2)} C {latest.close.toFixed(2)}
