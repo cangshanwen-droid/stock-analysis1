@@ -981,22 +981,36 @@ export function TradingWorkspace() {
               </div>
               {/* Portfolio account selector — all companies shown */}
               {myCompanies.length > 0 ? (
-                <div className="segmented" style={{ marginBottom: 12 }}>
-                  {myCompanies.map((c) => (
-                    <button
-                      key={c.symbol}
-                      className={portfolioCompany === c.symbol ? "active" : ""}
-                      onClick={async () => {
-                        setPortfolioCompany(c.symbol);
-                        if (c.fundsLocked) {
-                          try { const data = await fetchPortfolio(token!, c.symbol); setPortfolio(data); }
-                          catch { /* ignore */ }
-                        }
-                      }}
-                    >
-                      {c.name}
-                    </button>
-                  ))}
+                <div className="account-switcher">
+                  {myCompanies.map((c) => {
+                    const selectedAccount = portfolioCompany === c.symbol;
+                    return (
+                      <button
+                        key={c.symbol}
+                        className={`account-switch ${selectedAccount ? "active" : ""}`}
+                        onClick={async () => {
+                          setPortfolioCompany(c.symbol);
+                          setTradingCompany(c.symbol);
+                          if (c.fundsLocked) {
+                            try {
+                              const data = await fetchPortfolio(token!, c.symbol);
+                              setPortfolio(data);
+                              setUser(data.user);
+                              setOrderMessage(`已切换到资金账户「${c.name}」。`);
+                            } catch {
+                              setOrderMessage(`资金账户「${c.name}」切换失败，请稍后重试。`);
+                            }
+                          }
+                        }}
+                      >
+                        <span>
+                          <strong>{c.name}</strong>
+                          <small>{fmtMoney(c.balance)}</small>
+                        </span>
+                        {selectedAccount ? <em>当前使用</em> : <em className="muted-badge">切换</em>}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
               <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
