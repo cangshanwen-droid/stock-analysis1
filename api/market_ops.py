@@ -188,7 +188,8 @@ def open_market(conn) -> MarketResult:
 
 
 def rebuild_balances_before_round(conn, round_no: int) -> None:
-    execute(conn, "UPDATE users SET balance=1000000 WHERE role='player'")
+    execute(conn, "UPDATE users SET balance=0 WHERE role='player'")
+    execute(conn, "UPDATE users SET balance=0 WHERE username='admin'")
     try:
         execute(conn, "UPDATE fund_accounts SET balance=initial_balance")
     except Exception:

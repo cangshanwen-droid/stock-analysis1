@@ -977,6 +977,27 @@ def admin_reset_user_password(username: str, payload: PasswordResetRequest, user
     return {"accepted": True, "username": username}
 
 
+class BalanceUpdateRequest(BaseModel):
+    balance: float = Field(ge=0, le=1_000_000_000_000_000)
+
+
+@app.patch("/admin/users/{username}/balance")
+def admin_update_user_balance(username: str, payload: BalanceUpdateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true to update balance."}
+    with connect() as conn:
+        existing = fetchone(conn, "SELECT username FROM users WHERE username=?", (username,))
+        if not existing:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        execute(conn, "UPDATE users SET balance=? WHERE username=?", (payload.balance, username))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "update_user_balance", username, f"new_balance={payload.balance}"))
+        conn.commit()
+    clear_read_cache()
+    return {"accepted": True, "username": username, "balance": payload.balance}
+
+
 @app.delete("/admin/users/{username}")
 def admin_delete_user(username: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
