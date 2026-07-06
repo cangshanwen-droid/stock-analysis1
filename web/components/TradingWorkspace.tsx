@@ -744,7 +744,7 @@ export function TradingWorkspace() {
           <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
         </section>
 
-        {useMemo(() => (view === "market" || view === "trade") ? (
+        {(view === "market" || view === "trade") ? (
           <section className="quote-grid">
             {stocks.map((stock) => (
               <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
@@ -756,9 +756,9 @@ export function TradingWorkspace() {
                 </div>
               </button>))}
           </section>
-        ) : null, [view, stocks])}
+        ) : null}
 
-        {useMemo(() => (view === "market" || view === "trade") ? (
+        {(view === "market" || view === "trade") ? (
           <section className={`workspace ${view === "market" ? "market-only" : ""}`}>
             <div className="chart-card">
               <div className="chart-head">
@@ -997,9 +997,9 @@ export function TradingWorkspace() {
             </aside>
             ) : null}
           </section>
-        ) : null, [view, current, candles])}
+        ) : null}
 
-        {useMemo(() => view === "portfolio" ? (
+        {view === "portfolio" ? (
           <section className="panel-grid">
             <div className="chart-card compact-panel">
               <div className="chart-head">
@@ -1155,7 +1155,7 @@ export function TradingWorkspace() {
               ) : null}
             </div>
           </section>
-        ) : null, [view, portfolio, myCompanies, portfolioCompany])}
+        ) : null}
 
         {view === "records" ? (
           <section className="panel-grid two">
