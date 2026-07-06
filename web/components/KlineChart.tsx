@@ -63,8 +63,8 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
       label: `R${candle.round}`,
       time: candle.time as Time,
       open,
-      high: round2(candle.high),
-      low: round2(Math.max(0.01, candle.low)),
+            high: round2(candle.high > Math.max(candle.open, candle.close) ? candle.high : Math.max(candle.open, candle.close) * 1.002),
+      low: round2(Math.max(0.01, candle.low < Math.min(candle.open, candle.close) ? candle.low : Math.min(candle.open, candle.close) * 0.998)),
       close,
       volume: Math.max(0, Math.round(candle.volume || 0)),
     };
