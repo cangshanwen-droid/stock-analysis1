@@ -786,13 +786,13 @@ export function TradingWorkspace() {
                 <div className="section-caption">仅操作员和管理员登录后可下单。选手请留在行情面板查看走势。</div>
                 <div className="field">
                   <label>操作员账号</label>
-                  <input value={loginName} onChange={(e) => setLoginName(e.target.value)} placeholder="请输入账号" autoComplete="username" />
+                  <input id="login-name" placeholder="请输入账号" autoComplete="username" />
                 </div>
                 <div className="field">
                   <label>密码</label>
-                  <input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="请输入密码" autoComplete="current-password" />
+                  <input type="password" id="login-pass" placeholder="请输入密码" autoComplete="current-password" />
                 </div>
-                <button className="primary" onClick={submitLogin} disabled={!loginName.trim() || !loginPassword}>操作员登录</button>
+                <button className="primary" id="login-btn">操作员登录</button>
                 {loginError && <div className="error-text">{loginError}</div>}
               </div>
             )}
