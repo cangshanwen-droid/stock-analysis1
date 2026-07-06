@@ -203,12 +203,12 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     setAdminLoading(true);
     try {
-      const [data, health, fundAccts] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token).catch(() => [])]);
+      const data = await fetchAdminOverview(token);
       setAdminUsers(data.users);
       setAdminStocks(data.stocks);
       setAuditLogs(data.auditLogs);
-      setHealthStatus(health);
-      setAdminFundAccounts(fundAccts);
+      fetchHealth().then(setHealthStatus).catch(() => {});
+      fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
     } catch (error) {
       setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
     } finally {
@@ -220,22 +220,8 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     let alive = true;
     setAdminLoading(true);
-    Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token)])
-      .then(([data, health, fundAccts]) => {
-        if (!alive) return;
-        setAdminUsers(data.users);
-        setAdminStocks(data.stocks);
-        setAuditLogs(data.auditLogs);
-        setHealthStatus(health);
-        setAdminFundAccounts(fundAccts);
-      })
-      .catch((error) => {
-        if (!alive) return;
-        setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
-      })
-      .finally(() => {
-        if (alive) setAdminLoading(false);
-      });
+    fetchAdminOverview(token).then((d) => { setAdminUsers(d.users); setAdminStocks(d.stocks); setAuditLogs(d.auditLogs); }).catch(() => {}); fetchHealth().then(setHealthStatus).catch(() => {}); fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
+    setAdminLoading(false);
     return () => {
       alive = false;
     };
