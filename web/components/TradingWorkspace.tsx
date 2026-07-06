@@ -143,6 +143,19 @@ export function TradingWorkspace() {
   const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
   const loginRef = useRef<string>("");
 
+
+  // Restore persisted session on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("gipfel_session");
+    if (!saved) return;
+    try {
+      const { token: t, username: u } = JSON.parse(saved);
+      if (t && u) {
+        setToken(t);
+        loginRef.current = u;
+      }
+    } catch {}
+  }, []);
   useEffect(() => {
     let alive = true;
     fetchMarket().then((data) => {
@@ -250,6 +263,7 @@ export function TradingWorkspace() {
       setPortfolio(null);
       setTradingCompany(null);
       loginRef.current = data.user.username;
+      localStorage.setItem("gipfel_session", JSON.stringify({ token, username: data.user.username }));
       // Fetch fund accounts for every signed-in role so the portfolio panel is never blank.
       Promise.all([
         fetchMyCompanies(token),
@@ -711,7 +725,7 @@ export function TradingWorkspace() {
             <strong>Gipfel 股票交易竞赛平台</strong>
           </div>
           {user ? (
-            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); }}>
+            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); localStorage.removeItem("gipfel_session"); }}>
               {(loginRef.current || user.username)} · 退出
             </button>
           ) : (
