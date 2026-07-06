@@ -203,7 +203,7 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     setAdminLoading(true);
     try {
-      const [data, health, fundAccts] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token)]);
+      const [data, health, fundAccts] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token).catch(() => [])]);
       setAdminUsers(data.users);
       setAdminStocks(data.stocks);
       setAuditLogs(data.auditLogs);
