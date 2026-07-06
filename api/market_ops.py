@@ -154,8 +154,16 @@ def close_market(conn) -> MarketResult:
             next_price = compute_price(dict(stock, buy_total=buy_total, sell_total=sell_total), market_carbon_mean)
         else:
             next_price = previous_close
-        high = max([next_price, previous_close, *trade_prices])
-        low = min([next_price, previous_close, *trade_prices])
+        # Generate candle wicks proportional to buy/sell imbalance
+        if volume > 0:
+            ratio = buy_volume / max(sell_volume, 1)
+            upper_spread = next_price * (0.001 + 0.002 * min(ratio, 5))
+            lower_spread = next_price * (0.001 + 0.002 * min(1 / max(ratio, 0.001), 5))
+        else:
+            upper_spread = 0
+            lower_spread = 0
+        high = max([next_price, previous_close, *trade_prices]) + upper_spread
+        low = min([next_price, previous_close, *trade_prices]) - lower_spread
         change_pct = round((next_price - previous_close) / previous_close * 100, 2) if previous_close else 0
         execute(conn, "DELETE FROM kline WHERE stock_symbol=? AND round=?", (symbol, current_round))
         execute(conn, """
