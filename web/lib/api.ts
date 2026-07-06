@@ -113,8 +113,8 @@ export async function fetchMarket(force = false): Promise<MarketSnapshot> {
       const res = await fetchApi("/market");
       if (!res.ok) return fallbackMarket;
       const data = await res.json();
-      if (Array.isArray(data.stocks) && data.stocks.length > 0) {
-        writeCache(MARKET_CACHE_KEY, data);
+      if (Array.isArray(data.stocks)) {
+        if (data.stocks.length > 0) writeCache(MARKET_CACHE_KEY, data);
         return data;
       }
       return fallbackMarket;
