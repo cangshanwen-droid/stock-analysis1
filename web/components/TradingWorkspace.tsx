@@ -821,7 +821,11 @@ export function TradingWorkspace() {
                     </button>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <div style={{textAlign:"center",padding:"16px 0",color:"#94A3B8",fontSize:13}}>
+                  暂无资金账户，请到<strong style={{color:"#469FE6",cursor:"pointer"}} onClick={() => setView("portfolio")}>持仓资产</strong>页创建
+                </div>
+              )}
               {(tradingCompany ? (() => {
                   const company = myCompanies.find((c) => c.symbol === tradingCompany);
                   return company ? (
