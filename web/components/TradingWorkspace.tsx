@@ -655,10 +655,12 @@ export function TradingWorkspace() {
     if (!activeStocks.length) return 50;
     return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
   }, [adminStocks]);
-  const liveUpdateText = useMemo(
-    () => lastMarketUpdate ? new Date(lastMarketUpdate).toLocaleTimeString("zh-CN", { hour12: false }) : "--:--:--",
-    [lastMarketUpdate]
-  );
+  const [clockStr, setClockStr] = useState(() => new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+  useEffect(() => {
+    const t = setInterval(() => setClockStr(new Date().toLocaleTimeString("zh-CN", { hour12: false })), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const liveUpdateText = clockStr;
 
   const navItems = user
     ? [
