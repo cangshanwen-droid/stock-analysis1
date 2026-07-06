@@ -101,6 +101,19 @@ export type AdminStock = {
   lastUpdate: string;
 };
 
+export type AdminFundAccount = {
+  accountId: number;
+  owner: string;
+  accountName: string;
+  cash: number;
+  marketValue: number;
+  totalAssets: number;
+  totalPnl: number;
+  pnlRatio: number;
+  positions: Array<{symbol: string; shares: number; avgCost: number; marketValue: number; pnl: number}>;
+  createdAt: string;
+};
+
 export type AuditLog = {
   actor: string;
   action: string;

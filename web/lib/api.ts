@@ -1,4 +1,4 @@
-import type { AdminStock, AdminUser, AuditLog, Candle, HealthStatus, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
+import type { AdminFundAccount, AdminStock, AdminUser, AuditLog, Candle, HealthStatus, LoginResult, MarketSnapshot, PortfolioSnapshot } from "./types";
 
 const PRIMARY_API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://gipfel-trading-api.onrender.com";
 const API_FALLBACKS = (process.env.NEXT_PUBLIC_API_FALLBACKS || "")
@@ -325,6 +325,15 @@ export async function fetchAdminOverview(token: string): Promise<{
     stocks,
     auditLogs
   };
+}
+
+export async function fetchAdminFundAccounts(token: string): Promise<AdminFundAccount[]> {
+  if (!API_BASES.length || token === "demo-token") return [];
+  const res = await fetchApi("/admin/fund-accounts", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) return [];
+  return res.json();
 }
 
 export async function createAdminUser(token: string, payload: {

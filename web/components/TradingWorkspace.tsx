@@ -12,6 +12,7 @@ import {
   deleteAdminStock,
   deleteFundAccount,
   deleteAdminUser,
+  fetchAdminFundAccounts,
   fetchAdminOverview,
   fetchAvailableCompanies,
   fetchCandles,
@@ -30,7 +31,7 @@ import {
   updateAdminStock,
   updateAdminUserStatus
 } from "../lib/api";
-import type { AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
+import type { AdminFundAccount, AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
@@ -112,6 +113,7 @@ export function TradingWorkspace() {
   const [adminMessage, setAdminMessage] = useState("");
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
+  const [adminFundAccounts, setAdminFundAccounts] = useState<AdminFundAccount[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -201,11 +203,12 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     setAdminLoading(true);
     try {
-      const [data, health] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null)]);
+      const [data, health, fundAccts] = await Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token)]);
       setAdminUsers(data.users);
       setAdminStocks(data.stocks);
       setAuditLogs(data.auditLogs);
       setHealthStatus(health);
+      setAdminFundAccounts(fundAccts);
     } catch (error) {
       setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
     } finally {
@@ -1522,6 +1525,28 @@ export function TradingWorkspace() {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Fund accounts monitoring */}
+                  {adminFundAccounts.length > 0 ? (
+                    <div className="management-panel" style={{ gridColumn: "1 / -1" }}>
+                      <div className="section-caption">资金账户监控（只读）</div>
+                      <div className="data-table admin-table">
+                        <div className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", display: "grid", gap: 8, padding: "10px 12px", fontSize: 12, color: "#7d8ba1", borderBottom: "1px solid rgba(148,163,184,0.15)" }}>
+                          <span>操作员</span><span>账户名称</span><span>余额</span><span>持仓市值</span><span>总资产</span><span>浮动盈亏</span>
+                        </div>
+                        {adminFundAccounts.map((fa) => (
+                          <div key={fa.accountId} className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", display: "grid", gap: 8, padding: "10px 12px", fontSize: 13, borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
+                            <span>{fa.owner}</span>
+                            <span>{fa.accountName}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>¥{fa.cash.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>¥{fa.marketValue.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>¥{fa.totalAssets.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums", color: fa.totalPnl >= 0 ? "#F87171" : "#2CB67D" }}>{fa.totalPnl >= 0 ? "+" : ""}{fa.totalPnl.toFixed(2)} ({fa.pnlRatio.toFixed(2)}%)</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {auditLogs.length ? (
                     <div className="data-table">
                       <div className="table-row four-col table-head"><span>操作者</span><span>动作</span><span>对象</span><span>时间</span></div>
