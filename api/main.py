@@ -1237,6 +1237,19 @@ def operator_confirm_funds(payload: ConfirmFundsRequest, user: dict[str, Any] = 
     return {"accepted": True, "symbol": target_symbol, "initFunds": init_funds}
 
 
+@app.post("/admin/stocks/restore")
+def admin_restore_stocks(user: dict[str, Any] = Depends(current_user)):
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet"}
+    with connect() as conn:
+        execute(conn, "UPDATE stocks SET is_deleted=0 WHERE is_deleted=1")
+        count = fetchone(conn, "SELECT COUNT(*) AS cnt FROM stocks WHERE is_deleted=0")
+        conn.commit()
+    clear_read_cache()
+    return {"accepted": True, "restored": True, "activeStocks": int(count["cnt"] or 0)}
+
+
 @app.post("/admin/db/migrate")
 def admin_db_migrate(user: dict[str, Any] = Depends(current_user)):
     """Add company account columns to existing database."""
