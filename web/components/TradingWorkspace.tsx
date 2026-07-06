@@ -149,10 +149,11 @@ export function TradingWorkspace() {
     const saved = localStorage.getItem("gipfel_session");
     if (!saved) return;
     try {
-      const { token: t, username: u } = JSON.parse(saved);
+      const { token: t, username: u, role: r } = JSON.parse(saved);
       if (t && u) {
         setToken(t);
         loginRef.current = u;
+        if (r) setUser({ username: u, role: r, balance: 0 });
       }
     } catch {}
   }, []);
@@ -263,7 +264,7 @@ export function TradingWorkspace() {
       setPortfolio(null);
       setTradingCompany(null);
       loginRef.current = data.user.username;
-      localStorage.setItem("gipfel_session", JSON.stringify({ token, username: data.user.username }));
+      localStorage.setItem("gipfel_session", JSON.stringify({ token, username: data.user.username, role: data.user.role }));
       // Fetch fund accounts for every signed-in role so the portfolio panel is never blank.
       Promise.all([
         fetchMyCompanies(token),
