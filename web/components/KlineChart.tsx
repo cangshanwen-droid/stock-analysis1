@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import {
   ColorType,
   CrosshairMode,
@@ -82,7 +82,7 @@ function movingAverage(candles: DisplayCandle[], windowSize: number) {
   }));
 }
 
-export function KlineChart({ candles }: Props) {
+export const KlineChart = memo(function KlineChart({ candles }: Props) {
   const hasMeaningfulBars = candles.some((candle) => Math.round(candle.volume || 0) > 0 || Math.abs(candle.close - candle.open) > 0.005);
 
   if (!hasMeaningfulBars) {
@@ -97,7 +97,7 @@ export function KlineChart({ candles }: Props) {
   }
 
   return <KlineChartCanvas candles={candles} />;
-}
+});
 
 function KlineChartCanvas({ candles }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);

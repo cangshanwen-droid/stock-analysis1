@@ -366,12 +366,15 @@ export function TradingWorkspace() {
         setOrderSubmitting(false);
         clearPublicReadCache();
         try {
-          const data = await fetchPortfolio(token, tradingCompany ?? undefined);
-          setPortfolio(data);
-          setUser({ ...data.user, username: loginRef.current || data.user.username });
-          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产已刷新，行情和 K 线将在收盘结算后更新。`);
+          const [data] = await Promise.all([
+            fetchPortfolio(token, tradingCompany ?? undefined),
+            fetchMarket(true).catch(() => {}),
+            selected ? fetchCandles(selected, true).catch(() => {}) : Promise.resolve()
+          ]);
+          if (data) { setPortfolio(data); setUser({ ...data.user, username: loginRef.current || data.user.username }); }
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。`);
         } catch {
-          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。资产刷新较慢，请稍后点刷新或切换页面查看。`);
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。`);
         }
       } else {
         setOrderStatus("error");
