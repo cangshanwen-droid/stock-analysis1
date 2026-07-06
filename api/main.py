@@ -1059,36 +1059,61 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
     require_admin(user)
     with connect() as conn:
         accounts = fetchall(conn, """
-            SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at,
-                   u.username AS owner_name
-            FROM fund_accounts fa
-            LEFT JOIN users u ON fa.owner = u.username
-            ORDER BY fa.owner, fa.id
+            SELECT id,owner,name,balance,locked,created_at
+            FROM fund_accounts
+            ORDER BY owner, id
         """)
+        if not accounts:
+            return []
         prices = {
             row["symbol"]: float(row["current_price"] or 0)
             for row in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
         }
+        # Batch query all transactions for fund accounts (4 queries total)
+        buy_rows = fetchall(conn, """
+            SELECT username,stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
+            FROM transactions
+            WHERE (username LIKE ? OR username LIKE ?) AND trade_type='buy'
+            GROUP BY username, stock_symbol
+        """, ("[账户:%", "[璐︽埛:%"))
+        sell_rows = fetchall(conn, """
+            SELECT username,stock_symbol,SUM(shares) AS shares
+            FROM transactions
+            WHERE (username LIKE ? OR username LIKE ?) AND trade_type IN ('sell','force_close')
+            GROUP BY username, stock_symbol
+        """, ("[账户:%", "[璐︽埛:%"))
+        # Build lookup: accountId -> {symbol -> shares sold}
+        sold_map: dict[int, dict[str, float]] = {}
+        for sr in sell_rows:
+            for acct in accounts:
+                aid = acct["id"]
+                if sr["username"] in (f"[账户:{aid}]", f"[璐︽埛:{aid}]"):
+                    if aid not in sold_map:
+                        sold_map[aid] = {}
+                    sold_map[aid][sr["stock_symbol"]] = float(sr["shares"] or 0)
+                    break
+        # Build lookup: accountId -> list of buy rows
+        buys_map: dict[int, list[dict]] = {}
+        for br in buy_rows:
+            for acct in accounts:
+                aid = acct["id"]
+                if br["username"] in (f"[账户:{aid}]", f"[璐︽埛:{aid}]"):
+                    if aid not in buys_map:
+                        buys_map[aid] = []
+                    buys_map[aid].append(br)
+                    break
+        # Compute portfolio for each account
         result = []
         for acct in accounts:
-            owner = acct["owner"]
-            trader = f"[账户:{acct["id"]}]"
-            mojibake = f"[璐︽埛:{acct["id"]}]"
-            buys = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-                FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
-            """, (trader, mojibake))
-            sells = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares
-                FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
-            """, (trader, mojibake))
-            sold_map = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
+            aid = acct["id"]
+            account_sold = sold_map.get(aid, {})
+            account_buys = buys_map.get(aid, [])
             total_market_value = 0.0
             total_cost = 0.0
             positions = []
-            for row in buys:
+            for row in account_buys:
                 sym = row["stock_symbol"]
-                shares = float(row["shares"] or 0) - float(sold_map.get(sym, 0))
+                shares = float(row["shares"] or 0) - float(account_sold.get(sym, 0))
                 if shares <= 0:
                     continue
                 cost = float(row["cost"] or 0)
@@ -1103,8 +1128,8 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
             total_assets = cash + total_market_value
             total_pnl = total_market_value - total_cost
             result.append({
-                "accountId": acct["id"],
-                "owner": owner,
+                "accountId": aid,
+                "owner": acct["owner"],
                 "accountName": acct["name"],
                 "cash": round(cash, 2),
                 "marketValue": round(total_market_value, 2),
@@ -1114,10 +1139,7 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
                 "positions": positions,
                 "createdAt": str(acct["created_at"]),
             })
-        return result
-
-
-@app.post("/admin/stocks")
+        return result@app.post("/admin/stocks")
 def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
     if not ENABLE_ADMIN_WRITES:
