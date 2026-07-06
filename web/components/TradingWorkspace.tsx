@@ -1023,14 +1023,12 @@ export function TradingWorkspace() {
                           setPortfolioCompany(c.symbol);
                           setTradingCompany(c.symbol);
                           if (c.fundsLocked) {
-                            try {
-                              const data = await fetchPortfolio(token!, c.symbol);
+                              setPortfolio(null);
+                            fetchPortfolio(token!, c.symbol).then((data) => {
                               setPortfolio(data);
                               setUser({ ...data.user, username: loginRef.current || data.user.username });
-                              setOrderMessage(`已切换到资金账户「${c.name}」。`);
-                            } catch {
-                              setOrderMessage(`资金账户「${c.name}」切换失败，请稍后重试。`);
-                            }
+                            }).catch(() => {});
+                            setOrderMessage(`已切换到资金账户「${c.name}」。`);
                           }
                         }}
                       >
