@@ -792,7 +792,7 @@ export function TradingWorkspace() {
                   <label>密码</label>
                   <input type="password" id="login-pass" placeholder="请输入密码" autoComplete="current-password" />
                 </div>
-                <button className="primary" id="login-btn" onClick={submitLogin}>操作员登录</button>
+                <button className="primary" id="login-submit" onClick={submitLogin}>操作员登录</button>
                 {loginError && <div className="error-text">{loginError}</div>}
               </div>
             )}

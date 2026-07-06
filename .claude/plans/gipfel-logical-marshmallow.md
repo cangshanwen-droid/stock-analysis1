@@ -1,61 +1,75 @@
-# 并发性能加固
+# 并发性能保障 — 30人交易 + 150人看盘
 
-## 负载分析
+## 已存在的保护机制
 
-200 人看面板 + 25 人交易时压力：
+| 机制 | 位置 | 说明 |
+|------|------|------|
+| PostgreSQL 连接池 | `api/db.py:20-38` | min=1, max=10, timeout=5s |
+| 读缓存 | `api/main.py:30-77` | market 2s、kline 2s、portfolio 3s |
+| 速率限制 | `api/main.py:118-151` | 读 60000/IP/min、写 3000/IP/min |
+| Advisory lock | `api/trading.py:219-221` | 每只股票独立锁，防并发下单冲突 |
 
-| 来源 | 请求频率 | 请求量 |
-|------|----------|--------|
-| 行情轮询 | 每 4s × 200 人 | ~100 req/s |
-| K-line 轮询 | 每 4s × 200 人 | ~50 req/s |
-| 资产刷新 | 每 4s × 25 人 | ~6 req/s (含 4-5 SQL/req) |
-| 下单 | 突发 | 每单 ~10 SQL |
+## 需要修复的问题
 
-## 瓶颈与修复
+### 1. 连接池初始化竞态 (高危)
 
-### 1. 数据库连接池 — db.py
-当前每请求新建 `psycopg.connect()`，25 个并发 + HTTP 连接池瞬间耗尽 Neon 免费版 20-50 连接。
+`api/db.py:20-23` — `get_pool()` 没有锁，两个并发请求同时检测到 `_pool is None` 会各自创建一个连接池：
 
-**修复**：使用 `psycopg_pool.ConnectionPool`，应用启动时初始化，请求时 `pool.connection()`。
+```python
+def get_pool():
+    global _pool
+    if is_postgres() and _pool is None:  # ← 没有锁，竞态
+        ...
+        _pool = psycopg_pool.ConnectionPool(...)
+```
 
-### 2. 速率限制 — main.py
-无任何限流，200 人轮询 + 恶意刷新可直接打满。
+修复：加 `threading.Lock` 保护。
 
-**修复**：添加内存计数器中间件，读接口 60 req/min/IP，写接口 20 req/min/IP。
+### 2. 连接池耗尽风险 (中危)
 
-### 3. 下单并发锁 — trading.py
-25 人同时买卖同一只股票，订单簿匹配无锁，会读脏数据或产生 PostgreSQL 串行化异常。
+max_size=10，30人同时下单 + 150人看盘，每个请求获取一个连接。看盘请求（market/kline）有2s缓存，大部分不开连接。但下单、持仓、管理页面直接连库。如果30人同时下单，可能等连接超时。
 
-**修复**：`place_order` 内用 `pg_try_advisory_xact_lock(symbol_hash)` 实现逐只股票串行化。
+修复：提高 max_size 到 20，加连接健康检查。
 
-### 4. 资产接口缓存 — main.py
-`/portfolio` 每次 4-5 个 SQL 无缓存，25 人每 4s 就是 100+ SQL/s。
+### 3. 写请求无缓存穿透保护 (中危)
 
-**修复**：加入 3 秒内存缓存，key 为 `portfolio:{username}`，下单成功后清除。
+`/orders`、`/admin/market/*` 等写请求每次直接操作数据库。如果短时间内大量下单，数据库可能成为瓶颈。但 advisory lock 已经按股票串行化了。
 
-### 5. 数据库索引完善 — schema
-关键查询缺索引。
+## 改动清单
 
-**修复**：`transactions(username, stock_symbol)` 覆盖持仓查询；`rounds(is_settled)` 覆盖结算扫描。
+### `api/db.py` — 连接池安全
 
-### 6. 前端降频 — TradingWorkspace.tsx
-两个 4s 定时器并行跑，200 人 = 150 req/s。
+```python
+_pool_lock = threading.Lock()
 
-**修复**：行情轮询改为 6s，K-line 改为 10s，减少冗余请求。
+def get_pool():
+    global _pool
+    if not is_postgres():
+        return None
+    if _pool is not None:
+        return _pool
+    with _pool_lock:
+        if _pool is not None:
+            return _pool
+        import psycopg_pool
+        from psycopg.rows import dict_row
+        _pool = psycopg_pool.ConnectionPool(
+            DATABASE_URL,
+            min_size=2,
+            max_size=20,
+            open=True,
+            timeout=10,
+            kwargs={"row_factory": dict_row},
+        )
+    return _pool
+```
 
-## 文件清单
+### `api/main.py` — 健康检查增加连接池状态
 
-| 文件 | 改动 |
-|------|------|
-| `api/db.py` | 连接池、请求级 connection() 函数 |
-| `api/requirements.txt` | 加 `psycopg-pool` |
-| `api/main.py` | 速率限制中间件、portfolio 缓存 |
-| `api/trading.py` | 股票级咨询锁 |
-| `api/schema.postgres.sql` | 加 2 个索引 |
-| `web/components/TradingWorkspace.tsx` | 轮询间隔 6s/10s |
+在 `/health` 中返回 pool 使用情况，方便监控。
 
-## 验证
+## 验证方式
 
-1. `python -m py_compile` 全部文件
-2. 前端 build 检查：`cd web && npm run build`
-3. 部署后确认健康检查和行情/订单接口正常
+1. 部署后 `/health` 正常返回
+2. 多线程测试：同时发 30 个下单请求不报错
+3. 并发读测试：同时发 150 个 market 请求响应正常
