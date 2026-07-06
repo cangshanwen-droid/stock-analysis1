@@ -237,6 +237,12 @@ export function TradingWorkspace() {
     };
   }, [token, user?.role]);
 
+  // Refresh fund accounts when entering trade/portfolio view
+  useEffect(() => {
+    if (!token || (view !== "trade" && view !== "portfolio")) return;
+    fetchMyCompanies(token).then(setMyCompanies).catch(() => {});
+  }, [token, view]);
+
   useEffect(() => {
     setStockDrafts((currentDrafts) => {
       const next = { ...currentDrafts };
@@ -823,7 +829,16 @@ export function TradingWorkspace() {
                 </div>
               ) : (
                 <div style={{textAlign:"center",padding:"16px 0",color:"#94A3B8",fontSize:13}}>
-                  暂无资金账户，请到<strong style={{color:"#469FE6",cursor:"pointer"}} onClick={() => setView("portfolio")}>持仓资产</strong>页创建
+                  暂无资金账户<br/><span style={{color:"#469FE6",cursor:"pointer",fontWeight:700,fontSize:14}} onClick={async () => {
+                    const name = window.prompt("输入资金账户名称：", user?.username || "");
+                    if (!name?.trim()) return;
+                    const amt = window.prompt("输入初始资金金额：", "1000000");
+                    const amount = Number(amt);
+                    if (!Number.isFinite(amount) || amount <= 0) return;
+                    if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
+                    try { await createFundAccount(token!, name.trim(), amount); await reloadFundAccounts(); }
+                    catch (e) { setOrderMessage(`创建失败：${e instanceof Error ? e.message : ""}`); }
+                  }}>+ 创建资金账户</span>
                 </div>
               )}
               {(tradingCompany ? (() => {
