@@ -257,7 +257,12 @@ export function TradingWorkspace() {
   async function submitLogin() {
     setLoginError("");
     try {
-      const data = await login(loginName.trim(), loginPassword);
+      const nameEl = document.getElementById("login-name") as HTMLInputElement | null;
+      const passEl = document.getElementById("login-pass") as HTMLInputElement | null;
+      const nameVal = nameEl?.value?.trim() || "";
+      const passVal = passEl?.value || "";
+      if (!nameVal || !passVal) { setLoginError("请输入账号和密码"); return; }
+      const data = await login(nameVal, passVal);
       const token = data.accessToken;
       setToken(token);
       setUser(data.user);
