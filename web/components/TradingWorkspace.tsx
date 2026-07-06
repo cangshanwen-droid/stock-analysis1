@@ -220,13 +220,14 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     let alive = true;
     setAdminLoading(true);
-    Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null)])
-      .then(([data, health]) => {
+    Promise.all([fetchAdminOverview(token), fetchHealth().catch(() => null), fetchAdminFundAccounts(token)])
+      .then(([data, health, fundAccts]) => {
         if (!alive) return;
         setAdminUsers(data.users);
         setAdminStocks(data.stocks);
         setAuditLogs(data.auditLogs);
         setHealthStatus(health);
+        setAdminFundAccounts(fundAccts);
       })
       .catch((error) => {
         if (!alive) return;
