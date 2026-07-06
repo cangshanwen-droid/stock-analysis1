@@ -1027,6 +1027,7 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
             SELECT id,symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
                    carbon_price,industry_carbon_mean,premium_rate,init_funds,balance,manager,funds_locked,last_update
             FROM stocks
+            WHERE is_deleted=0
             ORDER BY symbol
         """)
     return [
