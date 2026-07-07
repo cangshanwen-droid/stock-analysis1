@@ -1119,7 +1119,6 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
 
 
 
-@app.patch("/admin/stocks/{symbol}")
 @app.post("/admin/stocks")
 def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
@@ -1173,6 +1172,8 @@ def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depen
     return {"accepted": True, "symbol": symbol, "initialPrice": init_price}
 
 
+
+@app.patch("/admin/stocks/{symbol}")
 def admin_update_stock(symbol: str, payload: StockUpdateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
     safe = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
