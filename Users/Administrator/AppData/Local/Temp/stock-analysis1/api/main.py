@@ -1056,65 +1056,27 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
 
 @app.get("/admin/fund-accounts")
 def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
+    """Return all fund accounts with owner info (read-only, no position computation)."""
     require_admin(user)
     with connect() as conn:
         accounts = fetchall(conn, """
-            SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at,
-                   u.username AS owner_name
+            SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at
             FROM fund_accounts fa
-            LEFT JOIN users u ON fa.owner = u.username
             ORDER BY fa.owner, fa.id
         """)
-        prices = {
-            row["symbol"]: float(row["current_price"] or 0)
-            for row in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
-        }
-        result = []
-        for acct in accounts:
-            owner = acct["owner"]
-            trader = f"[账户:{acct["id"]}]"
-            mojibake = f"[璐︽埛:{acct["id"]}]"
-            buys = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-                FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
-            """, (trader, mojibake))
-            sells = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares
-                FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
-            """, (trader, mojibake))
-            sold_map = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
-            total_market_value = 0.0
-            total_cost = 0.0
-            positions = []
-            for row in buys:
-                sym = row["stock_symbol"]
-                shares = float(row["shares"] or 0) - float(sold_map.get(sym, 0))
-                if shares <= 0:
-                    continue
-                cost = float(row["cost"] or 0)
-                avg_cost = cost / float(row["shares"] or 1)
-                current_price = prices.get(sym, avg_cost)
-                market_value = current_price * shares
-                pnl = market_value - avg_cost * shares
-                total_market_value += market_value
-                total_cost += avg_cost * shares
-                positions.append({"symbol": sym, "shares": int(shares), "avgCost": round(avg_cost, 2), "marketValue": round(market_value, 2), "pnl": round(pnl, 2)})
-            cash = float(acct["balance"] or 0)
-            total_assets = cash + total_market_value
-            total_pnl = total_market_value - total_cost
-            result.append({
-                "accountId": acct["id"],
-                "owner": owner,
-                "accountName": acct["name"],
-                "cash": round(cash, 2),
-                "marketValue": round(total_market_value, 2),
-                "totalAssets": round(total_assets, 2),
-                "totalPnl": round(total_pnl, 2),
-                "pnlRatio": round(total_pnl / total_cost * 100, 2) if total_cost else 0,
-                "positions": positions,
-                "createdAt": str(acct["created_at"]),
-            })
-        return result
+        return [{
+            "accountId": acct["id"],
+            "owner": acct["owner"],
+            "accountName": acct["name"],
+            "cash": round(float(acct["balance"] or 0), 2),
+            "marketValue": 0,
+            "totalAssets": 0,
+            "totalPnl": 0,
+            "pnlRatio": 0,
+            "positions": [],
+            "createdAt": str(acct["created_at"]),
+        } for acct in accounts]
+
 
 
 @app.post("/admin/stocks")
