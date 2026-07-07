@@ -1058,138 +1058,25 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
 def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
     require_admin(user)
     with connect() as conn:
-        accounts = fetchall(conn, """
-            SELECT id,owner,name,balance,locked,created_at
-            FROM fund_accounts
-            ORDER BY owner, id
+        rows = fetchall(conn, """
+            SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at
+            FROM fund_accounts fa
+            ORDER BY fa.owner, fa.id
         """)
-        if not accounts:
-            return []
-        prices = {
-            row["symbol"]: float(row["current_price"] or 0)
-            for row in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
-        }
-        # Batch query all transactions for fund accounts (4 queries total)
-        buy_rows = fetchall(conn, """
-            SELECT username,stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-            FROM transactions
-            WHERE (username LIKE ? OR username LIKE ?) AND trade_type='buy'
-            GROUP BY username, stock_symbol
-        """, ("[账户:%", "[璐︽埛:%"))
-        sell_rows = fetchall(conn, """
-            SELECT username,stock_symbol,SUM(shares) AS shares
-            FROM transactions
-            WHERE (username LIKE ? OR username LIKE ?) AND trade_type IN ('sell','force_close')
-            GROUP BY username, stock_symbol
-        """, ("[账户:%", "[璐︽埛:%"))
-        # Build lookup: accountId -> {symbol -> shares sold}
-        sold_map: dict[int, dict[str, float]] = {}
-        for sr in sell_rows:
-            for acct in accounts:
-                aid = acct["id"]
-                if sr["username"] in (f"[账户:{aid}]", f"[璐︽埛:{aid}]"):
-                    if aid not in sold_map:
-                        sold_map[aid] = {}
-                    sold_map[aid][sr["stock_symbol"]] = float(sr["shares"] or 0)
-                    break
-        # Build lookup: accountId -> list of buy rows
-        buys_map: dict[int, list[dict]] = {}
-        for br in buy_rows:
-            for acct in accounts:
-                aid = acct["id"]
-                if br["username"] in (f"[账户:{aid}]", f"[璐︽埛:{aid}]"):
-                    if aid not in buys_map:
-                        buys_map[aid] = []
-                    buys_map[aid].append(br)
-                    break
-        # Compute portfolio for each account
-        result = []
-        for acct in accounts:
-            aid = acct["id"]
-            account_sold = sold_map.get(aid, {})
-            account_buys = buys_map.get(aid, [])
-            total_market_value = 0.0
-            total_cost = 0.0
-            positions = []
-            for row in account_buys:
-                sym = row["stock_symbol"]
-                shares = float(row["shares"] or 0) - float(account_sold.get(sym, 0))
-                if shares <= 0:
-                    continue
-                cost = float(row["cost"] or 0)
-                avg_cost = cost / float(row["shares"] or 1)
-                current_price = prices.get(sym, avg_cost)
-                market_value = current_price * shares
-                pnl = market_value - avg_cost * shares
-                total_market_value += market_value
-                total_cost += avg_cost * shares
-                positions.append({"symbol": sym, "shares": int(shares), "avgCost": round(avg_cost, 2), "marketValue": round(market_value, 2), "pnl": round(pnl, 2)})
-            cash = float(acct["balance"] or 0)
-            total_assets = cash + total_market_value
-            total_pnl = total_market_value - total_cost
-            result.append({
-                "accountId": aid,
-                "owner": acct["owner"],
-                "accountName": acct["name"],
-                "cash": round(cash, 2),
-                "marketValue": round(total_market_value, 2),
-                "totalAssets": round(total_assets, 2),
-                "totalPnl": round(total_pnl, 2),
-                "pnlRatio": round(total_pnl / total_cost * 100, 2) if total_cost else 0,
-                "positions": positions,
-                "createdAt": str(acct["created_at"]),
-            })
-        return result@app.post("/admin/stocks")
-def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-    require_admin(user)
-    if not ENABLE_ADMIN_WRITES:
-        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
-    symbol = payload.symbol.strip().upper()
-    if not symbol.replace("_", "").isalnum():
-        raise HTTPException(status_code=400, detail="invalid_symbol")
-    init_price = initial_stock_price(payload.revenue, payload.total_shares, payload.industry_pe)
-    with connect() as conn:
-        exists = fetchone(conn, "SELECT symbol FROM stocks WHERE symbol=?", (symbol,))
-        if exists:
-            raise HTTPException(status_code=409, detail="stock_exists")
-        state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1")) or {"state": "open", "round": 1}
-        round_no = int(state.get("round") or 1)
-        is_settled = 0 if state.get("state") == "open" else 1
-        init_funds = 5000.0
-        execute(conn, """
-            INSERT INTO stocks(
-                symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
-                carbon_price,industry_carbon_mean,premium_rate,init_funds,balance
-            )
-            VALUES(?,?,?,?,0,?,?,?,?,?,?,?,?)
-        """, (
-            symbol,
-            payload.name.strip(),
-            init_price,
-            init_price,
-            payload.total_shares,
-            payload.revenue,
-            payload.industry_pe,
-            payload.carbon_price,
-            payload.industry_carbon_mean,
-            payload.premium_rate,
-            init_funds,
-            init_funds,
-        ))
-        execute(conn, """
-            INSERT INTO rounds(stock_symbol,round,is_settled)
-            VALUES(?,?,?)
-            ON CONFLICT DO NOTHING
-        """, (symbol, round_no, is_settled))
-        execute(conn, """
-            INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct)
-            VALUES(?,?,?,?,?,?,?,?,?,0)
-        """, (symbol, round_no, init_price, init_price, init_price, init_price, 0, 0, 0))
-        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
-                (user["username"], "create_stock", symbol, json.dumps(payload.model_dump(), ensure_ascii=False)))
-        conn.commit()
-        clear_read_cache()
-    return {"accepted": True, "symbol": symbol, "initialPrice": init_price}
+        return [{
+            "accountId": r["id"],
+            "owner": r["owner"],
+            "accountName": r["name"],
+            "cash": round(float(r["balance"] or 0), 2),
+            "marketValue": 0,
+            "totalAssets": 0,
+            "totalPnl": 0,
+            "pnlRatio": 0,
+            "positions": [],
+            "createdAt": str(r["created_at"]),
+        } for r in rows]
+
+
 
 
 @app.patch("/admin/stocks/{symbol}")
