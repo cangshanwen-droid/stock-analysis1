@@ -1120,6 +1120,59 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
 
 
 @app.patch("/admin/stocks/{symbol}")
+@app.post("/admin/stocks")
+def admin_create_stock(payload: CreateStockRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    symbol = payload.symbol.strip().upper()
+    if not symbol.replace("_", "").isalnum():
+        raise HTTPException(status_code=400, detail="invalid_symbol")
+    init_price = initial_stock_price(payload.revenue, payload.total_shares, payload.industry_pe)
+    with connect() as conn:
+        exists = fetchone(conn, "SELECT symbol FROM stocks WHERE symbol=?", (symbol,))
+        if exists:
+            raise HTTPException(status_code=409, detail="stock_exists")
+        state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1")) or {"state": "open", "round": 1}
+        round_no = int(state.get("round") or 1)
+        is_settled = 0 if state.get("state") == "open" else 1
+        init_funds = 5000.0
+        execute(conn, """
+            INSERT INTO stocks(
+                symbol,name,current_price,previous_close,is_deleted,total_shares,revenue,industry_pe,
+                carbon_price,industry_carbon_mean,premium_rate,init_funds,balance
+            )
+            VALUES(?,?,?,?,0,?,?,?,?,?,?,?,?)
+        """, (
+            symbol,
+            payload.name.strip(),
+            init_price,
+            init_price,
+            payload.total_shares,
+            payload.revenue,
+            payload.industry_pe,
+            payload.carbon_price,
+            payload.industry_carbon_mean,
+            payload.premium_rate,
+            init_funds,
+            init_funds,
+        ))
+        execute(conn, """
+            INSERT INTO rounds(stock_symbol,round,is_settled)
+            VALUES(?,?,?)
+            ON CONFLICT DO NOTHING
+        """, (symbol, round_no, is_settled))
+        execute(conn, """
+            INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct)
+            VALUES(?,?,?,?,?,?,?,?,?,0)
+        """, (symbol, round_no, init_price, init_price, init_price, init_price, 0, 0, 0))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "create_stock", symbol, json.dumps(payload.model_dump(), ensure_ascii=False)))
+        conn.commit()
+        clear_read_cache()
+    return {"accepted": True, "symbol": symbol, "initialPrice": init_price}
+
+
 def admin_update_stock(symbol: str, payload: StockUpdateRequest, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
     require_admin(user)
     safe = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
