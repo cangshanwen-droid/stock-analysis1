@@ -1057,62 +1057,64 @@ def admin_stocks(user: dict[str, Any] = Depends(current_user)) -> list[dict[str,
 @app.get("/admin/fund-accounts")
 def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[dict[str, Any]]:
     require_admin(user)
-    with connect() as conn:
-        accounts = fetchall(conn, """
-            SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at
-            FROM fund_accounts fa
-            ORDER BY fa.owner, fa.id
-        """)
-        prices = {
-            r["symbol"]: float(r["current_price"] or 0)
-            for r in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
-        }
-        result = []
-        for acct in accounts:
-            aid = acct["id"]
-            trader = "[账户:" + str(aid) + "]"
-            moji = "[璐︽埛:" + str(aid) + "]"
-            buys = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-                FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
-            """, (trader, moji))
-            sells = fetchall(conn, """
-                SELECT stock_symbol,SUM(shares) AS shares
-                FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
-            """, (trader, moji))
-            sold = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
-            total_mv = 0.0
-            total_cost = 0.0
-            positions = []
-            for row in buys:
-                sym = row["stock_symbol"]
-                shares = float(row["shares"] or 0) - float(sold.get(sym, 0))
-                if shares <= 0:
-                    continue
-                cost = float(row["cost"] or 0)
-                avg = cost / float(row["shares"] or 1)
-                cp = prices.get(sym, avg)
-                mv = cp * shares
-                pnl = mv - avg * shares
-                total_mv += mv
-                total_cost += avg * shares
-                positions.append({"symbol": sym, "shares": int(shares), "avgCost": round(avg, 2), "marketValue": round(mv, 2), "pnl": round(pnl, 2)})
-            cash = float(acct["balance"] or 0)
-            total_assets = cash + total_mv
-            total_pnl = total_mv - total_cost
-            result.append({
-                "accountId": aid,
-                "owner": acct["owner"],
-                "accountName": acct["name"],
-                "cash": round(cash, 2),
-                "marketValue": round(total_mv, 2),
-                "totalAssets": round(total_assets, 2),
-                "totalPnl": round(total_pnl, 2),
-                "pnlRatio": round(total_pnl / total_cost * 100, 2) if total_cost else 0,
-                "positions": positions,
-                "createdAt": str(acct["created_at"]),
-            })
-        return result
+    def load():
+        with connect() as conn:
+            accounts = fetchall(conn, """
+                SELECT fa.id,fa.owner,fa.name,fa.balance,fa.locked,fa.created_at
+                FROM fund_accounts fa
+                ORDER BY fa.owner, fa.id
+            """)
+            prices = {
+                r["symbol"]: float(r["current_price"] or 0)
+                for r in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
+            }
+            result = []
+            for acct in accounts:
+                aid = acct["id"]
+                trader = "[账户:" + str(aid) + "]"
+                moji = "[璐︽埛:" + str(aid) + "]"
+                buys = fetchall(conn, """
+                    SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
+                    FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
+                """, (trader, moji))
+                sells = fetchall(conn, """
+                    SELECT stock_symbol,SUM(shares) AS shares
+                    FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
+                """, (trader, moji))
+                sold = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
+                total_mv = 0.0
+                total_cost = 0.0
+                positions = []
+                for row in buys:
+                    sym = row["stock_symbol"]
+                    shares = float(row["shares"] or 0) - float(sold.get(sym, 0))
+                    if shares <= 0:
+                        continue
+                    cost = float(row["cost"] or 0)
+                    avg = cost / float(row["shares"] or 1)
+                    cp = prices.get(sym, avg)
+                    mv = cp * shares
+                    pnl = mv - avg * shares
+                    total_mv += mv
+                    total_cost += avg * shares
+                    positions.append({"symbol": sym, "shares": int(shares), "avgCost": round(avg, 2), "marketValue": round(mv, 2), "pnl": round(pnl, 2)})
+                cash = float(acct["balance"] or 0)
+                total_assets = cash + total_mv
+                total_pnl = total_mv - total_cost
+                result.append({
+                    "accountId": aid,
+                    "owner": acct["owner"],
+                    "accountName": acct["name"],
+                    "cash": round(cash, 2),
+                    "marketValue": round(total_mv, 2),
+                    "totalAssets": round(total_assets, 2),
+                    "totalPnl": round(total_pnl, 2),
+                    "pnlRatio": round(total_pnl / total_cost * 100, 2) if total_cost else 0,
+                    "positions": positions,
+                    "createdAt": str(acct["created_at"]),
+                })
+            return result
+    return cache_get_or_set("admin_fund_accounts", 30.0, load)
 
 
 
