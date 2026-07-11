@@ -1,0 +1,1560 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Activity, BarChart3, Shield, Wallet } from "lucide-react";
+import {
+  claimCompany,
+  clearPublicReadCache,
+  confirmMyCompanyFunds,
+  createFundAccount,
+  createAdminStock,
+  createAdminUser,
+  deleteAdminStock,
+  deleteFundAccount,
+  deleteAdminUser,
+  fetchAdminFundAccounts,
+  fetchAdminOverview,
+  fetchAvailableCompanies,
+  fetchCandles,
+  fetchHealth,
+  fetchMarket,
+  fetchMyCompanies,
+  fetchPortfolio,
+  login,
+  marketControl,
+  prefetchCandles,
+  resetAdminUserPassword,
+  runDbMigration,
+  setStockManager,
+  submitOrder,
+  updateFundAccountBalance,
+  updateAdminStock,
+  updateAdminUserStatus
+} from "../lib/api";
+import type { AdminFundAccount, AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
+import { KlineChart } from "./KlineChart";
+
+type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
+type MarketAction = "open" | "close" | "reset" | "previous";
+type OrderStatus = "idle" | "success" | "error";
+type FundAccount = { symbol: string; name: string; balance: number; fundsLocked: boolean };
+const MAX_ORDER_SHARES = 1_000_000;
+type OrderFeedback = {
+  status: string;
+  side: string;
+  stock: string;
+  price: number;
+  shares: number;
+  round?: number;
+  detail: string;
+};
+
+function fmtMoney(value: number) {
+  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function cls(value: number) {
+  return value >= 0 ? "up" : "down";
+}
+
+function textField(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return value === null || value === undefined ? "-" : String(value);
+}
+
+function numberField(row: Record<string, unknown>, key: string) {
+  const value = Number(row[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function tradeSide(value: string) {
+  if (value === "buy") return "买入";
+  if (value === "sell") return "卖出";
+  if (value === "force_close") return "强平";
+  return value || "-";
+}
+
+function calcInitialPrice(revenue: number, totalShares: number, industryPe: number) {
+  if (!revenue || !totalShares || !industryPe) return 0;
+  return Number((revenue * 10000 / totalShares / industryPe).toFixed(2));
+}
+
+function calcIndustryPe(revenue: number, totalShares: number, initialPrice: number) {
+  if (!revenue || !totalShares || !initialPrice) return 0;
+  return Number((revenue * 10000 / totalShares / initialPrice).toFixed(2));
+}
+
+function numericDraft(value: string) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+export function TradingWorkspace() {
+  const [market, setMarket] = useState<MarketSnapshot | null>(null);
+  const [view, setView] = useState<ViewKey>("market");
+  const [selected, setSelected] = useState("JGONG");
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [token, setToken] = useState("");
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
+  const [loginName, setLoginName] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [orderShares, setOrderShares] = useState("100");
+  const [orderMessage, setOrderMessage] = useState("");
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>("idle");
+  const [orderFeedback, setOrderFeedback] = useState<OrderFeedback | null>(null);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [myCompanies, setMyCompanies] = useState<FundAccount[]>([]);
+  const [availableCompanies, setAvailableCompanies] = useState<Array<{symbol: string; name: string}>>([]);
+  const [tradingCompany, setTradingCompany] = useState<string | null>(null);
+  const [portfolioCompany, setPortfolioCompany] = useState<string | null>(null);
+  const [adminMessage, setAdminMessage] = useState("");
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [adminStocks, setAdminStocks] = useState<AdminStock[]>([]);
+  const [adminFundAccounts, setAdminFundAccounts] = useState<AdminFundAccount[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [newOperatorName, setNewOperatorName] = useState("");
+  const [newOperatorPassword, setNewOperatorPassword] = useState("");
+  const [newOperatorRole, setNewOperatorRole] = useState<"player" | "admin">("player");
+  const [resetTarget, setResetTarget] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [pendingMarketAction, setPendingMarketAction] = useState<MarketAction | null>(null);
+  const [marketConfirmText, setMarketConfirmText] = useState("");
+  const [newStock, setNewStock] = useState({
+    symbol: "",
+    name: "",
+    revenue: "100",
+    totalShares: "10000",
+    initialPrice: "5.00",
+    carbonPrice: "50",
+    premiumRate: "50"
+  });
+  const [companyFundAmount, setCompanyFundAmount] = useState("5000");
+  const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
+  const [stockDrafts, setStockDrafts] = useState<Record<string, {
+    revenue: string;
+    totalShares: string;
+    initialPrice: string;
+    carbonPrice: string;
+    premiumRate: string;
+  }>>({});
+  const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
+  const loginRef = useRef<string>("");
+
+
+  // Restore persisted session on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("gipfel_session");
+    if (!saved) return;
+    try {
+      const { token: t, username: u, role: r } = JSON.parse(saved);
+      if (t && u) {
+        setToken(t);
+        loginRef.current = u;
+        if (r) setUser({ username: u, role: r, balance: 0 });
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    fetchMarket().then((data) => {
+      if (!alive) return;
+      setMarket(data);
+      setLastMarketUpdate(Date.now());
+      if (data.stocks[0]) setSelected(data.stocks[0].symbol);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    fetchCandles(selected).then((data) => {
+      if (alive) setCandles(data);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    fetchPortfolio(token)
+      .then((data) => {
+        if (!alive) return;
+        setPortfolio(data);
+        setUser(data.user);
+      })
+      .catch(() => {
+        if (alive) setPortfolio(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  async function refreshAdminOverview() {
+    if (!token || user?.role !== "admin") return;
+    setAdminLoading(true);
+    try {
+      const data = await fetchAdminOverview(token);
+      setAdminUsers(data.users);
+      setAdminStocks(data.stocks);
+      setAuditLogs(data.auditLogs);
+      fetchHealth().then(setHealthStatus).catch(() => {});
+      fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
+    } catch (error) {
+      setAdminMessage(`管理端同步失败：${error instanceof Error ? error.message : "请稍后重试"}`);
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!token || user?.role !== "admin") return;
+    let alive = true;
+    setAdminLoading(true);
+    fetchAdminOverview(token).then((d) => { setAdminUsers(d.users); setAdminStocks(d.stocks); setAuditLogs(d.auditLogs); }).catch(() => {}); fetchHealth().then(setHealthStatus).catch(() => {}); fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
+    setAdminLoading(false);
+    return () => {
+      alive = false;
+    };
+  }, [token, user?.role]);
+
+  // Refresh fund accounts when entering trade/portfolio view
+  useEffect(() => {
+    if (!token || (view !== "trade" && view !== "portfolio")) return;
+    fetchMyCompanies(token).then(setMyCompanies).catch(() => {});
+  }, [token, view]);
+
+  useEffect(() => {
+    setStockDrafts((currentDrafts) => {
+      const next = { ...currentDrafts };
+      for (const stock of adminStocks) {
+        if (next[stock.symbol]) continue;
+        next[stock.symbol] = {
+          revenue: String(stock.revenue || 100),
+          totalShares: String(stock.totalShares || 10000),
+          initialPrice: String(calcInitialPrice(stock.revenue || 0, stock.totalShares || 0, stock.industryPe || 0) || stock.price || 0),
+          carbonPrice: String(stock.carbonPrice || 50),
+          premiumRate: String(stock.premiumRate || 50)
+        };
+      }
+      return next;
+    });
+  }, [adminStocks]);
+
+  async function submitLogin() {
+    setLoginError("");
+    try {
+      const nameEl = document.getElementById("login-name") as HTMLInputElement | null;
+      const passEl = document.getElementById("login-pass") as HTMLInputElement | null;
+      const nameVal = nameEl?.value?.trim() || "";
+      const passVal = passEl?.value || "";
+      if (!nameVal || !passVal) { setLoginError("请输入账号和密码"); return; }
+      const data = await login(nameVal, passVal);
+      const token = data.accessToken;
+      setToken(token);
+      setUser(data.user);
+      setPortfolio(null);
+      setTradingCompany(null);
+      loginRef.current = data.user.username;
+      localStorage.setItem("gipfel_session", JSON.stringify({ token, username: data.user.username, role: data.user.role }));
+      // Fetch fund accounts for every signed-in role so the portfolio panel is never blank.
+      Promise.all([
+        fetchMyCompanies(token),
+        fetchAvailableCompanies(token)
+      ]).then(([companies, avail]) => {
+        setMyCompanies(companies);
+        setAvailableCompanies(avail);
+        if (companies.length > 0) {
+          setTradingCompany(companies[0].symbol);
+          setPortfolioCompany(companies[0].symbol);
+          fetchPortfolio(token, companies[0].symbol).then(setPortfolio).catch(() => {});
+        }
+      }).catch(() => {});
+      setView(data.user.role === "admin" ? "admin" : "trade");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setLoginError(detail === "invalid_credentials" ? "账号或密码不正确" : `登录失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  const stocks = market?.stocks ?? [];
+  const tradableStocks = useMemo(() => stocks, [stocks]);
+  const current: StockQuote | undefined = useMemo(
+    () => tradableStocks.find((s) => s.symbol === selected) ?? tradableStocks[0] ?? stocks[0],
+    [selected, tradableStocks, stocks]
+  );
+
+  useEffect(() => {
+    if (!stocks.length) return;
+    prefetchCandles(stocks.map((stock) => stock.symbol));
+  }, [stocks]);
+
+  async function reloadFundAccounts(preferredSymbol?: string | null) {
+    if (!token) return [];
+    const accounts: FundAccount[] = await fetchMyCompanies(token);
+    setMyCompanies(accounts);
+    const nextAccount = accounts.find((account) => account.symbol === preferredSymbol) ?? accounts[0];
+    if (nextAccount) {
+      setTradingCompany(nextAccount.symbol);
+      setPortfolioCompany(nextAccount.symbol);
+      const data = await fetchPortfolio(token, nextAccount.symbol);
+      setPortfolio(data);
+      setUser({ ...data.user, username: loginRef.current || data.user.username });
+    } else {
+      setTradingCompany(null);
+      setPortfolioCompany(null);
+      setPortfolio(null);
+      setPortfolio(null);
+    }
+    return accounts;
+  }
+
+  async function submitTrade() {
+    if (!user || !current || !token) return;
+    if (!tradingCompany) {
+      setOrderStatus("error");
+      setOrderMessage("请先创建并选择一个资金账户");
+      setOrderFeedback(null);
+      return;
+    }
+    const price = Number(current.price);
+    const shares = Number(orderShares);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(shares) || shares <= 0) {
+      setOrderStatus("error");
+      setOrderMessage("委托失败：当前价异常或委托数量不是大于 0 的数字。");
+      setOrderFeedback(null);
+      return;
+    }
+    if (!Number.isInteger(shares)) {
+      setOrderStatus("error");
+      setOrderMessage("委托失败：委托数量必须是整数股。");
+      setOrderFeedback(null);
+      return;
+    }
+    if (shares > MAX_ORDER_SHARES) {
+      setOrderStatus("error");
+      setOrderMessage(`委托失败：单笔数量不能超过 ${MAX_ORDER_SHARES.toLocaleString("zh-CN")} 股。`);
+      setOrderFeedback(null);
+      return;
+    }
+    const normalizedShares = Math.floor(shares);
+    const sideText = side === "buy" ? "买入" : "卖出";
+    const confirmed = window.confirm(
+      `确认${sideText} ${current.name} (${current.symbol})？\n\n系统成交价：${fmtMoney(price)}\n委托数量：${normalizedShares} 股\n预计金额：${fmtMoney(price * normalizedShares)}\n\n价格由系统按当前价自动生成，提交后会进入成交流程。`
+    );
+    if (!confirmed) return;
+    setOrderMessage("");
+    setOrderStatus("idle");
+    setOrderFeedback(null);
+    setOrderSubmitting(true);
+    try {
+      const result = await submitOrder(token, {
+        username: user.username,
+        symbol: current.symbol,
+        side,
+        price,
+        shares: normalizedShares,
+        ...(tradingCompany ? { account_id: Number(tradingCompany) } : {})
+      });
+      if (result.accepted) {
+        const detail = result.detail || "订单已受理";
+        const statusText = detail.includes("挂") ? "已挂单" : "已成交";
+        setOrderFeedback({
+          status: statusText,
+          side: sideText,
+          stock: `${current.name} (${current.symbol})`,
+          price,
+          shares: normalizedShares,
+          round: result.round,
+          detail
+        });
+        setOrderStatus("success");
+        setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。${detail}，正在刷新资产。`);
+        setOrderSubmitting(false);
+        clearPublicReadCache();
+        try {
+          const [data] = await Promise.all([
+            fetchPortfolio(token, tradingCompany ?? undefined),
+            fetchMarket(true).catch(() => {}),
+            selected ? fetchCandles(selected, true).catch(() => {}) : Promise.resolve()
+          ]);
+          if (data) { setPortfolio(data); setUser({ ...data.user, username: loginRef.current || data.user.username }); }
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。`);
+        } catch {
+          setOrderMessage(`${sideText}成功：${current.name} ${normalizedShares} 股，系统价 ${fmtMoney(price)}。`);
+        }
+      } else {
+        setOrderStatus("error");
+        setOrderFeedback({
+          status: "未受理",
+          side: sideText,
+          stock: `${current.name} (${current.symbol})`,
+          price,
+          shares: normalizedShares,
+          round: result.round,
+          detail: result.detail || result.reason || "请检查市场状态、资金或持仓。"
+        });
+        setOrderMessage(`${sideText}失败：${result.detail || result.reason || "请检查市场状态、资金或持仓。"}`);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setOrderStatus("error");
+      setOrderFeedback({
+        status: "提交失败",
+        side: sideText,
+        stock: `${current.name} (${current.symbol})`,
+        price,
+        shares: normalizedShares,
+        detail: detail || "网络或后端暂时不可用，请稍后重试。"
+      });
+      setOrderMessage(`${sideText}提交失败：${detail || "网络或后端暂时不可用，请稍后重试。"}`);
+    } finally {
+      setOrderSubmitting(false);
+    }
+  }
+
+  async function submitMarketAction(action: MarketAction) {
+    if (!token) return;
+    const confirmation = action === "close"
+      ? "confirm-close"
+      : action === "open"
+        ? "confirm-open"
+        : action === "previous"
+          ? "confirm-previous-round"
+          : "confirm-reset-round1";
+    setAdminMessage("");
+    try {
+      const result = await marketControl(token, action, confirmation);
+      setAdminMessage(result.detail || result.reason || "操作完成");
+      clearPublicReadCache(selected);
+      const [nextMarket, nextCandles] = await Promise.all([
+        fetchMarket(true),
+        selected ? fetchCandles(selected, true) : Promise.resolve<Candle[]>([])
+      ]);
+      setMarket(nextMarket);
+      if (selected) setCandles(nextCandles);
+      setLastMarketUpdate(Date.now());
+      setPendingMarketAction(null);
+      setMarketConfirmText("");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`市场控制失败：${detail || "请重新登录管理员账号"}`);
+    }
+  }
+
+  async function submitCreateOperator() {
+    if (!token || user?.role !== "admin") return;
+    const roleText = newOperatorRole === "admin" ? "管理员" : "操作员";
+    if (!window.confirm(`确认创建${roleText}账号「${newOperatorName.trim()}」？`)) return;
+    setAdminMessage("");
+    try {
+      await createAdminUser(token, {
+        username: newOperatorName.trim(),
+        password: newOperatorPassword,
+        role: newOperatorRole
+      });
+      setNewOperatorName("");
+      setNewOperatorPassword("");
+      setNewOperatorRole("player");
+      setAdminMessage(`${roleText}账号已创建`);
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`创建账号失败：${detail || "请检查用户名是否已存在"}`);
+    }
+  }
+
+  async function submitResetPassword() {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认重置账号「${resetTarget}」的密码？`)) return;
+    setAdminMessage("");
+    try {
+      await resetAdminUserPassword(token, resetTarget, resetPassword);
+      setResetPassword("");
+      setAdminMessage("密码已重置");
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`重置密码失败：${detail || "请检查账号和密码"}`);
+    }
+  }
+
+  async function submitUserStatus(username: string, status: "active" | "disabled") {
+    if (!token || user?.role !== "admin") return;
+    const actionText = status === "active" ? "启用" : "停用";
+    if (!window.confirm(`确认${actionText}操作员账号「${username}」？`)) return;
+    setAdminMessage("");
+    try {
+      await updateAdminUserStatus(token, username, status);
+      setAdminMessage(status === "active" ? "账号已启用" : "账号已停用");
+      await refreshAdminOverview();
+    } catch {
+      setAdminMessage("账号状态更新失败");
+    }
+  }
+
+  async function submitDeleteUser(username: string) {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认删除操作员账号「${username}」？该账号的未成交挂单会一并移除。`)) return;
+    setAdminMessage("");
+    try {
+      await deleteAdminUser(token, username);
+      setAdminMessage("操作员账号已删除");
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`删除账号失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  async function submitCreateStock() {
+    if (!token || user?.role !== "admin") return;
+    const payload = {
+      symbol: newStock.symbol.trim().toUpperCase(),
+      name: newStock.name.trim(),
+      revenue: numericDraft(newStock.revenue),
+      total_shares: numericDraft(newStock.totalShares),
+      industry_pe: calcIndustryPe(numericDraft(newStock.revenue), numericDraft(newStock.totalShares), numericDraft(newStock.initialPrice)),
+      carbon_price: numericDraft(newStock.carbonPrice),
+      industry_carbon_mean: 50,
+      premium_rate: numericDraft(newStock.premiumRate)
+    };
+    if (!payload.symbol || !payload.name || payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0) {
+      setAdminMessage("请完整填写股票代码、公司名称、净利润、总股本和目标初始价");
+      return;
+    }
+    if (!window.confirm(`确认添加股票「${payload.name} (${payload.symbol})」？初始价 ${fmtMoney(newStockInitialPrice)}。`)) return;
+    setAdminMessage("");
+    try {
+      const result = await createAdminStock(token, payload);
+      if (!result.accepted) {
+        setAdminMessage(result.detail || result.reason || "添加股票未生效");
+        return;
+      }
+      setNewStock({
+        symbol: "",
+        name: "",
+        revenue: "100",
+        totalShares: "10000",
+        initialPrice: "5.00",
+        carbonPrice: "50",
+        premiumRate: "50"
+      });
+      setAdminMessage(result.initialPrice ? `股票已添加，初始价 ${fmtMoney(result.initialPrice)}` : "股票已添加");
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket(true);
+      setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`添加股票失败：${detail || "请检查代码是否重复或参数是否正确"}`);
+    }
+  }
+
+  async function submitUpdateStock(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    const draft = stockDrafts[stock.symbol];
+    if (!draft) return;
+    const payload = {
+      revenue: numericDraft(draft.revenue),
+      total_shares: numericDraft(draft.totalShares),
+      industry_pe: calcIndustryPe(numericDraft(draft.revenue), numericDraft(draft.totalShares), numericDraft(draft.initialPrice)),
+      carbon_price: numericDraft(draft.carbonPrice),
+      premium_rate: numericDraft(draft.premiumRate)
+    };
+    if (payload.revenue <= 0 || payload.total_shares <= 0 || payload.industry_pe <= 0) {
+      setAdminMessage("参数异常：净利润、总股本和目标初始价必须大于 0");
+      return;
+    }
+    if (!window.confirm(`确认保存「${stock.name}」的股票参数？这会影响后续结算价格。`)) return;
+    setAdminMessage("");
+    try {
+      const result = await updateAdminStock(token, stock.symbol, payload);
+      if (!result.accepted) {
+        setAdminMessage(result.detail || result.reason || "保存股票参数未生效");
+        return;
+      }
+      setAdminMessage(`${stock.name} 参数已保存`);
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`保存股票参数失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  async function submitDeleteStock(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm(`确认删除股票「${stock.name} (${stock.symbol})」？该股票会从行情和交易列表隐藏，历史记录保留。`)) return;
+    setAdminMessage("");
+    try {
+      await deleteAdminStock(token, stock.symbol);
+      setAdminMessage(`${stock.name} 已删除`);
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket(true);
+      setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
+      if (nextMarket.stocks[0]) setSelected(nextMarket.stocks[0].symbol);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`删除股票失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  async function submitSetManager(stock: AdminStock) {
+    if (!token || user?.role !== "admin") return;
+    const manager = (managerDrafts[stock.symbol] || "").trim();
+    if (!window.confirm(`确认将「${stock.name}」的管理员设为「${manager || "无"}」？`)) return;
+    setAdminMessage("");
+    try {
+      await setStockManager(token, stock.symbol, manager);
+      setAdminMessage(`${stock.name} 管理员已更新`);
+      setManagerDrafts((d) => ({ ...d, [stock.symbol]: manager }));
+      await refreshAdminOverview();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`设置管理员失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  const marketActionText = pendingMarketAction === "close"
+    ? "收盘结算"
+    : pendingMarketAction === "open"
+      ? "开启下一轮"
+      : pendingMarketAction === "previous"
+        ? "返回上一轮"
+        : "回到第一轮";
+  const marketActionKeyword = pendingMarketAction === "close"
+    ? "确认收盘"
+    : pendingMarketAction === "open"
+      ? "确认开盘"
+      : pendingMarketAction === "previous"
+        ? "确认返回上一轮"
+        : "确认回到第一轮";
+  const canCloseMarket = market?.state === "open";
+  const canOpenMarket = market?.state === "closed";
+  const canRollbackPrevious = (market?.round ?? 1) > 1;
+  const activeOperators = adminUsers.filter((account) => account.role === "player" && account.status === "active").length;
+  const activeAdmins = adminUsers.filter((account) => account.role === "admin" && account.status === "active").length;
+  const activeStocks = adminStocks.filter((stock) => !stock.isDeleted).length;
+  const recentTradeAudit = auditLogs.find((log) => log.action === "trade_buy" || log.action === "trade_sell");
+  const adminDataReady = adminUsers.length > 0 || adminStocks.length > 0 || auditLogs.length > 0;
+  const apiReady = Boolean(healthStatus?.ok || adminDataReady);
+  const dbReady = Boolean(healthStatus?.database || adminDataReady);
+  const writesReady = Boolean(
+    (healthStatus?.orderWritesEnabled && healthStatus.marketWritesEnabled && healthStatus.adminWritesEnabled) ||
+    adminDataReady
+  );
+  const preflightOk = Boolean(
+    apiReady &&
+    dbReady &&
+    writesReady &&
+    activeOperators > 0 &&
+    activeStocks > 0
+  );
+  const newStockInitialPrice = numericDraft(newStock.initialPrice);
+  const newStockIndustryPe = calcIndustryPe(
+    numericDraft(newStock.revenue),
+    numericDraft(newStock.totalShares),
+    numericDraft(newStock.initialPrice)
+  );
+  const marketCarbonMean = useMemo(() => {
+    const activeStocks = adminStocks.filter((stock) => !stock.isDeleted);
+    if (!activeStocks.length) return 50;
+    return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
+  }, [adminStocks]);
+  const [clockStr, setClockStr] = useState(() => new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+  useEffect(() => {
+    const t = setInterval(() => setClockStr(new Date().toLocaleTimeString("zh-CN", { hour12: false })), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const liveUpdateText = clockStr;
+
+  const navItems = user
+    ? [
+        { key: "market" as const, label: "行情面板", icon: BarChart3 },
+        { key: "trade" as const, label: "操作员交易台", icon: Activity },
+        { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
+        ...(user.role === "admin"
+          ? [{ key: "admin" as const, label: "管理员控制台", icon: Shield }]
+          : [])
+      ]
+    : [
+        { key: "market" as const, label: "行情面板", icon: BarChart3 }
+      ];
+
+  function renderNav(className: string) {
+    return (
+      <div className={className}>
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              className={view === item.key ? "active" : ""}
+              key={item.key}
+              onClick={() => setView(item.key)}
+            >
+              <Icon size={17} /> {item.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <strong>Gipfel</strong>
+          <span>Gipfel 投资竞赛平台</span>
+        </div>
+        {renderNav("nav")}
+      </aside>
+
+      <main className="main">
+        <div className="topbar">
+          <div>
+            <div className="meta">Trading Arena</div>
+            <strong>Gipfel 股票交易竞赛平台</strong>
+          </div>
+          {user ? (
+            <button className="ghost" onClick={() => { setToken(""); setUser(null); setPortfolio(null); setView("market"); localStorage.removeItem("gipfel_session"); }}>
+              {(loginRef.current || user.username)} · 退出
+            </button>
+          ) : (
+            <button className="ghost" onClick={() => setView("trade")}>操作员入口</button>
+          )}
+        </div>
+
+        <section className="status-strip">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="status-dot" />
+            <div>
+              <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
+            </div>
+          </div>
+          <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
+        </section>
+
+        {(view === "market" || view === "trade") ? (
+          <section className="quote-grid">
+            {stocks.map((stock) => (
+              <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
+                <div className="symbol">{stock.symbol}</div>
+                <div className="name">{stock.name}</div>
+                <div className={`price ${cls(stock.change)}`}>{fmtMoney(stock.price)}</div>
+                <div className={cls(stock.change)}>
+                  {stock.change >= 0 ? "+" : ""}{stock.change.toFixed(2)} ({stock.changePct.toFixed(2)}%)
+                </div>
+              </button>))}
+          </section>
+        ) : null}
+
+        {(view === "market" || view === "trade") ? (
+          <section className={`workspace ${view === "market" ? "market-only" : ""}`}>
+            <div className="chart-card">
+              <div className="chart-head">
+                <div className="chart-title-stack">
+                  <strong>{current?.name ?? "公司"} ({current?.symbol ?? "-"})</strong>
+                  <span className="meta" style={{ margin: "0 8px" }}>|</span>
+                  <span className={cls(current?.change ?? 0)} style={{ fontWeight: 700 }}>
+                    现价 {current ? fmtMoney(current.price) : "--"}
+                    {current ? ` ${current.change >= 0 ? "+" : ""}${current.changePct.toFixed(2)}%` : ""}
+                  </span>
+                  <span className="meta" style={{ margin: "0 8px" }}>|</span>
+                  <span className="meta">
+                    开 {candles[candles.length-1]?.open.toFixed(2) ?? "--"} 高 {candles[candles.length-1]?.high.toFixed(2) ?? "--"} 低 {candles[candles.length-1]?.low.toFixed(2) ?? "--"} 收 {candles[candles.length-1]?.close.toFixed(2) ?? "--"}
+                  </span>
+                </div>
+              </div>
+              <KlineChart candles={candles} />
+            </div>
+
+            {view === "trade" ? (
+            <aside className="ticket">
+            <h2>操作员交易</h2>
+            {!user && (
+              <div className="login-box">
+                <div className="section-caption">仅操作员和管理员登录后可下单。选手请留在行情面板查看走势。</div>
+                <div className="field">
+                  <label>操作员账号</label>
+                  <input id="login-name" placeholder="请输入账号" autoComplete="username" />
+                </div>
+                <div className="field">
+                  <label>密码</label>
+                  <input type="password" id="login-pass" placeholder="请输入密码" autoComplete="current-password" />
+                </div>
+                <button className="primary" id="login-submit" onClick={submitLogin}>操作员登录</button>
+                {loginError && <div className="error-text">{loginError}</div>}
+              </div>
+            )}
+            {user && (
+              <>
+              {/* Company account selector — operators only use company accounts */}
+              {myCompanies.length > 0 ? (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+                  {myCompanies.map((c) => (
+                    <button
+                      key={c.symbol}
+                      className={tradingCompany === c.symbol ? "active" : ""}
+                      onClick={() => {
+                        setTradingCompany(c.symbol);
+                        setOrderMessage(`已切换到资金账户「${c.name}」`);
+                      }}
+                      style={{ padding:"6px 10px", fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
+                    >
+                      {c.name} · {fmtMoney(c.balance)}
+                      {tradingCompany === c.symbol ? <span style={{marginLeft:4,color:"#38BDF8",fontSize:11}}>✓ 当前</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{textAlign:"center",padding:"16px 0",color:"#94A3B8",fontSize:13}}>
+                  暂无资金账户<br/><span style={{color:"#469FE6",cursor:"pointer",fontWeight:700,fontSize:14}} onClick={async () => {
+                    const name = window.prompt("输入资金账户名称：", user?.username || "");
+                    if (!name?.trim()) return;
+                    const amt = window.prompt("输入初始资金金额：", "1000000");
+                    const amount = Number(amt);
+                    if (!Number.isFinite(amount) || amount <= 0) return;
+                    if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
+                    try { await createFundAccount(token!, name.trim(), amount); await reloadFundAccounts(); }
+                    catch (e) { setOrderMessage(`创建失败：${e instanceof Error ? e.message : ""}`); }
+                  }}>+ 创建资金账户</span>
+                </div>
+              )}
+              {(tradingCompany ? (() => {
+                  const company = myCompanies.find((c) => c.symbol === tradingCompany);
+                  return company ? (
+                    <div className="account-box compact">
+                      <div className="acct-left">
+                        <span className="acct-id">{company.name}</span>
+                        <span className="acct-badge">
+                          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                          当前可用账户
+                        </span>
+                      </div>
+                      <div className="acct-balance">{fmtMoney(company.balance)}</div>
+                    </div>
+                  ) : null;
+                })() : null)}
+              {/* Company management moved to Portfolio page */}
+              {/* Fund setup for unlocked companies */}
+              {myCompanies.filter((c) => !c.fundsLocked).map((company) => (
+                <div key={company.symbol} className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div className="section-caption">设置「{company.name}」初始资金</div>
+                  <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>
+                    设置后不可修改。
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: "#aeb9ca" }}>¥</span>
+                    <input
+                      type="number"
+                      value={companyFundAmount}
+                      onChange={(e) => setCompanyFundAmount(e.target.value)}
+                      style={{ flex: 1 }}
+                      placeholder="输入初始资金"
+                    />
+                    <button
+                      className="primary"
+                      onClick={async () => {
+                        const amount = Number(companyFundAmount);
+                        if (!amount || amount <= 0) { setOrderMessage("请输入有效的金额"); return; }
+                        if (!window.confirm(`确认「${company.name}」初始资金 ¥${amount.toLocaleString("zh-CN")}？设置后不可修改。`)) return;
+                        try {
+                          await confirmMyCompanyFunds(token!, amount);
+                          setOrderMessage(`「${company.name}」初始资金已设置`);
+                          const companies = await fetchMyCompanies(token!);
+                          setMyCompanies(companies);
+                        } catch (e) {
+                          setOrderMessage(`设置失败：${e instanceof Error ? e.message : ""}`);
+                        }
+                      }}
+                    >
+                      确认
+                    </button>
+                  </div>
+                </div>
+              ))}
+            <div className="segmented">
+              <button
+                className={side === "buy" ? "buy active" : ""}
+                onClick={() => {
+                  setSide("buy");
+                  setOrderMessage("");
+                  setOrderStatus("idle");
+                  setOrderFeedback(null);
+                }}
+              >
+                买入
+              </button>
+              <button
+                className={side === "sell" ? "sell active" : ""}
+                onClick={() => {
+                  setSide("sell");
+                  setOrderMessage("");
+                  setOrderStatus("idle");
+                  setOrderFeedback(null);
+                }}
+              >
+                卖出
+              </button>
+            </div>
+            <div className="form-grid">
+              <div className="field">
+                <label>公司股票</label>
+                <select value={selected} onChange={(e) => {
+                  setSelected(e.target.value);
+                  setOrderMessage("");
+                  setOrderFeedback(null);
+                }}>
+                  {tradableStocks.map((stock) => (
+                    <option key={stock.symbol} value={stock.symbol}>{stock.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>系统成交价</label>
+                <div className="readonly-price">{current ? fmtMoney(current.price) : "--"}</div>
+              </div>
+              <div className="field">
+                <label>委托数量</label>
+                <input value={orderShares} onChange={(e) => setOrderShares(e.target.value)} inputMode="numeric" />
+              </div>
+              <button
+                className={`primary trade-submit ${side}`}
+                disabled={!user || orderSubmitting}
+                onClick={submitTrade}
+              >
+                {orderSubmitting ? "提交中..." : side === "buy" ? "提交买入" : "提交卖出"}
+              </button>
+              {orderMessage && <div className={`order-result ${orderStatus}`}>{orderMessage}</div>}
+              {orderFeedback ? (
+                <div className={`trade-feedback ${orderStatus}`}>
+                  <div><span>结果</span><strong>{orderFeedback.status}</strong></div>
+                  <div><span>方向</span><strong>{orderFeedback.side}</strong></div>
+                  <div><span>公司</span><strong>{orderFeedback.stock}</strong></div>
+                  <div><span>轮次</span><strong>{orderFeedback.round ? `第 ${orderFeedback.round} 轮` : "-"}</strong></div>
+                  <div><span>委托价</span><strong>{fmtMoney(orderFeedback.price)}</strong></div>
+                  <div><span>数量</span><strong>{orderFeedback.shares} 股</strong></div>
+                  <div className="wide"><span>说明</span><strong>{orderFeedback.detail}</strong></div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mini-table">
+              <div className="row"><span>当前价格</span><strong>{current ? fmtMoney(current.price) : "--"}</strong></div>
+              <div className="row"><span>委托模式</span><strong>限价撮合</strong></div>
+            </div>
+            {portfolio?.positions.length ? (
+              <div className="positions">
+                <div className="section-caption">当前持仓</div>
+                {portfolio.positions.map((pos) => (
+                  <div className="position-row" key={pos.symbol}>
+                    <div>
+                      <strong>{pos.name}</strong>
+                      <span>{pos.shares} 股 · 成本 {fmtMoney(pos.avgCost)}</span>
+                    </div>
+                    <div className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {portfolio?.orders.length ? (
+              <div className="record-list">
+                <div className="section-caption">最近委托</div>
+                {portfolio.orders.slice(0, 4).map((order, idx) => {
+                  const sideText = tradeSide(textField(order, "trade_type"));
+                  const price = numberField(order, "price");
+                  const shares = numberField(order, "shares");
+                  return (
+                    <div className="record-row" key={`${textField(order, "created_at")}-${idx}`}>
+                      <div>
+                        <strong>{textField(order, "stock_symbol")} · {sideText}</strong>
+                        <span>第 {textField(order, "round")} 轮 · {shares} 股</span>
+                      </div>
+                      <div>{fmtMoney(price)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {portfolio?.recentTrades.length ? (
+              <div className="record-list">
+                <div className="section-caption">最近成交</div>
+                {portfolio.recentTrades.slice(0, 4).map((trade, idx) => {
+                  const sideText = tradeSide(textField(trade, "trade_type"));
+                  const price = numberField(trade, "price");
+                  const shares = numberField(trade, "shares");
+                  return (
+                    <div className="record-row" key={`${textField(trade, "trade_date")}-${idx}`}>
+                      <div>
+                        <strong>{textField(trade, "stock_symbol")} · {sideText}</strong>
+                        <span>第 {textField(trade, "round")} 轮 · {shares} 股</span>
+                      </div>
+                      <div>{fmtMoney(price * shares)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+              </>
+            )}
+            </aside>
+            ) : null}
+          </section>
+        ) : null}
+
+        {view === "portfolio" ? (
+          <section className="panel-grid">
+            <div className="chart-card compact-panel">
+              <div className="chart-head">
+                <div>
+                  <strong>持仓资产</strong>
+                  <div className="meta">资金、持仓、市值和浮动盈亏</div>
+                </div>
+                <div className={cls(portfolio?.summary.totalPnl ?? 0)}>
+                  {portfolio ? fmtMoney(portfolio.summary.totalAssets) : "请选择资金账户"}
+                </div>
+              </div>
+              {/* Portfolio account selector — all companies shown */}
+              {myCompanies.length > 0 ? (
+                <div className="account-switcher">
+                  {myCompanies.map((c) => {
+                    const selectedAccount = portfolioCompany === c.symbol;
+                    return (
+                      <button
+                        key={c.symbol}
+                        className={`account-switch ${selectedAccount ? "active" : ""}`}
+                        onClick={async () => {
+                          setPortfolioCompany(c.symbol);
+                          setTradingCompany(c.symbol);
+                          if (c.fundsLocked) {
+                              setPortfolio(null);
+                            fetchPortfolio(token!, c.symbol).then((data) => {
+                              setPortfolio(data);
+                              setUser({ ...data.user, username: loginRef.current || data.user.username });
+                            }).catch(() => {});
+                            setOrderMessage(`已切换到资金账户「${c.name}」。`);
+                          }
+                        }}
+                      >
+                        <span>
+                          <strong>{c.name}</strong>
+                          <small>{fmtMoney(c.balance)}</small>
+                        </span>
+                        {selectedAccount ? <em>当前使用</em> : <em className="muted-badge">切换</em>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div style={{ cursor: "pointer", color: "#469fe6", fontSize: 13, marginBottom: 8 }}
+                onClick={async () => {
+                  const name = window.prompt("输入资金账户名称：", user?.username || "");
+                  if (!name?.trim()) return;
+                  const amountText = window.prompt("输入初始资金金额：", "1000000");
+                  const amount = Number(amountText);
+                  if (!Number.isFinite(amount) || amount <= 0) return;
+                  if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
+                  try {
+                    await createFundAccount(token!, name.trim(), amount);
+                    await reloadFundAccounts();
+                  } catch (e) {
+                    setOrderMessage(`创建资金账户失败：${e instanceof Error ? e.message : ""}`);
+                  }
+                }}
+              >
+                + 创建资金账户
+              </div>
+              {/* Company content: fund setup or portfolio */}
+              {portfolioCompany ? (
+                (() => {
+                  const company = myCompanies.find((c) => c.symbol === portfolioCompany);
+                  if (!company) return null;
+                  if (!company.fundsLocked) {
+                    return (
+                      <div className="fund-setup-panel" style={{ background: "rgba(249,196,47,0.08)", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                        <div className="section-caption">设置「{company.name}」初始资金</div>
+                        <div style={{ fontSize: 13, color: "#9aa4b9", marginBottom: 8 }}>设置后不可修改。</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ color: "#aeb9ca" }}>¥</span>
+                          <input type="number" value={companyFundAmount} onChange={(e) => setCompanyFundAmount(e.target.value)} style={{ flex: 1 }} placeholder="输入初始资金" />
+                          <button className="primary" onClick={async () => {
+                            const amount = Number(companyFundAmount);
+                            if (!amount || amount <= 0) return;
+                            if (!window.confirm(`确认「${company.name}」初始资金 ¥${amount.toLocaleString("zh-CN")}？`)) return;
+                            try {
+                              await confirmMyCompanyFunds(token!, amount);
+                              const companies = await fetchMyCompanies(token!);
+                              setMyCompanies(companies);
+                              // Reload portfolio
+                              const data = await fetchPortfolio(token!, company.symbol);
+                              setPortfolio(data);
+                            } catch (e) { /* ignore */ }
+                          }}>确认</button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                        <button className="ghost" onClick={async () => {
+                          const nextBalanceText = window.prompt(`输入「${company.name}」新的可用资金：`, String(company.balance));
+                          if (nextBalanceText === null) return;
+                          const nextBalance = Number(nextBalanceText);
+                          if (!Number.isFinite(nextBalance) || nextBalance < 0) {
+                            setOrderMessage("资金修改失败：请输入不小于 0 的数字。");
+                            return;
+                          }
+                          if (!window.confirm(`确认将「${company.name}」可用资金修改为 ${fmtMoney(nextBalance)}？`)) return;
+                          try {
+                            await updateFundAccountBalance(token!, Number(company.symbol), nextBalance);
+                            await reloadFundAccounts(company.symbol);
+                            setOrderMessage(`资金账户「${company.name}」可用资金已修改为 ${fmtMoney(nextBalance)}。`);
+                          } catch (e) {
+                            setOrderMessage(`资金修改失败：${e instanceof Error ? e.message : ""}`);
+                          }
+                        }}>修改可用资金</button>
+                        <button className="danger-button" onClick={async () => {
+                          if (!window.confirm(`确认删除资金账户「${company.name}」？有持仓会自动按市价清仓，不能撤销。`)) return;
+                          try {
+                            await deleteFundAccount(token!, Number(company.symbol));
+                            await reloadFundAccounts(null);
+                            setOrderMessage(`资金账户「${company.name}」已删除。`);
+                          } catch (e) {
+                            const detail = e instanceof Error ? e.message : "";
+                            const readable = detail.includes("fund_account_has_open_orders")
+                                ? "该账户仍有未完成挂单，不能删除。"
+                                : detail.includes("fund_account_not_found")
+                                  ? "该账户不存在，可能已被删除。"
+                                  : detail.includes("api_")
+                                    ? "网络请求失败，请稍后重试。"
+                                    : detail;
+                            setOrderMessage(`删除资金账户失败：${readable}`);
+                          }
+                        }}>删除账户</button>
+                      </div>
+                      <div className="asset-grid">
+                        <div><span>可用资金</span><strong>{fmtMoney(portfolio?.user.balance ?? 0)}</strong></div>
+                        <div><span>持仓市值</span><strong>{fmtMoney(portfolio?.summary.marketValue ?? 0)}</strong></div>
+                        <div><span>总资产</span><strong>{fmtMoney(portfolio?.summary.totalAssets ?? 0)}</strong></div>
+                        <div><span>浮动盈亏</span><strong className={cls(portfolio?.summary.totalPnl ?? 0)}>{fmtMoney(portfolio?.summary.totalPnl ?? 0)}</strong></div>
+                      </div>
+                      {portfolio?.positions.length ? (
+                        <div className="data-table">
+                          <div className="table-row table-head"><span>公司</span><span>数量</span><span>成本</span><span>市值</span><span>盈亏</span></div>
+                          {portfolio.positions.map((pos) => (
+                            <div className="table-row" key={pos.symbol}>
+                              <span>{pos.name}</span><span>{pos.shares}</span><span>{fmtMoney(pos.avgCost)}</span><span>{fmtMoney(pos.marketValue)}</span>
+                              <span className={cls(pos.pnl)}>{fmtMoney(pos.pnl)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <div className="empty-state" style={{ padding: "16px 0", fontSize: 13 }}>暂无持仓。</div>}
+                    </>
+                  );
+                })()
+              ) : myCompanies.length > 0 ? (
+                <div className="empty-state" style={{ padding: "16px 0" }}>请选择上方一个公司查看资产。</div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {view === "records" ? (
+          <section className="panel-grid two">
+            <div className="chart-card compact-panel">
+              <div className="chart-head"><strong>委托记录</strong><div className="meta">最近 20 条委托</div></div>
+              {!portfolio?.orders.length ? <div className="empty-state">暂无委托记录。</div> : (
+                <div className="data-table">
+                  <div className="table-row table-head"><span>公司</span><span>方向</span><span>价格</span><span>数量</span><span>轮次</span></div>
+                  {portfolio.orders.map((order, idx) => (
+                    <div className="table-row" key={`${textField(order, "created_at")}-${idx}`}>
+                      <span>{textField(order, "stock_symbol")}</span>
+                      <span>{tradeSide(textField(order, "trade_type"))}</span>
+                      <span>{fmtMoney(numberField(order, "price"))}</span>
+                      <span>{numberField(order, "shares")}</span>
+                      <span>{textField(order, "round")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="chart-card compact-panel">
+              <div className="chart-head"><strong>成交记录</strong><div className="meta">最近 20 条成交</div></div>
+              {!portfolio?.recentTrades.length ? <div className="empty-state">暂无成交记录。</div> : (
+                <div className="data-table">
+                  <div className="table-row table-head"><span>公司</span><span>方向</span><span>价格</span><span>数量</span><span>轮次</span></div>
+                  {portfolio.recentTrades.map((trade, idx) => (
+                    <div className="table-row" key={`${textField(trade, "trade_date")}-${idx}`}>
+                      <span>{textField(trade, "stock_symbol")}</span>
+                      <span>{tradeSide(textField(trade, "trade_type"))}</span>
+                      <span>{fmtMoney(numberField(trade, "price"))}</span>
+                      <span>{numberField(trade, "shares")}</span>
+                      <span>{textField(trade, "round")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {view === "admin" ? (
+          <section className="panel-grid">
+            <div className="chart-card compact-panel">
+              <div className="chart-head">
+                <div>
+                  <strong>管理控制</strong>
+                  <div className="meta">市场轮次、操作员账号、公司股票和审计日志</div>
+                </div>
+                <div className="admin-head-actions">
+                  <span className="meta">{adminLoading ? "正在同步" : "管理员已登录"}</span>
+                  {user?.role === "admin" ? (
+                    <button className="mini-action" onClick={refreshAdminOverview}>刷新</button>
+                  ) : null}
+                </div>
+              </div>
+              {user?.role !== "admin" ? (
+                <div className="empty-state">请使用管理员账号登录后查看管理控制台。</div>
+              ) : (
+                <>
+                  <div className={`preflight-panel ${preflightOk ? "ready" : "warning"}`}>
+                    <div className="preflight-head">
+                      <div>
+                        <strong>赛前检查</strong>
+                        <span>{preflightOk ? "核心状态正常" : "请确认下列状态"}</span>
+                      </div>
+                      <button className="mini-action" onClick={refreshAdminOverview}>重新检查</button>
+                    </div>
+                    <div className="preflight-grid">
+                      <div><span>API</span><strong>{apiReady ? "正常" : "待确认"}</strong></div>
+                      <div><span>数据库</span><strong>{dbReady ? "正常" : "待确认"}</strong></div>
+                      <div><span>写入权限</span><strong>{writesReady ? "已开启" : "待确认"}</strong></div>
+                      <div><span>当前轮次</span><strong>第 {market?.round ?? 1} 轮</strong></div>
+                      <div><span>市场状态</span><strong>{market?.state === "closed" ? "已闭市" : "交易中"}</strong></div>
+                      <div><span>操作员</span><strong>{activeOperators} 个有效</strong></div>
+                      <div><span>管理员</span><strong>{activeAdmins} 个有效</strong></div>
+                      <div><span>公司股票</span><strong>{activeStocks} 只</strong></div>
+                      <div className="wide"><span>最近交易</span><strong>{recentTradeAudit ? `${recentTradeAudit.actor} · ${recentTradeAudit.target || "-"} · ${recentTradeAudit.detail || recentTradeAudit.action}` : "暂无交易"}</strong></div>
+                    </div>
+                    <div className="admin-stats wide" style={{ marginTop: 8 }}>
+                      <button className="mini-action" onClick={async () => {
+                        if (!token) return;
+                        if (!window.confirm("确认执行数据库迁移？这将添加公司账户所需的字段。")) return;
+                        try {
+                          const r = await runDbMigration(token);
+                          setAdminMessage(r.detail || "迁移完成");
+                          await refreshAdminOverview();
+                        } catch (e) {
+                          setAdminMessage(`迁移失败：${e instanceof Error ? e.message : ""}`);
+                        }
+                      }}>执行数据库迁移</button>
+                    </div>
+                  </div>
+                  <div className="danger-zone">
+                    <div className="danger-copy">
+                      <strong>市场轮次控制</strong>
+                      <span>当前第 {market?.round ?? 1} 轮，状态：{market?.state === "closed" ? "已闭市" : "交易中"}。返回上一轮会清除上一轮起点之后的数据，回到第一轮会清空全赛程。</span>
+                    </div>
+                    <div className="admin-actions">
+                      <button className="danger-button" disabled={!canCloseMarket} onClick={() => { setPendingMarketAction("close"); setMarketConfirmText(""); }}>
+                        收盘结算
+                      </button>
+                      <button className="ghost" disabled={!canOpenMarket} onClick={() => { setPendingMarketAction("open"); setMarketConfirmText(""); }}>
+                        开启下一轮
+                      </button>
+                      <button className="danger-button" disabled={!canRollbackPrevious} onClick={() => { setPendingMarketAction("previous"); setMarketConfirmText(""); }}>
+                        返回上一轮
+                      </button>
+                      <button className="danger-button" onClick={() => { setPendingMarketAction("reset"); setMarketConfirmText(""); }}>
+                        回到第一轮
+                      </button>
+                    </div>
+                    {pendingMarketAction ? (
+                      <div className="confirm-box">
+                        <div>
+                          <strong>确认执行：{marketActionText}</strong>
+                          <span>请输入「{marketActionKeyword}」后才能继续。</span>
+                          {pendingMarketAction === "previous" ? <span>该操作会删除上一轮起点之后的成交、挂单和K线，并恢复资金与股价。</span> : null}
+                          {pendingMarketAction === "reset" ? <span>该操作会清空比赛交易历史并恢复第 1 轮。</span> : null}
+                        </div>
+                        <input
+                          value={marketConfirmText}
+                          onChange={(e) => setMarketConfirmText(e.target.value)}
+                          placeholder={marketActionKeyword}
+                        />
+                        <div className="confirm-actions">
+                          <button className="ghost" onClick={() => { setPendingMarketAction(null); setMarketConfirmText(""); }}>取消</button>
+                          <button
+                            className="danger-button"
+                            disabled={marketConfirmText.trim() !== marketActionKeyword}
+                            onClick={() => submitMarketAction(pendingMarketAction)}
+                          >
+                            确认执行
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {adminMessage && <div className="hint-text">{adminMessage}</div>}
+                  <div className="admin-stats wide">
+                    <div><span>操作员/管理员</span><strong>{adminLoading ? "同步中" : adminUsers.length}</strong></div>
+                    <div><span>股票/公司</span><strong>{adminLoading ? "同步中" : adminStocks.filter((s) => !s.isDeleted).length}</strong></div>
+                  </div>
+                  <div className="admin-form-grid">
+                    <div className="management-panel">
+                      <div className="section-caption">注册账号</div>
+                      <div className="inline-form">
+                        <div className="field">
+                          <label>用户名</label>
+                          <input value={newOperatorName} onChange={(e) => setNewOperatorName(e.target.value)} placeholder="例如 player4" />
+                        </div>
+                        <div className="field">
+                          <label>账号角色</label>
+                          <select value={newOperatorRole} onChange={(e) => setNewOperatorRole(e.target.value as "player" | "admin")}>
+                            <option value="player">操作员</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>初始密码</label>
+                          <input type="password" value={newOperatorPassword} onChange={(e) => setNewOperatorPassword(e.target.value)} placeholder="给新账号使用" />
+                        </div>
+                        <button className="primary" onClick={submitCreateOperator} disabled={!newOperatorName.trim() || !newOperatorPassword}>
+                          创建账号
+                        </button>
+                      </div>
+                    </div>
+                    <div className="management-panel">
+                      <div className="section-caption">重置账号密码</div>
+                      <div className="inline-form">
+                        <div className="field">
+                          <label>账号</label>
+                          <select value={resetTarget} onChange={(e) => setResetTarget(e.target.value)}>
+                            <option value="">选择账号</option>
+                            {adminUsers.map((account) => (
+                              <option key={account.id} value={account.username}>{account.username}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label>新密码</label>
+                          <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+                        </div>
+                        <button className="primary" onClick={submitResetPassword} disabled={!resetTarget || !resetPassword}>
+                          重置密码
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="management-panel stock-create-panel">
+                    <div className="section-caption">添加股票</div>
+                    <div className="inline-form stock-form">
+                      <div className="field">
+                        <label>股票代码</label>
+                        <input value={newStock.symbol} onChange={(e) => setNewStock({ ...newStock, symbol: e.target.value.toUpperCase() })} placeholder="例如 NEWCO" />
+                      </div>
+                      <div className="field">
+                        <label>公司名称</label>
+                        <input value={newStock.name} onChange={(e) => setNewStock({ ...newStock, name: e.target.value })} placeholder="公司/小组名称" />
+                      </div>
+                      <div className="field">
+                        <label>总股本（万股）</label>
+                        <input value={newStock.totalShares} onChange={(e) => setNewStock({ ...newStock, totalShares: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>初始净利润（万）</label>
+                        <input value={newStock.revenue} onChange={(e) => setNewStock({ ...newStock, revenue: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>目标初始价</label>
+                        <input value={newStock.initialPrice} onChange={(e) => setNewStock({ ...newStock, initialPrice: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>当前幸福度</label>
+                        <input value={newStock.premiumRate} onChange={(e) => setNewStock({ ...newStock, premiumRate: e.target.value })} />
+                      </div>
+                      <div className="field">
+                        <label>当前碳排</label>
+                        <input value={newStock.carbonPrice} onChange={(e) => setNewStock({ ...newStock, carbonPrice: e.target.value })} />
+                      </div>
+                      <div className="formula-preview">
+                        <span>PE</span>
+                        <strong>{newStockIndustryPe > 0 ? newStockIndustryPe.toFixed(2) : "--"}</strong>
+                      </div>
+                      <button
+                        className="primary"
+                        onClick={submitCreateStock}
+                        disabled={!newStock.symbol.trim() || !newStock.name.trim() || newStockInitialPrice <= 0}
+                      >
+                        添加股票
+                      </button>
+                    </div>
+                  </div>
+                  <div className="management-grid">
+                    <div className="management-panel user-management-panel">
+                      <div className="section-caption">操作员账号</div>
+                      <div className="data-table admin-table">
+                        <div className="table-row user-col table-head"><span>用户名</span><span>角色</span><span>状态</span><span>余额</span><span>操作</span></div>
+                        {adminUsers.map((account) => (
+                          <div className="table-row user-col" key={account.id}>
+                            <span>{account.username}</span>
+                            <span>{account.role === "admin" ? "管理员" : "操作员"}</span>
+                            <span className={account.status === "active" ? "up" : "down"}>{account.status === "active" ? "有效" : "停用"}</span>
+                            <span>{fmtMoney(account.balance)}</span>
+                            <span>
+                              {account.role === "player" ? (
+                                <span className="row-actions">
+                                  <button
+                                    className="mini-action"
+                                    onClick={() => submitUserStatus(account.username, account.status === "active" ? "disabled" : "active")}
+                                  >
+                                    {account.status === "active" ? "停用" : "启用"}
+                                  </button>
+                                  <button className="mini-action danger-mini" onClick={() => submitDeleteUser(account.username)}>
+                                    删除
+                                  </button>
+                                </span>
+                              ) : "-"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="management-panel">
+                      <div className="section-caption">股票参数</div>
+                      <div className="stock-editor-list">
+                        {adminStocks.map((stock) => {
+                          const draft = stockDrafts[stock.symbol] ?? {
+                            revenue: String(stock.revenue || 100),
+                            totalShares: String(stock.totalShares || 10000),
+                            initialPrice: String(calcInitialPrice(stock.revenue || 0, stock.totalShares || 0, stock.industryPe || 0) || stock.price || 0),
+                            carbonPrice: String(stock.carbonPrice || 50),
+                            premiumRate: String(stock.premiumRate || 50)
+                          };
+                          const derivedPe = calcIndustryPe(
+                            numericDraft(draft.revenue),
+                            numericDraft(draft.totalShares),
+                            numericDraft(draft.initialPrice)
+                          );
+                          const initialPrice = calcInitialPrice(
+                            numericDraft(draft.revenue),
+                            numericDraft(draft.totalShares),
+                            derivedPe
+                          );
+                          const happinessFactor = 1 + 0.2 * (numericDraft(draft.premiumRate) - 50) / 50;
+                          const carbonMean = Math.max(marketCarbonMean, 1);
+                          const carbonFactor = 1 - 0.5 * (numericDraft(draft.carbonPrice) - carbonMean) / carbonMean;
+                          const updateDraft = (next: Partial<typeof draft>) => {
+                            setStockDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [stock.symbol]: { ...(currentDrafts[stock.symbol] ?? draft), ...next }
+                            }));
+                          };
+                          return (
+                            <div className="stock-editor-card" key={stock.id}>
+                              <div className="stock-editor-head">
+                                <div>
+                                  <strong>{stock.name}</strong>
+                                  <span>{stock.symbol}</span>
+                                </div>
+                                <div className={cls(stock.price - stock.previousClose)}>{fmtMoney(stock.price)}</div>
+                              </div>
+                              <div className="stock-param-grid">
+                                <div className="field"><label>总股本（万股）</label><input value={draft.totalShares} onChange={(e) => updateDraft({ totalShares: e.target.value })} /></div>
+                                <div className="field"><label>初始净利润（万）</label><input value={draft.revenue} onChange={(e) => updateDraft({ revenue: e.target.value })} /></div>
+                                <div className="field"><label>目标初始价</label><input value={draft.initialPrice} onChange={(e) => updateDraft({ initialPrice: e.target.value })} /></div>
+                                <div className="field"><label>幸福度</label><input value={draft.premiumRate} onChange={(e) => updateDraft({ premiumRate: e.target.value })} /></div>
+                                <div className="field"><label>当前碳排</label><input value={draft.carbonPrice} onChange={(e) => updateDraft({ carbonPrice: e.target.value })} /></div>
+                              </div>
+                              <div className="factor-strip">
+                                <span>初始价 {fmtMoney(initialPrice)}</span>
+                                <span>PE {derivedPe > 0 ? derivedPe.toFixed(2) : "--"}</span>
+                                <span>幸福因子 {happinessFactor.toFixed(3)}</span>
+                                <span>市场均碳 {marketCarbonMean.toFixed(1)}</span>
+                                <span>碳因子 {carbonFactor.toFixed(3)}</span>
+                              </div>
+                              <div className="manager-row">
+                                <div className="field">
+                                  <label>管理员</label>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                    <select
+                                      value={managerDrafts[stock.symbol] ?? stock.manager ?? ""}
+                                      onChange={(e) => setManagerDrafts((d) => ({ ...d, [stock.symbol]: e.target.value }))}
+                                    >
+                                      <option value="">无</option>
+                                      {adminUsers.filter((u) => u.role === "player" && u.status === "active").map((u) => (
+                                        <option key={u.username} value={u.username}>{u.username}</option>
+                                      ))}
+                                    </select>
+                                    <button className="mini-action" onClick={() => submitSetManager(stock)}>保存</button>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="row-actions">
+                                <button className="mini-action" onClick={() => submitUpdateStock(stock)}>保存参数</button>
+                                <button className="mini-action danger-mini" onClick={() => submitDeleteStock(stock)}>删除股票</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Fund accounts monitoring */}
+                  {adminFundAccounts.length > 0 ? (
+                    <div className="management-panel" style={{ gridColumn: "1 / -1" }}>
+                      <div className="section-caption">资金账户监控（只读）</div>
+                      <div className="data-table admin-table">
+                        <div className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", display: "grid", gap: 8, padding: "10px 12px", fontSize: 12, color: "#7d8ba1", borderBottom: "1px solid rgba(148,163,184,0.15)" }}>
+                          <span>操作员</span><span>账户名称</span><span>余额</span><span>持仓市值</span><span>总资产</span><span>浮动盈亏</span>
+                        </div>
+                        {adminFundAccounts.map((fa) => (
+                          <div key={fa.accountId} className="table-row" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", display: "grid", gap: 8, padding: "10px 12px", fontSize: 13, borderBottom: "1px solid rgba(148,163,184,0.08)" }}>
+                            <span>{fa.owner}</span>
+                            <span>{fa.accountName}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>¥{fa.cash.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>¥{fa.marketValue.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>¥{fa.totalAssets.toLocaleString("zh-CN", {minimumFractionDigits:2})}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums", color: fa.totalPnl >= 0 ? "#F87171" : "#2CB67D" }}>{fa.totalPnl >= 0 ? "+" : ""}{fa.totalPnl.toFixed(2)} ({fa.pnlRatio.toFixed(2)}%)</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {auditLogs.length ? (
+                    <div className="data-table">
+                      <div className="table-row four-col table-head"><span>操作者</span><span>动作</span><span>对象</span><span>时间</span></div>
+                      {auditLogs.map((log, idx) => (
+                        <div className="table-row four-col" key={`${log.createdAt}-${idx}`}>
+                          <span>{log.actor}</span>
+                          <span>{log.action}</span>
+                          <span>{log.target || "-"}</span>
+                          <span>{log.createdAt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </section>
+        ) : null}
+      </main>
+
+      {renderNav("mobile-nav")}
+    </div>
+  );
+}

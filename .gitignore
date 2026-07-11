@@ -1,3 +1,18 @@
+# Ignore everything by default
 *
+
+# Allow .gitignore itself
 !.gitignore
+
+# Allow .claude directory (for Claude Code)
 !.claude/
+
+# Allow only stock-analysis1 project (un-ignore parent dirs, re-ignore their contents)
+!AppData/
+AppData/*
+!AppData/Local/
+AppData/Local/*
+!AppData/Local/Temp/
+AppData/Local/Temp/*
+!AppData/Local/Temp/stock-analysis1/
+!AppData/Local/Temp/stock-analysis1/**

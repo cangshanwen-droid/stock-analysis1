@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+data/
+*.db
+*.sqlite
+*.sqlite3
+web/node_modules/
+web/.next/
+web/tsconfig.tsbuildinfo
+web/.env*
+api/.env*
