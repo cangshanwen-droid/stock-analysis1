@@ -331,13 +331,21 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing_token")
     payload = verify_token(authorization.removeprefix("Bearer ").strip())
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="invalid_token")
+    # Cache user DB query for 5 seconds to reduce per-request overhead
+    cached = cache_get(f"user:{username}", 5.0)
+    if cached is not None:
+        return cached
     with connect() as conn:
         user = row_dict(fetchone(conn,
             "SELECT username,role,status,balance FROM users WHERE username=?",
-            (payload.get("sub"),),
+            (username,),
         ))
     if not user or user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="inactive_user")
+    cache_set(f"user:{username}", user, 5.0)
     return user
 
 
@@ -1068,19 +1076,50 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
                 r["symbol"]: float(r["current_price"] or 0)
                 for r in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
             }
+
+            # Bulk fetch: one query for all buys, one for all sells (instead of 2 per account)
+            trader_to_account: dict[str, int] = {}
+            for acct in accounts:
+                aid = acct["id"]
+                trader_to_account["[账户:" + str(aid) + "]"] = aid
+                trader_to_account["[璐︽埛:" + str(aid) + "]"] = aid
+
+            if trader_to_account:
+                placeholders = ",".join(["?"] * len(trader_to_account))
+                params = tuple(trader_to_account.keys())
+                all_buys = fetchall(conn, f"""
+                    SELECT username,stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
+                    FROM transactions
+                    WHERE username IN ({placeholders}) AND trade_type='buy'
+                    GROUP BY username,stock_symbol
+                """, params)
+                all_sells = fetchall(conn, f"""
+                    SELECT username,stock_symbol,SUM(shares) AS shares
+                    FROM transactions
+                    WHERE username IN ({placeholders}) AND trade_type IN ('sell','force_close')
+                    GROUP BY username,stock_symbol
+                """, params)
+            else:
+                all_buys = []
+                all_sells = []
+
+            buys_by_account: dict[int, list] = defaultdict(list)
+            for row in all_buys:
+                aid = trader_to_account.get(row["username"])
+                if aid:
+                    buys_by_account[aid].append(row)
+
+            sells_by_account: dict[int, list] = defaultdict(list)
+            for row in all_sells:
+                aid = trader_to_account.get(row["username"])
+                if aid:
+                    sells_by_account[aid].append(row)
+
             result = []
             for acct in accounts:
                 aid = acct["id"]
-                trader = "[账户:" + str(aid) + "]"
-                moji = "[璐︽埛:" + str(aid) + "]"
-                buys = fetchall(conn, """
-                    SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-                    FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
-                """, (trader, moji))
-                sells = fetchall(conn, """
-                    SELECT stock_symbol,SUM(shares) AS shares
-                    FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
-                """, (trader, moji))
+                buys = buys_by_account.get(aid, [])
+                sells = sells_by_account.get(aid, [])
                 sold = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
                 total_mv = 0.0
                 total_cost = 0.0

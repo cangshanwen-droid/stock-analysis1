@@ -33,6 +33,7 @@ import {
 } from "../lib/api";
 import type { AdminFundAccount, AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
+import { ClockDisplay } from "./ClockDisplay";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset" | "previous";
@@ -671,12 +672,6 @@ export function TradingWorkspace() {
     if (!activeStocks.length) return 50;
     return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
   }, [adminStocks]);
-  const [clockStr, setClockStr] = useState(() => new Date().toLocaleTimeString("zh-CN", { hour12: false }));
-  useEffect(() => {
-    const t = setInterval(() => setClockStr(new Date().toLocaleTimeString("zh-CN", { hour12: false })), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const liveUpdateText = clockStr;
 
   const navItems = user
     ? [
@@ -742,7 +737,7 @@ export function TradingWorkspace() {
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
           </div>
-          <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
+          <span className="live-refresh">收盘同步 · <ClockDisplay /></span>
         </section>
 
         {(view === "market" || view === "trade") ? (
