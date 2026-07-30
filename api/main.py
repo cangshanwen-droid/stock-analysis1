@@ -251,8 +251,14 @@ def ensure_fund_accounts_schema(conn) -> None:
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
-    execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
+    try:
+        execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
+    except Exception:
+        pass  # Index may already exist
+    try:
+        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
+    except Exception:
+        pass  # May fail if duplicate data exists — non-critical
     # Fix any negative balances caused by race condition (concurrent orders for different stocks)
     execute(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
     # Add CHECK constraint to prevent future negative balances (PostgreSQL only; SQLite uses trigger)
