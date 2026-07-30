@@ -73,6 +73,21 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         if seller_holding - int(pending_sell["shares"] or 0) < fill:
             execute(conn, "DELETE FROM order_book WHERE id=?", (sell_order["id"],))
             continue
+        # Re-check buyer has enough remaining balance (prevents negative from concurrent orders
+        # since advisory lock is per-symbol but fund account balance is shared across symbols)
+        if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+            aid = int(username[len(ACCOUNT_USER_PREFIX):-1])
+            cur_row = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (aid,))
+            current_balance = float(cur_row["balance"]) if cur_row else 0
+        else:
+            cur_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,))
+            current_balance = float(cur_row["balance"]) if cur_row else 0
+        if current_balance < amount:
+            if matched > 0:
+                execute(conn, "INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
+                        (username, symbol, price, remaining, round_no))
+                return TradeResult(True, f"成交 {matched} 股 {stock_name}，剩余 {remaining} 股已挂买单", matched, round_no)
+            break
         _update_balance(conn, username, amount, "-")
         _update_balance(conn, sell_order["username"], amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",

@@ -253,6 +253,14 @@ def ensure_fund_accounts_schema(conn) -> None:
     """)
     execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
     execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
+    # Fix any negative balances caused by race condition (concurrent orders for different stocks)
+    execute(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
+    # Add CHECK constraint to prevent future negative balances (PostgreSQL only; SQLite uses trigger)
+    if is_postgres():
+        try:
+            execute(conn, "ALTER TABLE fund_accounts ADD CONSTRAINT fund_accounts_balance_non_negative CHECK (balance >= 0)")
+        except Exception:
+            pass  # Constraint may already exist
 
 
 def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
