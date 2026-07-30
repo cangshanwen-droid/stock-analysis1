@@ -238,39 +238,47 @@ def initial_stock_price(revenue: float, total_shares: float, industry_pe: float)
     return round(revenue * 10000 / total_shares / industry_pe, 2)
 
 
-def ensure_fund_accounts_schema(conn) -> None:
+def _ddl(conn, sql: str, params: tuple = ()) -> None:
+    """Execute a DDL/DML statement safely.
+
+    PostgreSQL abort semantics: if any statement fails inside a transaction,
+    the entire transaction becomes aborted and all subsequent commands fail
+    with 'current transaction is aborted'.  This helper catches the error
+    AND rolls back the aborted transaction so the connection can be reused
+    for the endpoint's data queries.
+
+    For read-only endpoints (the common case for schema checks) this is
+    harmless because there are no prior uncommitted writes.  For write
+    endpoints, ensure_fund_accounts_schema is always called before any
+    data-modifying statements, so rollback here is also safe.
+    """
     try:
-        id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
-        execute(conn, f"""
-            CREATE TABLE IF NOT EXISTS fund_accounts (
-                id {id_type},
-                owner TEXT NOT NULL,
-                name TEXT NOT NULL,
-                initial_balance DOUBLE PRECISION DEFAULT 0,
-                balance DOUBLE PRECISION DEFAULT 0,
-                locked INTEGER DEFAULT 1,
-                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        execute(conn, sql, params) if params else execute(conn, sql)
     except Exception:
-        pass
-    try:
-        execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
-    except Exception:
-        pass
-    try:
-        execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
-    except Exception:
-        pass  # May fail if duplicate data exists — non-critical
-    try:
-        execute(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
-    except Exception:
-        pass
-    if is_postgres():
         try:
-            execute(conn, "ALTER TABLE fund_accounts ADD CONSTRAINT fund_accounts_balance_non_negative CHECK (balance >= 0)")
+            conn.rollback()
         except Exception:
             pass
+
+
+def ensure_fund_accounts_schema(conn) -> None:
+    id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    _ddl(conn, f"""
+        CREATE TABLE IF NOT EXISTS fund_accounts (
+            id {id_type},
+            owner TEXT NOT NULL,
+            name TEXT NOT NULL,
+            initial_balance DOUBLE PRECISION DEFAULT 0,
+            balance DOUBLE PRECISION DEFAULT 0,
+            locked INTEGER DEFAULT 1,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    _ddl(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
+    _ddl(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
+    _ddl(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
+    if is_postgres():
+        _ddl(conn, "ALTER TABLE fund_accounts ADD CONSTRAINT fund_accounts_balance_non_negative CHECK (balance >= 0)")
 
 
 def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
