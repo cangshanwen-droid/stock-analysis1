@@ -239,34 +239,38 @@ def initial_stock_price(revenue: float, total_shares: float, industry_pe: float)
 
 
 def ensure_fund_accounts_schema(conn) -> None:
-    id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    execute(conn, f"""
-        CREATE TABLE IF NOT EXISTS fund_accounts (
-            id {id_type},
-            owner TEXT NOT NULL,
-            name TEXT NOT NULL,
-            initial_balance DOUBLE PRECISION DEFAULT 0,
-            balance DOUBLE PRECISION DEFAULT 0,
-            locked INTEGER DEFAULT 1,
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    try:
+        id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        execute(conn, f"""
+            CREATE TABLE IF NOT EXISTS fund_accounts (
+                id {id_type},
+                owner TEXT NOT NULL,
+                name TEXT NOT NULL,
+                initial_balance DOUBLE PRECISION DEFAULT 0,
+                balance DOUBLE PRECISION DEFAULT 0,
+                locked INTEGER DEFAULT 1,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception:
+        pass
     try:
         execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
     except Exception:
-        pass  # Index may already exist
+        pass
     try:
         execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
     except Exception:
         pass  # May fail if duplicate data exists — non-critical
-    # Fix any negative balances caused by race condition (concurrent orders for different stocks)
-    execute(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
-    # Add CHECK constraint to prevent future negative balances (PostgreSQL only; SQLite uses trigger)
+    try:
+        execute(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
+    except Exception:
+        pass
     if is_postgres():
         try:
             execute(conn, "ALTER TABLE fund_accounts ADD CONSTRAINT fund_accounts_balance_non_negative CHECK (balance >= 0)")
         except Exception:
-            pass  # Constraint may already exist
+            pass
 
 
 def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
