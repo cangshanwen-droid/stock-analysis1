@@ -112,12 +112,21 @@ def close_market(conn) -> MarketResult:
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
-            buyer_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy["username"],))
+            buyer_name = str(buy["username"])
+            if buyer_name.startswith(ACCOUNT_USER_PREFIX) and buyer_name.endswith("]"):
+                aid = int(buyer_name[len(ACCOUNT_USER_PREFIX):-1])
+                buyer_row = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (aid,))
+            else:
+                buyer_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy["username"],))
             if not buyer_row or float(buyer_row["balance"] or 0) < amount:
                 log_action(conn, "system", "settle_skip", buy["username"],
                     f"insufficient balance for {fill}x{match_price} ({symbol} round {round_no})")
                 continue
-            execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
+            if buyer_name.startswith(ACCOUNT_USER_PREFIX) and buyer_name.endswith("]"):
+                aid = int(buyer_name[len(ACCOUNT_USER_PREFIX):-1])
+                execute(conn, "UPDATE fund_accounts SET balance=balance-? WHERE id=?", (amount, aid))
+            else:
+                execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                     (buy["username"], symbol, match_price, fill, round_no))
             matched_shares += fill
@@ -125,7 +134,12 @@ def close_market(conn) -> MarketResult:
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
-            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell["username"]))
+            seller_name = str(sell["username"])
+            if seller_name.startswith(ACCOUNT_USER_PREFIX) and seller_name.endswith("]"):
+                aid = int(seller_name[len(ACCOUNT_USER_PREFIX):-1])
+                execute(conn, "UPDATE fund_accounts SET balance=balance+? WHERE id=?", (amount, aid))
+            else:
+                execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
                     (sell["username"], symbol, match_price, fill, round_no))
             sell_matched += fill
