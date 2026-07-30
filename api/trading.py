@@ -87,7 +87,9 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
                 execute(conn, "INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                         (username, symbol, price, remaining, round_no))
                 return TradeResult(True, f"成交 {matched} 股 {stock_name}，剩余 {remaining} 股已挂买单", matched, round_no)
-            break
+            # Can't afford even 1 fill — return error (don't fall through to system-buy path)
+            max_affordable = int(current_balance / price) if price > 0 else 0
+            return TradeResult(False, f"余额不足：{stock_name} 当前价 {price:.2f}，最多可买 {max_affordable} 股", 0, round_no)
         _update_balance(conn, username, amount, "-")
         _update_balance(conn, sell_order["username"], amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
