@@ -112,7 +112,20 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         avg = total / matched
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
 
+    # System-buy path: no matching sell orders, system acts as seller.
+    # Re-check balance here too — concurrent orders for different stocks can
+    # drain the shared fund account balance between place_order and this point.
+    if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+        aid = int(username[len(ACCOUNT_USER_PREFIX):-1])
+        cur_row = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (aid,))
+        current_balance = float(cur_row["balance"]) if cur_row else 0
+    else:
+        cur_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,))
+        current_balance = float(cur_row["balance"]) if cur_row else 0
     cost = round(price * remaining, 2)
+    if current_balance < cost:
+        max_affordable = int(current_balance / price) if price > 0 else 0
+        return TradeResult(False, f"余额不足：{stock_name} 当前价 {price:.2f}，最多可买 {max_affordable} 股", 0, round_no)
     _update_balance(conn, username, cost, "-")
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
             (username, symbol, price, remaining, round_no))
