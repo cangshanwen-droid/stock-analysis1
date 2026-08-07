@@ -734,7 +734,7 @@ export function TradingWorkspace() {
   const navItems = user
     ? [
         { key: "market" as const, label: "行情面板", icon: BarChart3 },
-        { key: "trade" as const, label: "操作员交易台", icon: Activity },
+        { key: "trade" as const, label: "交易", icon: Activity },
         { key: "portfolio" as const, label: "持仓资产", icon: Wallet },
         ...(user.role === "admin"
           ? [{ key: "admin" as const, label: "管理员控制台", icon: Shield }]
@@ -784,21 +784,30 @@ export function TradingWorkspace() {
               {(loginRef.current || user.username)} · 退出
             </button>
           ) : (
-            <button className="ghost" onClick={() => setView("trade")}>操作员入口</button>
+            <button className="ghost" onClick={() => setView("trade")}>登录</button>
           )}
         </div>
 
         <section className="status-strip">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {market ? (
+          <><div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span className="status-dot" />
             <div>
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
           </div>
           <span className="live-refresh">收盘同步 · <ClockDisplay /></span>
+          </>
+          ) : (
+          <><div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="status-dot" style={{ background: "#F9C42F" }} />
+            <strong>连接服务器中...</strong>
+          </div></>
+          )}
         </section>
 
         {(view === "market" || view === "trade") ? (
+          market ? (
           <section className="quote-grid">
             {stocks.map((stock) => (
               <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
@@ -810,6 +819,13 @@ export function TradingWorkspace() {
                 </div>
               </button>))}
           </section>
+          ) : (
+          <section className="quote-grid">
+            <div style={{ gridColumn: "1 / -1", padding: "24px", textAlign: "center", color: "#7d8ba1" }}>
+              行情加载中...
+            </div>
+          </section>
+          )
         ) : null}
 
         {(view === "market" || view === "trade") ? (
@@ -829,24 +845,30 @@ export function TradingWorkspace() {
                   </span>
                 </div>
               </div>
-              <KlineChart candles={candles} />
+              {candles.length > 0 ? (
+                <KlineChart candles={candles} />
+              ) : (
+                <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", color: "#7d8ba1" }}>
+                  K线加载中...
+                </div>
+              )}
             </div>
 
             {view === "trade" ? (
             <aside className="ticket">
-            <h2>操作员交易</h2>
+            <h2>交易</h2>
             {!user && (
               <div className="login-box">
-                <div className="section-caption">仅操作员和管理员登录后可下单。选手请留在行情面板查看走势。</div>
+                <div className="section-caption">登录后可下单交易</div>
                 <div className="field">
-                  <label>操作员账号</label>
+                  <label>账号</label>
                   <input id="login-name" placeholder="请输入账号" autoComplete="username" />
                 </div>
                 <div className="field">
                   <label>密码</label>
                   <input type="password" id="login-pass" placeholder="请输入密码" autoComplete="current-password" />
                 </div>
-                <button className="primary" id="login-submit" onClick={submitLogin}>操作员登录</button>
+                <button className="primary" id="login-submit" onClick={submitLogin}>登录</button>
                 {loginError && <div className="error-text">{loginError}</div>}
               </div>
             )}
