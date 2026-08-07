@@ -137,6 +137,9 @@ export function TradingWorkspace() {
     premiumRate: "50"
   });
   const [companyFundAmount, setCompanyFundAmount] = useState("5000");
+  const [showFundForm, setShowFundForm] = useState(false);
+  const [fundAccountName, setFundAccountName] = useState("");
+  const [fundAccountAmount, setFundAccountAmount] = useState("0");
   const [managerDrafts, setManagerDrafts] = useState<Record<string, string>>({});
   const [stockDrafts, setStockDrafts] = useState<Record<string, {
     revenue: string;
@@ -895,18 +898,40 @@ export function TradingWorkspace() {
                     </button>
                   ))}
                 </div>
+              ) : showFundForm ? (
+                <div style={{textAlign:"center",padding:"16px 0",color:"#94A3B8",fontSize:13}}>
+                  <div className="field">
+                    <label>账户名称</label>
+                    <input
+                      value={fundAccountName}
+                      onChange={(e) => setFundAccountName(e.target.value)}
+                      placeholder="请输入资金账户名称"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>初始资金</label>
+                    <input
+                      type="number"
+                      value={fundAccountAmount}
+                      onChange={(e) => setFundAccountAmount(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8}}>
+                    <button className="primary" onClick={async () => {
+                      const name = fundAccountName.trim();
+                      if (!name) return;
+                      const amount = Number(fundAccountAmount);
+                      if (!Number.isFinite(amount) || amount <= 0) return;
+                      try { await createFundAccount(token!, name, amount); await reloadFundAccounts(); setShowFundForm(false); setFundAccountName(""); setFundAccountAmount("0"); }
+                      catch (e) { setOrderMessage(`创建失败：${e instanceof Error ? e.message : ""}`); }
+                    }}>确认创建</button>
+                    <button onClick={() => { setShowFundForm(false); setFundAccountName(""); setFundAccountAmount("0"); }}>取消</button>
+                  </div>
+                </div>
               ) : (
                 <div style={{textAlign:"center",padding:"16px 0",color:"#94A3B8",fontSize:13}}>
-                  暂无资金账户<br/><span style={{color:"#469FE6",cursor:"pointer",fontWeight:700,fontSize:14}} onClick={async () => {
-                    const name = window.prompt("输入资金账户名称：", user?.username || "");
-                    if (!name?.trim()) return;
-                    const amt = window.prompt("输入初始资金金额：", "0");
-                    const amount = Number(amt);
-                    if (!Number.isFinite(amount) || amount <= 0) return;
-                    if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
-                    try { await createFundAccount(token!, name.trim(), amount); await reloadFundAccounts(); }
-                    catch (e) { setOrderMessage(`创建失败：${e instanceof Error ? e.message : ""}`); }
-                  }}>+ 创建资金账户</span>
+                  暂无资金账户<br/><span style={{color:"#469FE6",cursor:"pointer",fontWeight:700,fontSize:14}} onClick={() => setShowFundForm(true)}>+ 创建资金账户</span>
                 </div>
               )}
               {(tradingCompany ? (() => {
