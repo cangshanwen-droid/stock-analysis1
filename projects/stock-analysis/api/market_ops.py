@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-import logging
 from typing import Any
 
 from .db import execute, fetchall, fetchone, is_postgres
+from .trading import get_holding_shares, try_debit
 
 ACCOUNT_USER_PREFIX = "[账户:"
 
@@ -89,44 +89,77 @@ def close_market(conn) -> MarketResult:
         sell_matched = 0
 
         # Proportional match using largest-remainder (Hare quota) method.
-        # Guarantees both sides sum to exactly executable while distributing
+        # Guarantees both sides sum to exactly target while distributing
         # rounding remainders across orders fairly.
-        def _proportional_fill(orders, total):
-            if total <= 0:
+        def _proportional_fill(orders, total, target):
+            if total <= 0 or target <= 0:
                 return [0] * len(orders)
-            fills = [int(int(o["shares"]) * executable / total) for o in orders]
+            fills = [int(int(o["shares"]) * target / total) for o in orders]
             allocated = sum(fills)
-            remaining_shares = executable - allocated
+            remaining_shares = target - allocated
             if remaining_shares > 0:
                 fracs = sorted(
                     range(len(orders)),
-                    key=lambda i: (int(orders[i]["shares"]) * executable / total - fills[i]),
+                    key=lambda i: (int(orders[i]["shares"]) * target / total - fills[i]),
                     reverse=True,
                 )
                 for i in fracs[:remaining_shares]:
                     fills[i] += 1
             return fills
 
-        buy_fills = _proportional_fill(buys, total_buy_shares)
-        sell_fills = _proportional_fill(sells, total_sell_shares)
+        buy_fills = _proportional_fill(buys, total_buy_shares, executable)
+        sell_fills = _proportional_fill(sells, total_sell_shares, executable)
+        # Never fill a seller for more shares than they actually hold: a sell
+        # order can outlive the holding that backed it (legacy data, synthetic
+        # state, or a future placement bug), and settlement must not record a
+        # sell that pushes net holdings negative.  Cap each seller's total fill
+        # at their current holding, then rescale the buy side down to the
+        # executable total so no money is destroyed on either side.
+        filled_by_seller: dict[str, int] = {}
+        for i, (sell, fill) in enumerate(zip(sells, sell_fills)):
+            if fill <= 0:
+                continue
+            seller = str(sell["username"])
+            cap = max(get_holding_shares(conn, seller, symbol) - filled_by_seller.get(seller, 0), 0)
+            if fill > cap:
+                fill = cap
+                sell_fills[i] = fill
+            if fill > 0:
+                filled_by_seller[seller] = filled_by_seller.get(seller, 0) + fill
+        executable_after_cap = sum(int(f) for f in sell_fills)
+        if executable_after_cap < executable:
+            buy_fills = _proportional_fill(buys, total_buy_shares, executable_after_cap)
+            executable = executable_after_cap
+        matched_buy_shares = 0
         for buy, fill in zip(buys, buy_fills):
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
-            buyer_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy["username"],))
-            if not buyer_row or float(buyer_row["balance"] or 0) < amount:
+            # Atomic debit: cannot overdraw even if a concurrent order (or an
+            # earlier fill in this loop) already drained the shared balance.
+            if not try_debit(conn, str(buy["username"]), amount):
                 log_action(conn, "system", "settle_skip", buy["username"],
                     f"insufficient balance for {fill}x{match_price} ({symbol} round {round_no})")
                 continue
-            execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, buy["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                     (buy["username"], symbol, match_price, fill, round_no))
             matched_shares += fill
+            matched_buy_shares += fill
+        if matched_buy_shares < executable:
+            # Some buyers were skipped for insufficient balance; scale the
+            # sellers' fills down to the shares actually paid for, so no money
+            # is created out of thin air during settlement.
+            sell_fills = _proportional_fill(sells, total_sell_shares, matched_buy_shares)
         for sell, fill in zip(sells, sell_fills):
             if fill <= 0:
                 continue
             amount = round(fill * match_price, 2)
-            execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell["username"]))
+            seller_name = str(sell["username"])
+            if seller_name.startswith(ACCOUNT_USER_PREFIX) and seller_name.endswith("]"):
+                aid = int(seller_name[len(ACCOUNT_USER_PREFIX):-1])
+                execute(conn, "UPDATE fund_accounts SET balance=balance+? WHERE id=?", (amount, aid))
+            else:
+                execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, sell["username"]))
             execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
                     (sell["username"], symbol, match_price, fill, round_no))
             sell_matched += fill
@@ -202,7 +235,7 @@ def rebuild_balances_before_round(conn, round_no: int) -> None:
     try:
         execute(conn, "UPDATE fund_accounts SET balance=initial_balance")
     except Exception:
-        logging.warning("Failed to reset fund_accounts balance, table may not exist", exc_info=True)
+        pass
     txns = fetchall(conn, """
         SELECT username,trade_type,price,shares
         FROM transactions
@@ -288,5 +321,9 @@ def reset_to_round1(conn) -> MarketResult:
             INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct)
             VALUES(?,?,?,?,?,?,?,?,?,0)
         """, (stock["symbol"], 1, init_price, init_price, init_price, init_price, 0, 0, 0))
+    # Admin and players have no personal funds: cash lives in fund
+    # accounts, which players create themselves. Keep users.balance at 0
+    # (rebuild_balances_before_round() already zeroed everyone).
+    execute(conn, "UPDATE users SET balance=0 WHERE role='player' OR username='admin'")
     execute(conn, "UPDATE market_state SET state='open', round=1 WHERE id=1")
     return MarketResult(True, "已重开赛局并回到第 1 轮", 1, len(stocks), 0)

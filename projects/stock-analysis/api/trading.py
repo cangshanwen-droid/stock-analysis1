@@ -38,37 +38,58 @@ def _update_balance(conn, trader: str, amount: float, direction: str) -> None:
     """Update balance for a user or company account.
     direction: '-' for debit (deduct), '+' for credit (add)
     """
+    if direction == "-":
+        debit_sql = "balance=balance-?"
+    else:
+        debit_sql = "balance=balance+?"
     if trader.startswith(COMPANY_USER_PREFIX) and trader.endswith("]"):
         sym = trader[len(COMPANY_USER_PREFIX):-1]
-        if direction == "-":
-            execute(conn, "UPDATE stocks SET balance=balance-? WHERE symbol=?", (amount, sym))
-        else:
-            execute(conn, "UPDATE stocks SET balance=balance+? WHERE symbol=?", (amount, sym))
+        execute(conn, f"UPDATE stocks SET {debit_sql} WHERE symbol=?", (amount, sym))
     if trader.startswith(ACCOUNT_USER_PREFIX) and trader.endswith("]"):
         account_id = int(trader[len(ACCOUNT_USER_PREFIX):-1])
-        if direction == "-":
-            execute(conn, "UPDATE fund_accounts SET balance=balance-? WHERE id=?", (amount, account_id))
-        else:
-            execute(conn, "UPDATE fund_accounts SET balance=balance+? WHERE id=?", (amount, account_id))
-    if direction == "-":
-        execute(conn, "UPDATE users SET balance=balance-? WHERE username=?", (amount, trader))
+        execute(conn, f"UPDATE fund_accounts SET {debit_sql} WHERE id=?", (amount, account_id))
+    execute(conn, f"UPDATE users SET {debit_sql} WHERE username=?", (amount, trader))
+
+
+def try_debit(conn, trader: str, amount: float) -> bool:
+    """Atomically debit a trader's cash balance; returns True iff it applied.
+
+    The check-then-update pattern is racy: the advisory lock is per-symbol,
+    but a fund account's balance is shared across symbols, so two concurrent
+    orders for different symbols can both pass the balance check and then
+    both deduct, driving the shared balance negative.  A conditional UPDATE
+    is atomic per row, so the second debit simply fails instead of
+    overdrawing.  Callers treat a failed debit as "insufficient balance".
+    """
+    if amount <= 0:
+        return True
+    if trader.startswith(COMPANY_USER_PREFIX) and trader.endswith("]"):
+        sym = trader[len(COMPANY_USER_PREFIX):-1]
+        cur = execute(conn, "UPDATE stocks SET balance=balance-? WHERE symbol=? AND balance>=?",
+                      (amount, sym, amount))
+    elif trader.startswith(ACCOUNT_USER_PREFIX) and trader.endswith("]"):
+        account_id = int(trader[len(ACCOUNT_USER_PREFIX):-1])
+        cur = execute(conn, "UPDATE fund_accounts SET balance=balance-? WHERE id=? AND balance>=?",
+                      (amount, account_id, amount))
     else:
-        execute(conn, "UPDATE users SET balance=balance+? WHERE username=?", (amount, trader))
+        cur = execute(conn, "UPDATE users SET balance=balance-? WHERE username=? AND balance>=?",
+                      (amount, trader, amount))
+    return int(cur.rowcount or 0) > 0
 
 
 def _match_buy(conn, username: str, symbol: str, price: float, shares: int, round_no: int, stock_name: str, balance: float) -> TradeResult:
     remaining = shares
     matched = 0
     total = 0.0
-    # Fetch all matching sell orders at once to avoid N+1 queries
-    all_sell_orders = [dict(row) for row in fetchall(conn, """
-        SELECT id,username,price,shares
-        FROM order_book
-        WHERE stock_symbol=? AND trade_type='sell'
-        ORDER BY price ASC,id ASC
-    """, (symbol,))]
-    for sell_order in all_sell_orders:
-        if remaining <= 0:
+    while remaining > 0:
+        sell_order = row_dict(fetchone(conn, """
+            SELECT id,username,price,shares
+            FROM order_book
+            WHERE stock_symbol=? AND trade_type='sell'
+            ORDER BY price ASC,id ASC
+            LIMIT 1
+        """, (symbol,)))
+        if not sell_order:
             break
         fill = min(remaining, int(sell_order["shares"]))
         match_price = price
@@ -82,7 +103,23 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         if seller_holding - int(pending_sell["shares"] or 0) < fill:
             execute(conn, "DELETE FROM order_book WHERE id=?", (sell_order["id"],))
             continue
-        _update_balance(conn, username, amount, "-")
+        # Atomically debit the buyer (TOCTOU-safe: the advisory lock is
+        # per-symbol but a fund account's balance is shared across symbols,
+        # so a concurrent order may have drained it since our last check).
+        if not try_debit(conn, username, amount):
+            if matched > 0:
+                execute(conn, "INSERT INTO order_book(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
+                        (username, symbol, price, remaining, round_no))
+                return TradeResult(True, f"成交 {matched} 股 {stock_name}，剩余 {remaining} 股已挂买单", matched, round_no)
+            # Can't afford even 1 fill — return error (don't fall through to system-buy path)
+            if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+                aid = int(username[len(ACCOUNT_USER_PREFIX):-1])
+                cur_row = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (aid,))
+            else:
+                cur_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,))
+            current_balance = float(cur_row["balance"]) if cur_row else 0
+            max_affordable = int(current_balance / price) if price > 0 else 0
+            return TradeResult(False, f"余额不足：{stock_name} 当前价 {price:.2f}，最多可买 {max_affordable} 股", 0, round_no)
         _update_balance(conn, sell_order["username"], amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (username, symbol, match_price, fill, round_no))
@@ -104,8 +141,19 @@ def _match_buy(conn, username: str, symbol: str, price: float, shares: int, roun
         avg = total / matched
         return TradeResult(True, f"全部成交 {stock_name} {matched} 股 @ {avg:.2f}", matched, round_no)
 
+    # System-buy path: no matching sell orders, system acts as seller.
+    # Debit atomically — concurrent orders for different stocks can drain the
+    # shared fund account balance between place_order and this point.
     cost = round(price * remaining, 2)
-    _update_balance(conn, username, cost, "-")
+    if not try_debit(conn, username, cost):
+        if username.startswith(ACCOUNT_USER_PREFIX) and username.endswith("]"):
+            aid = int(username[len(ACCOUNT_USER_PREFIX):-1])
+            cur_row = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (aid,))
+        else:
+            cur_row = fetchone(conn, "SELECT balance FROM users WHERE username=?", (username,))
+        current_balance = float(cur_row["balance"]) if cur_row else 0
+        max_affordable = int(current_balance / price) if price > 0 else 0
+        return TradeResult(False, f"余额不足：{stock_name} 当前价 {price:.2f}，最多可买 {max_affordable} 股", 0, round_no)
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
             (username, symbol, price, remaining, round_no))
     execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'sell',?,?,?)",
@@ -117,30 +165,24 @@ def _match_sell(conn, username: str, symbol: str, price: float, shares: int, rou
     remaining = shares
     matched = 0
     total = 0.0
-    # Fetch all matching buy orders at once to avoid N+1 queries
-    all_buy_orders = [dict(row) for row in fetchall(conn, """
-        SELECT id,username,price,shares
-        FROM order_book
-        WHERE stock_symbol=? AND trade_type='buy'
-        ORDER BY price DESC,id ASC
-    """, (symbol,))]
-    for buy_order in all_buy_orders:
-        if remaining <= 0:
+    while remaining > 0:
+        buy_order = row_dict(fetchone(conn, """
+            SELECT id,username,price,shares
+            FROM order_book
+            WHERE stock_symbol=? AND trade_type='buy'
+            ORDER BY price DESC,id ASC
+            LIMIT 1
+        """, (symbol,)))
+        if not buy_order:
             break
         fill = min(remaining, int(buy_order["shares"]))
         match_price = price
         amount = round(fill * match_price, 2)
-        if str(buy_order["username"]).startswith(ACCOUNT_USER_PREFIX):
-            buyer_id = int(str(buy_order["username"])[len(ACCOUNT_USER_PREFIX):-1])
-            buyer = fetchone(conn, "SELECT balance FROM fund_accounts WHERE id=?", (buyer_id,))
-        else:
-            buyer = fetchone(conn, "SELECT balance FROM users WHERE username=?", (buy_order["username"],))
-        if not buyer or float(buyer["balance"] or 0) < amount:
+        if not try_debit(conn, str(buy_order["username"]), amount):
             execute(conn, "DELETE FROM order_book WHERE id=?", (buy_order["id"],))
             log_action(conn, "system", "cancel_order", buy_order["username"],
                        f"buy order for {symbol} deleted: insufficient balance (need {amount})")
             continue
-        _update_balance(conn, buy_order["username"], amount, "-")
         _update_balance(conn, username, amount, "+")
         execute(conn, "INSERT INTO transactions(username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,'buy',?,?,?)",
                 (buy_order["username"], symbol, match_price, fill, round_no))

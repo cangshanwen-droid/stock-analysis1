@@ -30,7 +30,6 @@ export type HealthStatus = {
   database: boolean;
   backend: string;
   tokenSecretConfigured: boolean;
-  adminPasswordConfigured: boolean;
   orderWritesEnabled: boolean;
   marketWritesEnabled: boolean;
   adminWritesEnabled: boolean;

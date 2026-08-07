@@ -1,15 +1,11 @@
-import asyncio
 import base64
 import hashlib
 import hmac
 import json
-import logging
 import os
-import secrets
-import sys
 import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -21,12 +17,18 @@ from pydantic import BaseModel, Field
 
 from .db import DB_PATH, DatabaseNotReady, bind, connect, execute, fetchall, fetchone, is_postgres, row_dict
 from .market_ops import close_market, open_market, reset_to_round1, rollback_previous_round
-from .trading import COMPANY_USER_PREFIX, account_trader, ensure_company_user, get_managed_companies, place_order
+from .trading import COMPANY_USER_PREFIX, account_trader, ensure_company_user, get_managed_companies, log_action, place_order
 
-TOKEN_SECRET = os.environ.get("TOKEN_SECRET")
-if not TOKEN_SECRET:
-    raise RuntimeError("TOKEN_SECRET environment variable is required. Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\"")
-
+TOKEN_SECRET = os.environ.get("TOKEN_SECRET", "").strip()
+if not TOKEN_SECRET or TOKEN_SECRET in ("change-me-before-production", "replace-with-a-long-random-secret"):
+    raise SystemExit("FATAL: TOKEN_SECRET must be set to a strong random value (see api/.env.example)")
+# Unset/weak ADMIN_PASSWORD disables the admin recovery password instead of
+# refusing to boot: a hard fail-fast would take down deploys whose operator
+# cannot reach the env config in time. There is no default password, so the
+# recovery backdoor stays closed until a strong value is configured.
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+if not ADMIN_PASSWORD:
+    print("WARN: ADMIN_PASSWORD not set; admin account recovery password is disabled", flush=True)
 TOKEN_TTL_SECONDS = int(os.environ.get("TOKEN_TTL_SECONDS", "28800"))
 ENABLE_ORDER_WRITES = os.environ.get("ENABLE_ORDER_WRITES", "false").lower() == "true"
 ENABLE_MARKET_WRITES = os.environ.get("ENABLE_MARKET_WRITES", "false").lower() == "true"
@@ -36,19 +38,19 @@ DEFAULT_CORS_ORIGINS = {
     "https://www.gipfel.ltd",
     "https://gipfel.ltd",
 }
-READ_CACHE: OrderedDict[str, tuple[float, Any]] = OrderedDict()
-READ_CACHE_MAX_SIZE = int(os.environ.get("READ_CACHE_MAX_SIZE", "500"))
+READ_CACHE: dict[str, tuple[float, Any]] = {}
 READ_CACHE_LOCK = threading.RLock()
 
 
 def cors_origins() -> list[str]:
+    # Explicit "*" is never honored: with allow_credentials=True a wildcard
+    # would be rejected by browsers anyway, and it silently widens CORS
+    # whenever CORS_ALLOW_ORIGINS is misconfigured. Unset -> known domains.
     configured = {
         origin.strip()
-        for origin in os.environ.get("CORS_ALLOW_ORIGINS", "*").split(",")
-        if origin.strip()
+        for origin in os.environ.get("CORS_ALLOW_ORIGINS", "").split(",")
+        if origin.strip() and origin.strip() != "*"
     }
-    if "*" in configured:
-        return ["*"]
     return sorted(configured | DEFAULT_CORS_ORIGINS)
 
 
@@ -61,16 +63,11 @@ def cache_get(key: str, ttl_seconds: float) -> Any | None:
         if expires_at <= time.monotonic():
             READ_CACHE.pop(key, None)
             return None
-        READ_CACHE.move_to_end(key)
         return value
 
 
 def cache_set(key: str, value: Any, ttl_seconds: float) -> Any:
     with READ_CACHE_LOCK:
-        if key in READ_CACHE:
-            READ_CACHE.move_to_end(key)
-        while len(READ_CACHE) >= READ_CACHE_MAX_SIZE:
-            READ_CACHE.popitem(last=False)
         READ_CACHE[key] = (time.monotonic() + ttl_seconds, value)
         return value
 
@@ -94,10 +91,21 @@ app = FastAPI(title="Gipfel Trading API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
-    allow_credentials=False if "*" in cors_origins() else True,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _db_ping() -> bool:
+    """Real DB roundtrip so /health actually exercises the database —
+    the keep-alive cron depends on it to keep Neon's compute awake."""
+    try:
+        with connect() as conn:
+            fetchone(conn, "SELECT 1")
+        return True
+    except Exception:
+        return False
 
 
 @app.middleware("http")
@@ -105,10 +113,11 @@ async def health_any_method(request: Request, call_next):
     if request.url.path == "/health":
         return JSONResponse({
             "ok": True,
-            "database": True if is_postgres() else DB_PATH.exists(),
+            "database": _db_ping(),
             "backend": "postgres" if is_postgres() else "sqlite",
             "path": "" if is_postgres() else str(DB_PATH),
-            "tokenSecretConfigured": True,
+            "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
+            "adminPasswordConfigured": bool(ADMIN_PASSWORD),
             "orderWritesEnabled": ENABLE_ORDER_WRITES,
             "marketWritesEnabled": ENABLE_MARKET_WRITES,
             "adminWritesEnabled": ENABLE_ADMIN_WRITES,
@@ -128,10 +137,14 @@ async def add_public_read_cache_headers(request: Request, call_next):
     return response
 
 
-# Rate limiting — in-memory sliding window per IP
+# Rate limiting — PostgreSQL-backed rolling window shared across uvicorn
+# workers, with an in-memory fallback for the single-process SQLite path.
 _RATE_WINDOW = 60.0
 _RATE_LIMITS = {"read": 60000, "write": 3000, "login": 60}
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
+_rate_db_schema_ready = False
+_rate_db_lock = threading.Lock()
+_rate_db_failed_logged = False
 
 
 def _rate_limit(ip: str, limit: int) -> bool:
@@ -146,37 +159,77 @@ def _rate_limit(ip: str, limit: int) -> bool:
     return True
 
 
+def _ensure_rate_limit_schema(conn) -> None:
+    _ddl(conn, """
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            bucket_key TEXT PRIMARY KEY,
+            window_start DOUBLE PRECISION NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    _ddl(conn, "DELETE FROM rate_limits WHERE window_start < ?",
+         (time.time() - 2 * _RATE_WINDOW,))
+
+
+def _rate_limit_db(ip: str, limit: int) -> bool:
+    """Atomic per-IP counter shared across workers. Fail-open to the
+    in-memory limiter so a DB outage cannot self-DoS the API."""
+    global _rate_db_schema_ready, _rate_db_failed_logged
+    now = time.time()
+    bucket_key = f"{ip}|{limit}"
+    try:
+        if not _rate_db_schema_ready:
+            with _rate_db_lock:
+                if not _rate_db_schema_ready:
+                    with connect() as conn:
+                        _ensure_rate_limit_schema(conn)
+                        conn.commit()
+                    _rate_db_schema_ready = True
+        with connect() as conn:
+            cutoff = now - _RATE_WINDOW
+            row = fetchone(conn, """
+                INSERT INTO rate_limits(bucket_key, window_start, count) VALUES(?, ?, 1)
+                ON CONFLICT (bucket_key) DO UPDATE SET
+                    window_start = CASE WHEN rate_limits.window_start < ? THEN ? ELSE rate_limits.window_start END,
+                    count = CASE WHEN rate_limits.window_start < ? THEN 1 ELSE rate_limits.count + 1 END
+                RETURNING count
+            """, (bucket_key, now, cutoff, now, cutoff))
+            conn.commit()
+            return int(row["count"]) <= limit
+    except Exception:
+        if not _rate_db_failed_logged:
+            _rate_db_failed_logged = True
+            print("WARN: rate limiter DB path failed, falling back to in-memory", flush=True)
+        return _rate_limit(ip, limit)
+
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    # Skip rate limiting for admin endpoints and health
+    # /admin endpoints stay skipped: they are token-gated (require_admin,
+    # 256-bit HMAC — not brute-forceable) and the only brute-force surface,
+    # /auth/login, IS rate-limited. IP limits on admin could also lock a legit
+    # operator out from behind a shared NAT on competition day.
     path = request.url.path
     if path.startswith("/admin") or path in ("/", "/health"):
         return await call_next(request)
-    client_ip = request.client.host if request.client else "unknown"
+    # Trust the first X-Forwarded-For hop: safe behind Render's proxy (it
+    # overwrites the header from the real client), but spoofable if this app
+    # is ever deployed without a trusted reverse proxy.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
     if path == "/auth/login":
         limit = _RATE_LIMITS["login"]
     elif request.method in ("POST", "PATCH", "DELETE"):
         limit = _RATE_LIMITS["write"]
     else:
         limit = _RATE_LIMITS["read"]
-    if not _rate_limit(client_ip, limit):
+    limited = _rate_limit_db(client_ip, limit) if is_postgres() else _rate_limit(client_ip, limit)
+    if not limited:
         return JSONResponse(status_code=429, content={"detail": "too_many_requests", "retry_after": 60})
     return await call_next(request)
-
-
-@app.middleware("http")
-async def request_timeout_middleware(request: Request, call_next):
-    path = request.url.path
-    # Skip timeout for health check and static file paths (served by the SPA catch-all)
-    if path == "/health" or ("." in path.rsplit("/", 1)[-1] if "/" in path else "." in path):
-        return await call_next(request)
-    try:
-        return await asyncio.wait_for(call_next(request), timeout=30.0)
-    except asyncio.TimeoutError:
-        return JSONResponse(
-            status_code=504,
-            content={"detail": "gateway_timeout", "message": "Request timed out after 30 seconds"},
-        )
 
 
 @app.exception_handler(DatabaseNotReady)
@@ -266,9 +319,32 @@ def initial_stock_price(revenue: float, total_shares: float, industry_pe: float)
     return round(revenue * 10000 / total_shares / industry_pe, 2)
 
 
+def _ddl(conn, sql: str, params: tuple = ()) -> None:
+    """Execute a DDL/DML statement safely.
+
+    PostgreSQL abort semantics: if any statement fails inside a transaction,
+    the entire transaction becomes aborted and all subsequent commands fail
+    with 'current transaction is aborted'.  This helper catches the error
+    AND rolls back the aborted transaction so the connection can be reused
+    for the endpoint's data queries.
+
+    For read-only endpoints (the common case for schema checks) this is
+    harmless because there are no prior uncommitted writes.  For write
+    endpoints, ensure_fund_accounts_schema is always called before any
+    data-modifying statements, so rollback here is also safe.
+    """
+    try:
+        execute(conn, sql, params) if params else execute(conn, sql)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
 def ensure_fund_accounts_schema(conn) -> None:
     id_type = "BIGSERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    execute(conn, f"""
+    _ddl(conn, f"""
         CREATE TABLE IF NOT EXISTS fund_accounts (
             id {id_type},
             owner TEXT NOT NULL,
@@ -279,15 +355,20 @@ def ensure_fund_accounts_schema(conn) -> None:
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
-    execute(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
-    # Performance indexes for high-frequency query tables
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_order_book_symbol_type ON order_book(stock_symbol, trade_type)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_order_book_username ON order_book(username, stock_symbol)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_transactions_user_symbol ON transactions(username, stock_symbol)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_transactions_round ON transactions(round)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_kline_symbol_round ON kline(stock_symbol, round)")
-    execute(conn, "CREATE INDEX IF NOT EXISTS idx_rounds_symbol ON rounds(stock_symbol, is_settled)")
+    _ddl(conn, "CREATE INDEX IF NOT EXISTS idx_fund_accounts_owner ON fund_accounts(owner)")
+    _ddl(conn, "CREATE UNIQUE INDEX IF NOT EXISTS idx_fund_accounts_owner_unique ON fund_accounts(owner, name)")
+    # Never silently zero a negative balance: log it first so the cause can be
+    # investigated, then clamp so the CHECK constraint cannot break writes.
+    for row in fetchall(conn, "SELECT id,owner,balance FROM fund_accounts WHERE balance<0"):
+        log_action(conn, "system", "balance_zeroed", str(row["id"]),
+                   f"owner={row['owner']}, old_balance={float(row['balance'] or 0)}")
+    _ddl(conn, "UPDATE fund_accounts SET balance=0 WHERE balance<0")
+    if is_postgres():
+        # ADD CONSTRAINT has no IF NOT EXISTS and a failed statement would
+        # abort the transaction, so check pg_constraint first.
+        exists = fetchone(conn, "SELECT 1 FROM pg_constraint WHERE conname='fund_accounts_balance_non_negative'")
+        if not exists:
+            _ddl(conn, "ALTER TABLE fund_accounts ADD CONSTRAINT fund_accounts_balance_non_negative CHECK (balance >= 0)")
 
 
 def list_fund_accounts(conn, owner: str) -> list[dict[str, Any]]:
@@ -338,22 +419,8 @@ def check_pwd(stored: str, plain: str) -> bool:
     return hmac.compare_digest(hash_pwd(plain), stored)
 
 
-# Generate a random one-time recovery password printed to stderr at startup.
-# Set ADMIN_PASSWORD env var to override.
-_ADMIN_RECOVERY_PASSWORD: str | None = None
-
-
 def admin_recovery_password() -> str:
-    global _ADMIN_RECOVERY_PASSWORD
-    if _ADMIN_RECOVERY_PASSWORD is not None:
-        return _ADMIN_RECOVERY_PASSWORD
-    pw = os.environ.get("ADMIN_PASSWORD")
-    if pw:
-        _ADMIN_RECOVERY_PASSWORD = pw
-        return pw
-    _ADMIN_RECOVERY_PASSWORD = secrets.token_urlsafe(16)
-    print(f"[SECURITY] No ADMIN_PASSWORD set. Generated random recovery password: {_ADMIN_RECOVERY_PASSWORD}", file=sys.stderr)
-    return _ADMIN_RECOVERY_PASSWORD
+    return ADMIN_PASSWORD
 
 
 def sign_token(payload: dict[str, Any]) -> str:
@@ -380,13 +447,21 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing_token")
     payload = verify_token(authorization.removeprefix("Bearer ").strip())
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(status_code=401, detail="invalid_token")
+    # Cache user DB query for 5 seconds to reduce per-request overhead
+    cached = cache_get(f"user:{username}", 5.0)
+    if cached is not None:
+        return cached
     with connect() as conn:
         user = row_dict(fetchone(conn,
             "SELECT username,role,status,balance FROM users WHERE username=?",
-            (payload.get("sub"),),
+            (username,),
         ))
     if not user or user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="inactive_user")
+    cache_set(f"user:{username}", user, 5.0)
     return user
 
 
@@ -394,10 +469,11 @@ def current_user(authorization: str | None = Header(default=None)) -> dict[str, 
 def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "database": True if is_postgres() else DB_PATH.exists(),
+        "database": _db_ping(),
         "backend": "postgres" if is_postgres() else "sqlite",
         "path": "" if is_postgres() else str(DB_PATH),
-        "tokenSecretConfigured": True,
+        "tokenSecretConfigured": TOKEN_SECRET != "change-me-before-production",
+        "adminPasswordConfigured": bool(ADMIN_PASSWORD),
         "orderWritesEnabled": ENABLE_ORDER_WRITES,
         "marketWritesEnabled": ENABLE_MARKET_WRITES,
         "adminWritesEnabled": ENABLE_ADMIN_WRITES,
@@ -414,11 +490,9 @@ def login(payload: LoginRequest) -> dict[str, Any]:
             not user or not check_pwd(str(user["password"]), payload.password)
         ):
             if user:
-                # Admin account already exists — recovery password cannot overwrite an existing password
-                raise HTTPException(status_code=401, detail="admin account exists, use normal login")
+                execute(conn, "UPDATE users SET password=?, role='admin', status='active' WHERE username='admin'", (make_pwd(payload.password),))
             else:
-                # First-time deployment: create admin account with recovery password
-                execute(conn, "INSERT INTO users(username,password,role,status,balance) VALUES('admin',?,'admin','active',1000000)", (make_pwd(payload.password),))
+                execute(conn, "INSERT INTO users(username,password,role,status,balance) VALUES('admin',?,'admin','active',0)", (make_pwd(payload.password),))
             execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                     ("system", "admin_password_recovery", "admin", "admin recovery password used"))
             conn.commit()
@@ -820,7 +894,7 @@ def close_market_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if payload:
+    if payload and payload.confirmation:
         x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认收盘", "confirm-close"}:
         raise HTTPException(status_code=400, detail="confirm_close_required")
@@ -853,7 +927,7 @@ def open_market_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if payload:
+    if payload and payload.confirmation:
         x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认开盘", "confirm-open"}:
         raise HTTPException(status_code=400, detail="confirm_open_required")
@@ -886,7 +960,7 @@ def reset_market_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if payload:
+    if payload and payload.confirmation:
         x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认重开", "确认回到第一轮", "confirm-reset-round1"}:
         raise HTTPException(status_code=400, detail="confirm_reset_required")
@@ -921,7 +995,7 @@ def previous_round_endpoint(
     x_confirm_action: str = Header(default=""),
 ) -> dict[str, Any]:
     require_admin(user)
-    if payload:
+    if payload and payload.confirmation:
         x_confirm_action = payload.confirmation
     if x_confirm_action.strip() not in {"确认返回上一轮", "confirm-previous-round"}:
         raise HTTPException(status_code=400, detail="confirm_previous_round_required")
@@ -985,7 +1059,7 @@ def admin_create_user(payload: CreateUserRequest, user: dict[str, Any] = Depends
             raise HTTPException(status_code=409, detail="user_exists")
         execute(
             conn,
-            "INSERT INTO users(username,password,role,status,balance) VALUES(?,?,?,?,1000000)",
+            "INSERT INTO users(username,password,role,status,balance) VALUES(?,?,?,?,0)",
             (username, make_pwd(payload.password), payload.role, "active"),
         )
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
@@ -1062,7 +1136,25 @@ def admin_delete_user(username: str, user: dict[str, Any] = Depends(current_user
             raise HTTPException(status_code=404, detail="user_not_found")
         if target["role"] != "player":
             raise HTTPException(status_code=400, detail="only_player_can_be_deleted")
+        # Cascade-clean all traces so a re-created username cannot inherit
+        # the deleted user's transactions (phantom holdings), fund accounts,
+        # or audit history.
         execute(conn, "DELETE FROM order_book WHERE username=?", (username,))
+        execute(conn, "DELETE FROM transactions WHERE username=?", (username,))
+        # Also remove the per-fund-account trader rows ([账户:N] / [璐︽埛:N])
+        # so orphaned resting orders can't be processed at market close and
+        # pollute kline volume/round totals with phantom trades.
+        acct_ids = [r["id"] for r in fetchall(conn, "SELECT id FROM fund_accounts WHERE owner=?", (username,))]
+        trader_names = [account_trader(aid) for aid in acct_ids] + [f"[璐︽埛:{aid}]" for aid in acct_ids]
+        if trader_names:
+            placeholders = ",".join("?" * len(trader_names))
+            execute(conn, f"DELETE FROM order_book WHERE username IN ({placeholders})", tuple(trader_names))
+            execute(conn, f"DELETE FROM transactions WHERE username IN ({placeholders})", tuple(trader_names))
+        execute(conn, "DELETE FROM fund_accounts WHERE owner=?", (username,))
+        # Clear manager references so the deleted user isn't left as a
+        # non-loginable manager of any company stock.
+        execute(conn, "UPDATE stocks SET manager='' WHERE manager=?", (username,))
+        execute(conn, "DELETE FROM audit_logs WHERE actor=?", (username,))
         execute(conn, "DELETE FROM users WHERE username=? AND role='player'", (username,))
         execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
                 (user["username"], "delete_user", username, "operator deleted from web api"))
@@ -1119,19 +1211,50 @@ def admin_fund_accounts(user: dict[str, Any] = Depends(current_user)) -> list[di
                 r["symbol"]: float(r["current_price"] or 0)
                 for r in fetchall(conn, "SELECT symbol,current_price FROM stocks WHERE is_deleted=0")
             }
+
+            # Bulk fetch: one query for all buys, one for all sells (instead of 2 per account)
+            trader_to_account: dict[str, int] = {}
+            for acct in accounts:
+                aid = acct["id"]
+                trader_to_account["[账户:" + str(aid) + "]"] = aid
+                trader_to_account["[璐︽埛:" + str(aid) + "]"] = aid
+
+            if trader_to_account:
+                placeholders = ",".join(["?"] * len(trader_to_account))
+                params = tuple(trader_to_account.keys())
+                all_buys = fetchall(conn, f"""
+                    SELECT username,stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
+                    FROM transactions
+                    WHERE username IN ({placeholders}) AND trade_type='buy'
+                    GROUP BY username,stock_symbol
+                """, params)
+                all_sells = fetchall(conn, f"""
+                    SELECT username,stock_symbol,SUM(shares) AS shares
+                    FROM transactions
+                    WHERE username IN ({placeholders}) AND trade_type IN ('sell','force_close')
+                    GROUP BY username,stock_symbol
+                """, params)
+            else:
+                all_buys = []
+                all_sells = []
+
+            buys_by_account: dict[int, list] = defaultdict(list)
+            for row in all_buys:
+                aid = trader_to_account.get(row["username"])
+                if aid:
+                    buys_by_account[aid].append(row)
+
+            sells_by_account: dict[int, list] = defaultdict(list)
+            for row in all_sells:
+                aid = trader_to_account.get(row["username"])
+                if aid:
+                    sells_by_account[aid].append(row)
+
             result = []
             for acct in accounts:
                 aid = acct["id"]
-                trader = "[账户:" + str(aid) + "]"
-                moji = "[璐︽埛:" + str(aid) + "]"
-                buys = fetchall(conn, """
-                    SELECT stock_symbol,SUM(shares) AS shares,SUM(price*shares) AS cost
-                    FROM transactions WHERE username IN (?,?) AND trade_type='buy' GROUP BY stock_symbol
-                """, (trader, moji))
-                sells = fetchall(conn, """
-                    SELECT stock_symbol,SUM(shares) AS shares
-                    FROM transactions WHERE username IN (?,?) AND trade_type IN ('sell','force_close') GROUP BY stock_symbol
-                """, (trader, moji))
+                buys = buys_by_account.get(aid, [])
+                sells = sells_by_account.get(aid, [])
                 sold = {r["stock_symbol"]: float(r["shares"] or 0) for r in sells}
                 total_mv = 0.0
                 total_cost = 0.0
@@ -1276,6 +1399,32 @@ def admin_delete_stock(symbol: str, user: dict[str, Any] = Depends(current_user)
     return {"accepted": True, "symbol": target_symbol}
 
 
+@app.post("/admin/stocks/delete-all")
+def admin_delete_all_stocks(
+    payload: MarketControlRequest | None = None,
+    user: dict[str, Any] = Depends(current_user),
+    x_confirm_action: str = Header(default=""),
+) -> dict[str, Any]:
+    require_admin(user)
+    if payload and payload.confirmation:
+        x_confirm_action = payload.confirmation
+    if x_confirm_action.strip() not in {"确认删除全部股票", "confirm-delete-all-stocks"}:
+        raise HTTPException(status_code=400, detail="confirm_delete_all_stocks_required")
+    if not ENABLE_ADMIN_WRITES:
+        return {"accepted": False, "reason": "admin_api_not_enabled_yet", "detail": "Set ENABLE_ADMIN_WRITES=true after admin tests pass."}
+    with connect() as conn:
+        rows = fetchall(conn, "SELECT symbol,name FROM stocks WHERE is_deleted=0")
+        names = [str(r["name"]) for r in rows]
+        execute(conn, "DELETE FROM order_book")
+        execute(conn, "DELETE FROM rounds")
+        execute(conn, "UPDATE stocks SET is_deleted=1, last_update=CURRENT_TIMESTAMP WHERE is_deleted=0")
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "delete_all_stocks", "all", f"count={len(names)}, stocks={','.join(names)}"))
+        conn.commit()
+    clear_read_cache()
+    return {"accepted": True, "deleted": len(names)}
+
+
 @app.post("/admin/stocks/{symbol}/manager")
 def admin_set_stock_manager(symbol: str, payload: ManagerRequest, user: dict[str, Any] = Depends(current_user)):
     require_admin(user)
@@ -1361,7 +1510,21 @@ def admin_restore_stocks(user: dict[str, Any] = Depends(current_user)):
     if not ENABLE_ADMIN_WRITES:
         return {"accepted": False, "reason": "admin_api_not_enabled_yet"}
     with connect() as conn:
-        execute(conn, "UPDATE stocks SET is_deleted=0 WHERE is_deleted=1")
+        state = row_dict(fetchone(conn, "SELECT state, round FROM market_state WHERE id=1")) or {"state": "open", "round": 1}
+        round_no = int(state.get("round") or 1)
+        is_settled = 0 if state.get("state") == "open" else 1
+        restored_symbols = [str(r["symbol"]) for r in fetchall(conn, "SELECT symbol FROM stocks WHERE is_deleted=1")]
+        execute(conn, "UPDATE stocks SET is_deleted=0, last_update=CURRENT_TIMESTAMP WHERE is_deleted=1")
+        # Re-create a round for restored stocks (delete removed their round rows);
+        # without this they would be visible but untradable until the next open.
+        for sym in restored_symbols:
+            execute(conn, """
+                INSERT INTO rounds(stock_symbol,round,is_settled)
+                VALUES(?,?,?)
+                ON CONFLICT DO NOTHING
+            """, (sym, round_no, is_settled))
+        execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                (user["username"], "restore_stocks", "all", f"count={len(restored_symbols)}"))
         count = fetchone(conn, "SELECT COUNT(*) AS cnt FROM stocks WHERE is_deleted=0")
         conn.commit()
     clear_read_cache()
@@ -1381,24 +1544,7 @@ def admin_db_migrate(user: dict[str, Any] = Depends(current_user)):
             try:
                 execute(conn, bind(stmt))
             except Exception:
-                # Check if column already exists before logging; IF NOT EXISTS
-                # should prevent most "already exists" errors, but schema differences
-                # or connection transient issues can still cause failures.
-                col_name = stmt.split()[-3]  # Extract column name from ALTER statement
-                try:
-                    existing = fetchall(conn, "SELECT column_name FROM information_schema.columns WHERE table_name='stocks' AND column_name=%s" if is_postgres() else "PRAGMA table_info(stocks)", (col_name,) if is_postgres() else ())
-                    if is_postgres() and existing:
-                        pass  # Column already exists, expected on PostgreSQL with IF NOT EXISTS
-                    elif not is_postgres():
-                        existing_cols = [row[1] for row in existing]
-                        if col_name.lower() in [c.lower() for c in existing_cols]:
-                            pass  # Column already exists in SQLite
-                        else:
-                            logging.warning("Migration ALTER TABLE failed for column '%s', and column not found in schema", col_name, exc_info=True)
-                    else:
-                        logging.warning("Migration ALTER TABLE failed for column '%s'", col_name, exc_info=True)
-                except Exception as check_err:
-                    logging.warning("Migration ALTER TABLE failed for column '%s', and could not verify column status: %s", col_name, check_err, exc_info=True)
+                pass  # Column might already exist
         ensure_fund_accounts_schema(conn)
         # Set balance = init_funds for existing stocks where balance = 0
         execute(conn, "UPDATE stocks SET balance=init_funds WHERE balance=0 AND init_funds>0")
@@ -1429,30 +1575,372 @@ def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_use
     ]
 
 
-@app.on_event("startup")
-async def startup():
-    _LOGGER = logging.getLogger(__name__)
-    try:
-        with connect() as conn:
-            ensure_fund_accounts_schema(conn)
+@app.post("/admin/recover-fund-accounts")
+def admin_recover_fund_accounts(confirm: str = "false", user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """
+    THOROUGH recovery of fund accounts damaged by the negative-balance bug.
+
+    The bug (fixed in code) allowed concurrent orders for different stocks to
+    consume the same pool of cash, creating fake buy/sell transactions via the
+    system-match path and driving balances negative (which were then zeroed by
+    the schema fix `UPDATE fund_accounts SET balance=0 WHERE balance<0`).
+
+    Recovery uses audit-log checkpoints (authoritative truth):
+    - create_fund_account entry → initial_balance = true starting cash
+    - update_fund_account_balance (PATCH) entry → new_balance = true balance
+      at that moment; on PATCH time the replay forces cash to that value,
+      absorbing all prior bug damage (admin already compensated for it)
+
+    Per account, replay ALL transactions chronologically (cash + per-stock
+    holdings), applying each checkpoint as its time passes:
+    1. BUY with insufficient cash   → FAKE BUY (delete, refund the amount)
+    2. SELL without enough holdings → FAKE SELL (delete, claw back proceeds)
+    3. Delete matching [系统] counterparty rows (same symbol/round/price/shares)
+    4. New balance = replay final cash (>= 0 guaranteed: buys are kept only
+       when affordable, so cash never goes negative in the replay)
+    5. Positions recompute automatically from the remaining transactions
+
+    Accounts with no audit checkpoint whose replay detects fakes are reported
+    in manualReview (baselineUncertain) and NOT modified — their true starting
+    cash is unknown. PATCH them to the correct balance, then re-run recovery
+    (the PATCH becomes a checkpoint and they get fixed automatically).
+
+    confirm=true: execute. confirm=false (default): dry-run report only.
+    """
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        raise HTTPException(status_code=403, detail="admin_writes_disabled")
+
+    is_dry_run = confirm.lower() not in ("true", "1", "yes")
+
+    trader_prefix = "[账户:"
+    mojibake_prefix = "[璐︽埛:"
+    system_names = ("[系统]", "[ϵͳ]", "[绯荤粺]")
+
+    with connect() as conn:
+        accounts = fetchall(conn, """
+            SELECT fa.id, fa.owner, fa.name, fa.initial_balance, fa.balance
+            FROM fund_accounts fa
+            ORDER BY fa.owner, fa.id
+        """)
+
+        # Load ALL balance checkpoints from the full audit log (server-side,
+        # not limited by the /admin/audit-logs 200-entry cap)
+        checkpoints: dict[int, list[tuple[str, float, bool]]] = defaultdict(list)
+        audit_rows = fetchall(conn, """
+            SELECT action, target, detail, created_at
+            FROM audit_logs
+            WHERE action IN ('create_fund_account', 'update_fund_account_balance')
+            ORDER BY id ASC
+        """)
+        for a in audit_rows:
+            try:
+                aid = int(a["target"])
+            except (TypeError, ValueError):
+                continue
+            detail = str(a["detail"] or "")
+            is_create = a["action"] == "create_fund_account"
+            if is_create and "initial_balance=" in detail:
+                try:
+                    value = float(detail.split("initial_balance=")[1].split(",")[0])
+                except (ValueError, IndexError):
+                    continue
+            elif a["action"] == "update_fund_account_balance" and "new_balance=" in detail:
+                try:
+                    value = float(detail.split("new_balance=")[1].split(",")[0])
+                except (ValueError, IndexError):
+                    continue
+            else:
+                continue
+            checkpoints[aid].append((str(a["created_at"] or ""), value, is_create))
+
+        results = []
+        manual_review = []
+        total_fake_buys = 0
+        total_fake_sells = 0
+        total_system_rows_removed = 0
+        total_restored = 0.0
+        total_accounts_fixed = 0
+
+        for acct in accounts:
+            aid = int(acct["id"])
+            current = float(acct["balance"] or 0)
+            trader = f"{trader_prefix}{aid}]"
+            moji_trader = f"{mojibake_prefix}{aid}]"
+
+            txns = fetchall(conn, """
+                SELECT id, trade_type, price, shares, stock_symbol, round, trade_date
+                FROM transactions
+                WHERE username IN (?, ?)
+                ORDER BY id ASC
+            """, (trader, moji_trader))
+            if not txns:
+                continue
+
+            cps = checkpoints.get(aid, [])
+            baseline_uncertain = False
+            if not cps:
+                # No audit trail for this account — starting cash unknown.
+                # Fall back to the stored initial_balance (¥1 for the damaged
+                # accounts) and refuse to modify anything if fakes are found.
+                cps = [("", float(acct["initial_balance"] or 0), True)]
+                baseline_uncertain = True
+
+            # Replay with cash + holdings tracking, forcing cash at checkpoints
+            cash = cps[0][1]
+            cp_idx = 1
+            first_cp_time = cps[0][0]
+            first_cp_is_create = cps[0][2]
+            holdings: dict[str, int] = defaultdict(int)
+            fake_buy_ids: list[int] = []
+            fake_sell_ids: list[int] = []
+            fake_buy_amount = 0.0
+            fake_sell_amount = 0.0
+            kept_buy_amount = 0.0
+            kept_sell_amount = 0.0
+            absorbed_txns = 0
+
+            for txn in txns:
+                t_time = str(txn["trade_date"] or "")
+                while cp_idx < len(cps) and cps[cp_idx][0] and cps[cp_idx][0] <= t_time:
+                    cash = cps[cp_idx][1]
+                    cp_idx += 1
+
+                if not first_cp_is_create and first_cp_time and t_time < first_cp_time:
+                    # Transaction predates the first known checkpoint (a PATCH,
+                    # no create entry): its cash effect is already absorbed in
+                    # the admin-set value, but holdings must be tracked so a
+                    # later sell of this stock is not misclassified as fake.
+                    absorbed_txns += 1
+                    shares = int(txn["shares"] or 0)
+                    sym = str(txn["stock_symbol"])
+                    if txn["trade_type"] == "buy":
+                        holdings[sym] += shares
+                    elif txn["trade_type"] in ("sell", "force_close"):
+                        holdings[sym] = max(0, holdings[sym] - shares)
+                    continue
+
+                ttype = txn["trade_type"]
+                sym = str(txn["stock_symbol"])
+                shares = int(txn["shares"] or 0)
+                price = float(txn["price"] or 0)
+                amount = round(price * shares, 2)
+
+                if ttype == "buy":
+                    if cash >= amount:
+                        cash -= amount
+                        holdings[sym] += shares
+                        kept_buy_amount += amount
+                    else:
+                        fake_buy_ids.append(int(txn["id"]))
+                        fake_buy_amount += amount
+                elif ttype in ("sell", "force_close"):
+                    if holdings.get(sym, 0) >= shares:
+                        cash += amount
+                        holdings[sym] -= shares
+                        kept_sell_amount += amount
+                    else:
+                        fake_sell_ids.append(int(txn["id"]))
+                        fake_sell_amount += amount
+
+            # Apply any remaining checkpoints (e.g. a PATCH after the last txn)
+            while cp_idx < len(cps):
+                cash = cps[cp_idx][1]
+                cp_idx += 1
+
+            new_balance = round(cash, 2)
+            if new_balance < 0:
+                new_balance = 0.0
+
+            # Find matching [系统] counterparty rows to clean up.
+            # Greedy Counter matching handles duplicate signatures correctly.
+            system_rows_to_delete: list[int] = []
+
+            def _collect_system_rows(fake_ids: list[int], fake_side: str, sys_side: str) -> None:
+                if not fake_ids:
+                    return
+                need: dict[tuple, int] = defaultdict(int)
+                for t in txns:
+                    if int(t["id"]) in fake_ids and t["trade_type"] == fake_side:
+                        sig = (str(t["stock_symbol"]), int(t["round"] or 0),
+                               float(t["price"] or 0), int(t["shares"] or 0))
+                        need[sig] += 1
+                if not need:
+                    return
+                rows = fetchall(conn, """
+                    SELECT id, stock_symbol, round, price, shares
+                    FROM transactions
+                    WHERE username IN (?, ?, ?) AND trade_type=?
+                """, (*system_names, sys_side))
+                for r in rows:
+                    sig = (str(r["stock_symbol"]), int(r["round"] or 0),
+                           float(r["price"] or 0), int(r["shares"] or 0))
+                    if need.get(sig, 0) > 0:
+                        system_rows_to_delete.append(int(r["id"]))
+                        need[sig] -= 1
+
+            _collect_system_rows(fake_buy_ids, "buy", "sell")
+            _collect_system_rows(fake_sell_ids, "sell", "buy")
+            _collect_system_rows(fake_sell_ids, "force_close", "buy")
+
+            account_info = {
+                "accountId": aid,
+                "owner": acct["owner"],
+                "name": acct["name"],
+                "initialBalance": float(acct["initial_balance"] or 0),
+                "checkpoints": [{"time": c[0], "balance": c[1]} for c in cps],
+                "baselineUncertain": baseline_uncertain,
+                "balanceBefore": current,
+                "balanceAfter": new_balance,
+                "fakeBuys": len(fake_buy_ids),
+                "fakeBuysAmount": round(fake_buy_amount, 2),
+                "fakeSells": len(fake_sell_ids),
+                "fakeSellsAmount": round(fake_sell_amount, 2),
+                "keptBuysAmount": round(kept_buy_amount, 2),
+                "keptSellsAmount": round(kept_sell_amount, 2),
+                "systemRowsToDelete": len(system_rows_to_delete),
+                "absorbedTxns": absorbed_txns,
+                "restoredAmount": round(new_balance - current, 2),
+            }
+
+            if baseline_uncertain and (fake_buy_ids or fake_sell_ids):
+                # Cannot distinguish fake txns without a trustworthy cash
+                # baseline — report only, never modify.
+                account_info["status"] = "manual_review"
+                manual_review.append(account_info)
+                results.append(account_info)
+                continue
+
+            if not fake_buy_ids and not fake_sell_ids:
+                # No bug damage detected for this account — leave untouched
+                account_info["status"] = "clean"
+                results.append(account_info)
+                continue
+
+            account_info["status"] = "fixed"
+            total_restored += (new_balance - current)
+            total_accounts_fixed += 1
+            results.append(account_info)
+
+            if not is_dry_run:
+                for fid in fake_buy_ids + fake_sell_ids:
+                    execute(conn, "DELETE FROM transactions WHERE id=?", (fid,))
+                for sid in system_rows_to_delete:
+                    execute(conn, "DELETE FROM transactions WHERE id=?", (sid,))
+                execute(conn, "UPDATE fund_accounts SET balance=? WHERE id=?", (new_balance, aid))
+                total_fake_buys += len(fake_buy_ids)
+                total_fake_sells += len(fake_sell_ids)
+                total_system_rows_removed += len(system_rows_to_delete)
+                log_action(conn, "admin", "recover_fund_account", str(aid),
+                    f"removed {len(fake_buy_ids)} fake buys (¥{round(fake_buy_amount,2)}) + "
+                    f"{len(fake_sell_ids)} fake sells (¥{round(fake_sell_amount,2)}) + "
+                    f"{len(system_rows_to_delete)} system rows; "
+                    f"balance: {current} → {new_balance}")
+
+        if not is_dry_run:
             conn.commit()
-        _LOGGER.info("Startup ready: database connected and schema verified")
-    except Exception as exc:
-        _LOGGER.warning("Database not available during startup (will be checked by /health): %s", exc)
+
+        # Report absurd accounts separately (e.g. #192 with ¥99 billion)
+        absurd = []
+        for acct in accounts:
+            bal = float(acct["balance"] or 0)
+            if bal > 10_000_000_000:
+                absurd.append({
+                    "accountId": int(acct["id"]),
+                    "owner": acct["owner"],
+                    "name": acct["name"],
+                    "balance": bal,
+                    "initialBalance": float(acct["initial_balance"] or 0),
+                })
+
+    return {
+        "accepted": True,
+        "dryRun": is_dry_run,
+        "accountsFixed": total_accounts_fixed,
+        "totalFakeBuysRemoved": total_fake_buys,
+        "totalFakeSellsRemoved": total_fake_sells,
+        "totalSystemRowsRemoved": total_system_rows_removed,
+        "totalBalanceRestored": round(total_restored, 2),
+        "details": results,
+        "manualReview": manual_review,
+        "manualReviewCount": len(manual_review),
+        "absurdAccounts": absurd,
+    }
 
 
-@app.on_event("shutdown")
-async def shutdown():
-    _LOGGER = logging.getLogger(__name__)
-    try:
-        from .db import _pool as db_pool
-        if db_pool is not None:
-            db_pool.close()
-            _LOGGER.info("Database connection pool closed")
-    except Exception as exc:
-        _LOGGER.warning("Error closing database pool: %s", exc)
-    clear_read_cache()
-    _LOGGER.info("Read cache cleared. Shutdown complete.")
+@app.post("/admin/reset-all-data")
+def admin_reset_all_data(confirm: str = "false", user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    """
+    FULL data reset — keep only the default admin account.
+
+    Deletes ALL user data:
+    - users (every user except username='admin', including other admins)
+    - fund_accounts, transactions, order_book, kline, rounds
+    - audit_logs, login_attempts
+
+    Resets:
+    - all stock prices back to initial pricing, round 1 kline
+    - market_state → open, round 1
+    - admin balance → 0 (no personal funds; cash lives in fund accounts)
+
+    confirm=true (or '1'/'yes') executes; default is a read-only dry run
+    reporting what would be deleted.
+    """
+    require_admin(user)
+    if not ENABLE_ADMIN_WRITES:
+        raise HTTPException(status_code=403, detail="admin_writes_disabled")
+
+    is_dry_run = confirm.lower() not in ("true", "1", "yes")
+
+    def _count(sql: str) -> int:
+        row = fetchone(conn, sql)
+        return int(row["c"] or 0) if row else 0
+
+    with connect() as conn:
+        counts = {
+            "users": _count("SELECT COUNT(*) AS c FROM users WHERE username<>'admin'"),
+            "fundAccounts": _count("SELECT COUNT(*) AS c FROM fund_accounts"),
+            "transactions": _count("SELECT COUNT(*) AS c FROM transactions"),
+            "orders": _count("SELECT COUNT(*) AS c FROM order_book"),
+            "kline": _count("SELECT COUNT(*) AS c FROM kline"),
+            "rounds": _count("SELECT COUNT(*) AS c FROM rounds"),
+            "auditLogs": _count("SELECT COUNT(*) AS c FROM audit_logs"),
+            "loginAttempts": _count("SELECT COUNT(*) AS c FROM login_attempts"),
+        }
+        admin_row = fetchone(conn, "SELECT username,role,status FROM users WHERE username='admin'")
+        if not admin_row:
+            raise HTTPException(status_code=500, detail="default_admin_missing")
+
+        if not is_dry_run:
+            # 1. Reset market: transactions/orders/kline/rounds/fund_accounts,
+            #    stock prices, market_state → open round 1, admin balance → 0
+            reset_to_round1(conn)
+            # 2. Delete every user except the default admin
+            execute(conn, "DELETE FROM users WHERE username<>'admin'")
+            # 3. Clear audit trail and login attempts
+            execute(conn, "DELETE FROM audit_logs")
+            execute(conn, "DELETE FROM login_attempts")
+            # 4. Restore default admin account to seed state (no personal funds)
+            execute(conn, "UPDATE users SET balance=0, status='active' WHERE username='admin'")
+            execute(conn, "INSERT INTO audit_logs(actor,action,target,detail) VALUES(?,?,?,?)",
+                    (user["username"], "reset_all_data", "all",
+                     "users={users}, fund_accounts={fa}, transactions={tx}, orders={od}, "
+                     "kline={kl}, rounds={rd}, audit_logs={al}, login_attempts={la}".format(
+                         users=counts["users"], fa=counts["fundAccounts"], tx=counts["transactions"],
+                         od=counts["orders"], kl=counts["kline"], rd=counts["rounds"],
+                         al=counts["auditLogs"], la=counts["loginAttempts"])))
+            conn.commit()
+            clear_read_cache()
+
+    return {
+        "accepted": True,
+        "dryRun": is_dry_run,
+        "keptUser": "admin",
+        "adminStatus": "active",
+        "adminBalanceResetTo": 0 if not is_dry_run else None,
+        "deleted": counts,
+        "marketResetTo": {"state": "open", "round": 1},
+    }
 
 
 # Serve built frontend SPA after all API routes are registered.
@@ -1460,8 +1948,8 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "web-build"
 if FRONTEND_DIR.exists():
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
-        file_path = FRONTEND_DIR / full_path
-        if file_path.is_file():
+        file_path = (FRONTEND_DIR / full_path).resolve()
+        if str(file_path).startswith(str(FRONTEND_DIR.resolve())) and file_path.is_file():
             return FileResponse(str(file_path))
         index = FRONTEND_DIR / "index.html"
         if index.exists():

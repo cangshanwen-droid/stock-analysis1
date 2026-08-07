@@ -9,8 +9,8 @@ const API_BASES = Array.from(new Set([PRIMARY_API_BASE, ...API_FALLBACKS].filter
   .map((base) => base.replace(/\/+$/, ""));
 const MARKET_CACHE_KEY = "gipfel:last-market";
 const CANDLE_CACHE_PREFIX = "gipfel:last-candles:";
-const MARKET_CACHE_TTL = 5000;
-const CANDLE_CACHE_TTL = 5000;
+const MARKET_CACHE_TTL = 2500;
+const CANDLE_CACHE_TTL = 2500;
 let pendingMarketRequest: Promise<MarketSnapshot> | null = null;
 const pendingCandleRequests = new Map<string, Promise<Candle[]>>();
 
@@ -51,28 +51,49 @@ function requestMethod(init?: RequestInit) {
   return String(init?.method || "GET").toUpperCase();
 }
 
+function hasAuthHeader(init?: RequestInit): boolean {
+  const headers = init?.headers as Record<string, string> | Headers | undefined;
+  if (!headers) return false;
+  if (headers instanceof Headers) return headers.has("Authorization");
+  return Object.entries(headers).some(([k, v]) => k.toLowerCase() === "authorization" && Boolean(v));
+}
+
+// Session expired or revoked: force re-login instead of leaving the UI stuck
+// in a logged-in state where every request silently fails.
+function clearSessionAndReload() {
+  try {
+    window.localStorage.removeItem("gipfel_session");
+  } catch {
+    // ignore storage errors (private mode etc.)
+  }
+  window.location.reload();
+}
+
 function isReadRequest(init?: RequestInit) {
   const method = requestMethod(init);
   return method === "GET" || method === "HEAD";
 }
 
+// Free-tier cold starts can stall a request for 30-90s; without a timeout
+// the UI hangs on an invisible pending fetch. Abort and let the retry /
+// fallback-base logic take over.
+const READ_TIMEOUT_MS = 30000;
+const WRITE_TIMEOUT_MS = 45000;
+
 async function fetchWithRetry(input: string, init?: RequestInit, attempts = isReadRequest(init) ? 3 : 1): Promise<Response> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i += 1) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    const timer = setTimeout(() => controller.abort(), isReadRequest(init) ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS);
     try {
       const res = await fetch(input, { ...init, signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) return res;
-      lastError = new Error(`http_${res.status}`);
+      if (res.ok || i === attempts - 1) return res;
     } catch (error) {
-      clearTimeout(timeoutId);
       lastError = error;
+    } finally {
+      clearTimeout(timer);
     }
-    if (i < attempts - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 350 * (i + 1)));
-    }
+    await new Promise((resolve) => setTimeout(resolve, 350 * (i + 1)));
   }
   throw lastError instanceof Error ? lastError : new Error("request_failed");
 }
@@ -85,6 +106,9 @@ async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
     try {
       const res = await fetchWithRetry(`${base}${path}`, init);
       if (res.ok) return res;
+      // Only token-bearing requests qualify — the login endpoint itself also
+      // returns 401 for bad credentials and must keep its normal error path.
+      if (res.status === 401 && hasAuthHeader(init)) clearSessionAndReload();
       lastError = new Error(`api_${res.status}`);
       if (res.status === 401 || res.status === 403 || res.status === 400 || res.status === 404 || res.status === 409) return res;
     } catch (error) {
@@ -188,7 +212,6 @@ export async function fetchHealth(): Promise<HealthStatus> {
       database: false,
       backend: "demo",
       tokenSecretConfigured: false,
-      adminPasswordConfigured: false,
       orderWritesEnabled: false,
       marketWritesEnabled: false,
       adminWritesEnabled: false
@@ -205,7 +228,7 @@ export async function login(username: string, password: string): Promise<LoginRe
       accessToken: "demo-token",
       tokenType: "bearer",
       expiresIn: 28800,
-      user: { username, role: username === "admin" ? "admin" : "player", balance: 1000000 }
+      user: { username, role: username === "admin" ? "admin" : "player", balance: 0 }
     };
   }
   const res = await fetchApi("/auth/login", {
@@ -229,8 +252,8 @@ export async function fetchMyCompanies(token: string) {
 export async function fetchPortfolio(token: string, company?: string): Promise<PortfolioSnapshot> {
   if (!API_BASES.length || token === "demo-token") {
     return {
-      user: { username: "player1", role: "player", balance: 1000000 },
-      summary: { marketValue: 0, totalAssets: 1000000, totalPnl: 0, pnlRatio: 0 },
+      user: { username: "player1", role: "player", balance: 0 },
+      summary: { marketValue: 0, totalAssets: 0, totalPnl: 0, pnlRatio: 0 },
       positions: [],
       orders: [],
       recentTrades: []
@@ -241,7 +264,7 @@ export async function fetchPortfolio(token: string, company?: string): Promise<P
     cache: "no-store",
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!res.ok) throw new Error("portfolio_failed");
+  if (!res.ok) throw await apiError(res, "portfolio_failed");
   return res.json();
 }
 
@@ -269,7 +292,7 @@ export async function submitOrder(token: string, order: {
     },
     body: JSON.stringify(order)
   });
-  if (!res.ok) throw new Error("order_failed");
+  if (!res.ok) throw await apiError(res, "order_failed");
   return res.json();
 }
 
@@ -447,6 +470,34 @@ export async function deleteAdminStock(token: string, symbol: string) {
   if (!res.ok) throw await apiError(res, "delete_stock_failed");
   const data = await res.json();
   if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_stock_failed");
+  return data;
+}
+
+export async function deleteAllAdminStocks(token: string) {
+  const res = await fetchApi("/admin/stocks/delete-all", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ confirmation: "确认删除全部股票" })
+  });
+  if (!res.ok) throw await apiError(res, "delete_all_stocks_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "delete_all_stocks_failed");
+  return data;
+}
+
+export async function restoreAdminStocks(token: string) {
+  const res = await fetchApi("/admin/stocks/restore", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!res.ok) throw await apiError(res, "restore_stocks_failed");
+  const data = await res.json();
+  if (data.accepted === false) throw new Error(data.detail || data.reason || "restore_stocks_failed");
   return data;
 }
 

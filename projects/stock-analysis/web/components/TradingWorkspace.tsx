@@ -10,6 +10,8 @@ import {
   createAdminStock,
   createAdminUser,
   deleteAdminStock,
+  deleteAllAdminStocks,
+  restoreAdminStocks,
   deleteFundAccount,
   deleteAdminUser,
   fetchAdminFundAccounts,
@@ -33,6 +35,7 @@ import {
 } from "../lib/api";
 import type { AdminFundAccount, AdminStock, AdminUser, AuditLog, Candle, HealthStatus, MarketSnapshot, PortfolioSnapshot, StockQuote, UserSession } from "../lib/types";
 import { KlineChart } from "./KlineChart";
+import { ClockDisplay } from "./ClockDisplay";
 
 type ViewKey = "market" | "trade" | "portfolio" | "records" | "admin";
 type MarketAction = "open" | "close" | "reset" | "previous";
@@ -144,6 +147,10 @@ export function TradingWorkspace() {
   }>>({});
   const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
   const loginRef = useRef<string>("");
+  // Generation counter: account-scoped portfolio fetches (login / trade /
+  // account switch) bump it so a slower personal (unscoped) fetch can never
+  // overwrite the account portfolio with users.balance.
+  const portfolioGenRef = useRef(0);
 
 
   // Restore persisted session on mount
@@ -185,14 +192,16 @@ export function TradingWorkspace() {
   useEffect(() => {
     if (!token) return;
     let alive = true;
+    const gen = portfolioGenRef.current;
     fetchPortfolio(token)
       .then((data) => {
-        if (!alive) return;
+        // Discard if a newer account-scoped fetch superseded this one.
+        if (!alive || gen !== portfolioGenRef.current) return;
         setPortfolio(data);
         setUser(data.user);
       })
       .catch(() => {
-        if (alive) setPortfolio(null);
+        if (alive && gen === portfolioGenRef.current) setPortfolio(null);
       });
     return () => {
       alive = false;
@@ -220,8 +229,19 @@ export function TradingWorkspace() {
     if (!token || user?.role !== "admin") return;
     let alive = true;
     setAdminLoading(true);
-    fetchAdminOverview(token).then((d) => { setAdminUsers(d.users); setAdminStocks(d.stocks); setAuditLogs(d.auditLogs); }).catch(() => {}); fetchHealth().then(setHealthStatus).catch(() => {}); fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
-    setAdminLoading(false);
+    fetchAdminOverview(token)
+      .then((d) => {
+        if (!alive) return;
+        setAdminUsers(d.users);
+        setAdminStocks(d.stocks);
+        setAuditLogs(d.auditLogs);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setAdminLoading(false);
+      });
+    fetchHealth().then(setHealthStatus).catch(() => {});
+    fetchAdminFundAccounts(token).then(setAdminFundAccounts).catch(() => {});
     return () => {
       alive = false;
     };
@@ -276,6 +296,7 @@ export function TradingWorkspace() {
         if (companies.length > 0) {
           setTradingCompany(companies[0].symbol);
           setPortfolioCompany(companies[0].symbol);
+          portfolioGenRef.current += 1;
           fetchPortfolio(token, companies[0].symbol).then(setPortfolio).catch(() => {});
         }
       }).catch(() => {});
@@ -382,6 +403,8 @@ export function TradingWorkspace() {
         setOrderSubmitting(false);
         clearPublicReadCache();
         try {
+          portfolioGenRef.current += 1;
+          fetchMyCompanies(token).then(setMyCompanies).catch(() => {});
           const [data] = await Promise.all([
             fetchPortfolio(token, tradingCompany ?? undefined),
             fetchMarket(true).catch(() => {}),
@@ -609,6 +632,42 @@ export function TradingWorkspace() {
     }
   }
 
+  async function submitDeleteAllStocks() {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm("确认删除全部股票？所有股票会从行情和交易列表隐藏，全部挂单与轮次会清除，历史成交保留。可通过「恢复全部」撤销。")) return;
+    setAdminMessage("");
+    try {
+      const result = await deleteAllAdminStocks(token);
+      setAdminMessage(`已删除全部股票（${result.deleted ?? 0} 只）`);
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket(true);
+      setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
+      if (nextMarket.stocks[0]) setSelected(nextMarket.stocks[0].symbol);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`删除全部股票失败：${detail || "请稍后重试"}`);
+    }
+  }
+
+  async function submitRestoreAllStocks() {
+    if (!token || user?.role !== "admin") return;
+    if (!window.confirm("确认恢复全部已删除的股票？历史成交与 K 线记录会一并恢复可见。")) return;
+    setAdminMessage("");
+    try {
+      await restoreAdminStocks(token);
+      setAdminMessage("已恢复全部股票");
+      await refreshAdminOverview();
+      const nextMarket = await fetchMarket(true);
+      setMarket(nextMarket);
+      setLastMarketUpdate(Date.now());
+      if (nextMarket.stocks[0]) setSelected(nextMarket.stocks[0].symbol);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      setAdminMessage(`恢复全部股票失败：${detail || "请稍后重试"}`);
+    }
+  }
+
   async function submitSetManager(stock: AdminStock) {
     if (!token || user?.role !== "admin") return;
     const manager = (managerDrafts[stock.symbol] || "").trim();
@@ -671,12 +730,6 @@ export function TradingWorkspace() {
     if (!activeStocks.length) return 50;
     return activeStocks.reduce((sum, stock) => sum + (stock.carbonPrice || 50), 0) / activeStocks.length;
   }, [adminStocks]);
-  const [clockStr, setClockStr] = useState(() => new Date().toLocaleTimeString("zh-CN", { hour12: false }));
-  useEffect(() => {
-    const t = setInterval(() => setClockStr(new Date().toLocaleTimeString("zh-CN", { hour12: false })), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const liveUpdateText = clockStr;
 
   const navItems = user
     ? [
@@ -742,7 +795,7 @@ export function TradingWorkspace() {
               <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
           </div>
-          <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
+          <span className="live-refresh">收盘同步 · <ClockDisplay /></span>
         </section>
 
         {(view === "market" || view === "trade") ? (
@@ -808,7 +861,10 @@ export function TradingWorkspace() {
                       className={tradingCompany === c.symbol ? "active" : ""}
                       onClick={() => {
                         setTradingCompany(c.symbol);
+                        setPortfolioCompany(c.symbol);
                         setOrderMessage(`已切换到资金账户「${c.name}」`);
+                        portfolioGenRef.current += 1;
+                        fetchPortfolio(token!, c.symbol).then(setPortfolio).catch(() => {});
                       }}
                       style={{ padding:"6px 10px", fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}
                     >
@@ -822,7 +878,7 @@ export function TradingWorkspace() {
                   暂无资金账户<br/><span style={{color:"#469FE6",cursor:"pointer",fontWeight:700,fontSize:14}} onClick={async () => {
                     const name = window.prompt("输入资金账户名称：", user?.username || "");
                     if (!name?.trim()) return;
-                    const amt = window.prompt("输入初始资金金额：", "1000000");
+                    const amt = window.prompt("输入初始资金金额：", "0");
                     const amount = Number(amt);
                     if (!Number.isFinite(amount) || amount <= 0) return;
                     if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
@@ -1061,7 +1117,7 @@ export function TradingWorkspace() {
                 onClick={async () => {
                   const name = window.prompt("输入资金账户名称：", user?.username || "");
                   if (!name?.trim()) return;
-                  const amountText = window.prompt("输入初始资金金额：", "1000000");
+                  const amountText = window.prompt("输入初始资金金额：", "0");
                   const amount = Number(amountText);
                   if (!Number.isFinite(amount) || amount <= 0) return;
                   if (!window.confirm(`确认创建资金账户「${name.trim()}」，初始资金 ${fmtMoney(amount)}？`)) return;
@@ -1433,7 +1489,13 @@ export function TradingWorkspace() {
                       </div>
                     </div>
                     <div className="management-panel">
-                      <div className="section-caption">股票参数</div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div className="section-caption">股票参数</div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button className="mini-action" onClick={submitRestoreAllStocks}>恢复全部</button>
+                          <button className="mini-action danger-mini" onClick={submitDeleteAllStocks}>全部删除</button>
+                        </div>
+                      </div>
                       <div className="stock-editor-list">
                         {adminStocks.map((stock) => {
                           const draft = stockDrafts[stock.symbol] ?? {

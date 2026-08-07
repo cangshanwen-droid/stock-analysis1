@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT DEFAULT 'player',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'active',
-    balance DOUBLE PRECISION DEFAULT 1000000
+    balance DOUBLE PRECISION DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS fund_accounts (
@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS order_book (
     shares INTEGER NOT NULL,
     round INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket_key TEXT PRIMARY KEY,
+    window_start DOUBLE PRECISION NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(username);
