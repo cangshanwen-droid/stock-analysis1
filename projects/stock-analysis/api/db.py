@@ -1,6 +1,8 @@
+import logging
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,8 @@ DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", ROOT_DIR / "data" / "stock_analy
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 _pool = None
 _pool_lock = threading.Lock()
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DatabaseNotReady(RuntimeError):
@@ -64,17 +68,50 @@ def bind(sql: str) -> str:
 def connect():
     if is_postgres():
         pool = get_pool()
-        if pool:
-            return pool.connection()
         import psycopg
         from psycopg.rows import dict_row
 
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                if pool:
+                    return pool.connection()
+                return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+            except (psycopg.OperationalError, DatabaseNotReady) as exc:
+                last_exc = exc
+                if attempt < 2:
+                    delay = 0.5 * (2 ** attempt)
+                    _LOGGER.warning(
+                        "Database connection attempt %d failed (%s), retrying in %.1fs...",
+                        attempt + 1, exc, delay,
+                    )
+                    time.sleep(delay)
+        raise DatabaseNotReady(
+            f"Database not ready after 3 retries: {last_exc}"
+        ) from last_exc
+
     if not DB_PATH.exists():
         raise DatabaseNotReady(f"Database not found: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def keepalive() -> bool:
+    """Execute a lightweight query to keep the database connection alive.
+
+    For PostgreSQL connection pools, executes SELECT 1 to validate
+    connections. Returns True on success, False on failure."""
+    try:
+        conn = connect()
+        try:
+            execute(conn, "SELECT 1")
+            return True
+        finally:
+            conn.close()
+    except Exception:
+        _LOGGER.warning("Database keepalive check failed", exc_info=True)
+        return False
 
 
 def fetchone(conn, sql: str, params: tuple[Any, ...] = ()):

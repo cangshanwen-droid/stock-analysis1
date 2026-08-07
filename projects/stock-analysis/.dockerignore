@@ -1,0 +1,44 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+
+# Virtual environments
+venv/
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Data / databases
+data/
+*.db
+*.sqlite3
+*.sqlite
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audit / docs (not needed at runtime)
+PERFORMANCE_AUDIT.md
+SECURITY_AUDIT_REPORT.md
+
+# Migrations (run manually, not in image)
+*migrate*.py
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml

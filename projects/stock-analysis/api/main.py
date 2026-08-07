@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -161,6 +162,21 @@ async def rate_limit_middleware(request: Request, call_next):
     if not _rate_limit(client_ip, limit):
         return JSONResponse(status_code=429, content={"detail": "too_many_requests", "retry_after": 60})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_timeout_middleware(request: Request, call_next):
+    path = request.url.path
+    # Skip timeout for health check and static file paths (served by the SPA catch-all)
+    if path == "/health" or ("." in path.rsplit("/", 1)[-1] if "/" in path else "." in path):
+        return await call_next(request)
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=30.0)
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "gateway_timeout", "message": "Request timed out after 30 seconds"},
+        )
 
 
 @app.exception_handler(DatabaseNotReady)
@@ -1411,6 +1427,32 @@ def admin_audit_logs(limit: int = 80, user: dict[str, Any] = Depends(current_use
         }
         for row in rows
     ]
+
+
+@app.on_event("startup")
+async def startup():
+    _LOGGER = logging.getLogger(__name__)
+    try:
+        with connect() as conn:
+            ensure_fund_accounts_schema(conn)
+            conn.commit()
+        _LOGGER.info("Startup ready: database connected and schema verified")
+    except Exception as exc:
+        _LOGGER.warning("Database not available during startup (will be checked by /health): %s", exc)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    _LOGGER = logging.getLogger(__name__)
+    try:
+        from .db import _pool as db_pool
+        if db_pool is not None:
+            db_pool.close()
+            _LOGGER.info("Database connection pool closed")
+    except Exception as exc:
+        _LOGGER.warning("Error closing database pool: %s", exc)
+    clear_read_cache()
+    _LOGGER.info("Read cache cleared. Shutdown complete.")
 
 
 # Serve built frontend SPA after all API routes are registered.
