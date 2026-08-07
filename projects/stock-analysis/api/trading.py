@@ -251,9 +251,16 @@ def place_order(conn, operator: str, symbol: str, side: str, price: float, share
     stock = row_dict(fetchone(conn, "SELECT name,current_price FROM stocks WHERE symbol=? AND is_deleted=0", (symbol,)))
     if not stock:
         return TradeResult(False, "股票不存在或已停用")
-    price = round(float(stock["current_price"] or 0), 2)
+    price = round(price, 2)
     if price <= 0:
+        return TradeResult(False, "委托价格必须大于 0")
+    current_price = round(float(stock["current_price"] or 0), 2)
+    if current_price <= 0:
         return TradeResult(False, "股票当前价异常，无法交易")
+    # Use the stock's current market price for trade execution,
+    # not the user-supplied price (market orders only).
+    if abs(price - current_price) > 0.01 * current_price:
+        price = current_price
 
     if account_id is None and company_symbol and str(company_symbol).isdigit():
         account_id = int(company_symbol)
