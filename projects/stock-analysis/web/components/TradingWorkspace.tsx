@@ -143,9 +143,6 @@ export function TradingWorkspace() {
     premiumRate: string;
   }>>({});
   const [lastMarketUpdate, setLastMarketUpdate] = useState<number>(0);
-  const [marketLoading, setMarketLoading] = useState(true);
-  const [marketError, setMarketError] = useState("");
-  const [candleLoading, setCandleLoading] = useState(true);
   const loginRef = useRef<string>("");
 
 
@@ -164,18 +161,11 @@ export function TradingWorkspace() {
   }, []);
   useEffect(() => {
     let alive = true;
-    setMarketLoading(true);
-    setMarketError("");
     fetchMarket().then((data) => {
       if (!alive) return;
       setMarket(data);
       setLastMarketUpdate(Date.now());
       if (data.stocks[0]) setSelected(data.stocks[0].symbol);
-      setMarketLoading(false);
-    }).catch((err) => {
-      if (!alive) return;
-      setMarketError(err instanceof Error ? err.message : "网络请求失败");
-      setMarketLoading(false);
     });
     return () => {
       alive = false;
@@ -184,12 +174,8 @@ export function TradingWorkspace() {
 
   useEffect(() => {
     let alive = true;
-    setCandleLoading(true);
     fetchCandles(selected).then((data) => {
-      if (alive) {
-        setCandles(data);
-        setCandleLoading(false);
-      }
+      if (alive) setCandles(data);
     });
     return () => {
       alive = false;
@@ -750,79 +736,16 @@ export function TradingWorkspace() {
         </div>
 
         <section className="status-strip">
-          {marketLoading ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span className="status-dot" style={{ background: "#F9C42F" }} />
-              <strong>行情加载中...</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="status-dot" />
+            <div>
+              <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
             </div>
-          ) : marketError ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span className="status-dot" style={{ background: "#F87171" }} />
-              <strong>行情加载失败</strong>
-              <button className="mini-action" onClick={() => {
-                setMarketLoading(true);
-                setMarketError("");
-                fetchMarket(true).then((data) => {
-                  setMarket(data);
-                  setLastMarketUpdate(Date.now());
-                  if (data.stocks[0]) setSelected(data.stocks[0].symbol);
-                  setMarketLoading(false);
-                }).catch((err) => {
-                  setMarketError(err instanceof Error ? err.message : "网络请求失败");
-                  setMarketLoading(false);
-                });
-              }}>
-                点击重试
-              </button>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span className="status-dot" />
-                <div>
-                  <strong>第 {market?.round ?? 1} 轮 · {market?.state === "closed" ? "已闭市" : "交易中"}</strong>
-                </div>
-              </div>
-              <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
-            </>
-          )}
+          </div>
+          <span className="live-refresh">收盘同步 · {liveUpdateText}</span>
         </section>
 
         {(view === "market" || view === "trade") ? (
-          marketLoading ? (
-            <section className="quote-grid">
-              <div className="empty-state" style={{ gridColumn: "1 / -1", padding: "24px", textAlign: "center", color: "#94A3B8" }}>
-                正在加载行情数据...
-              </div>
-            </section>
-          ) : marketError ? (
-            <section className="quote-grid">
-              <div className="empty-state" style={{ gridColumn: "1 / -1", padding: "24px", textAlign: "center" }}>
-                <p style={{ color: "#F87171", marginBottom: 12 }}>加载失败：{marketError}</p>
-                <button className="mini-action" onClick={() => {
-                  setMarketLoading(true);
-                  setMarketError("");
-                  fetchMarket(true).then((data) => {
-                    setMarket(data);
-                    setLastMarketUpdate(Date.now());
-                    if (data.stocks[0]) setSelected(data.stocks[0].symbol);
-                    setMarketLoading(false);
-                  }).catch((err) => {
-                    setMarketError(err instanceof Error ? err.message : "网络请求失败");
-                    setMarketLoading(false);
-                  });
-                }}>
-                  点击重试
-                </button>
-              </div>
-            </section>
-          ) : stocks.length === 0 ? (
-            <section className="quote-grid">
-              <div className="empty-state" style={{ gridColumn: "1 / -1", padding: "24px", textAlign: "center", color: "#94A3B8" }}>
-                暂无股票行情数据
-              </div>
-            </section>
-          ) : (
           <section className="quote-grid">
             {stocks.map((stock) => (
               <button className="card" key={stock.symbol} onClick={() => setSelected(stock.symbol)}>
@@ -834,7 +757,6 @@ export function TradingWorkspace() {
                 </div>
               </button>))}
           </section>
-          )
         ) : null}
 
         {(view === "market" || view === "trade") ? (
@@ -854,17 +776,8 @@ export function TradingWorkspace() {
                   </span>
                 </div>
               </div>
-              {candleLoading ? (
-                <div className="skeleton-chart" style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.03)", borderRadius: 8, color: "#94A3B8" }}>
-                  K 线图加载中...
-                </div>
-              ) : candles.length === 0 ? (
-                <div className="empty-state" style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", color: "#94A3B8" }}>
-                  暂无 K 线数据
-                </div>
-              ) : (
-                <KlineChart candles={candles} />
-              )}
+              <KlineChart candles={candles} />
+            </div>
 
             {view === "trade" ? (
             <aside className="ticket">
