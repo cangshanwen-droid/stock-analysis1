@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -50,19 +51,39 @@ def bind(sql: str) -> str:
 
 
 def connect():
-    if is_postgres():
-        pool = get_pool()
-        if pool:
-            return pool.connection()
-        import psycopg
-        from psycopg.rows import dict_row
+    last_error = None
+    for attempt in range(3):
+        try:
+            if is_postgres():
+                pool = get_pool()
+                if pool:
+                    return pool.connection()
+                import psycopg
+                from psycopg.rows import dict_row
 
-        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
-    if not DB_PATH.exists():
-        raise DatabaseNotReady(f"Database not found: {DB_PATH}")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+                return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+            if not DB_PATH.exists():
+                raise DatabaseNotReady(f"Database not found: {DB_PATH}")
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            return conn
+        except DatabaseNotReady as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.5 * (2 ** attempt))
+        except Exception as exc:
+            # Try psycopg import for OperationalError without hard dependency
+            try:
+                from psycopg import OperationalError
+                if isinstance(exc, OperationalError):
+                    last_error = exc
+                    if attempt < 2:
+                        time.sleep(0.5 * (2 ** attempt))
+                    continue
+            except ImportError:
+                pass
+            raise
+    raise DatabaseNotReady(f"Database connection failed after 3 attempts") from last_error
 
 
 def fetchone(conn, sql: str, params: tuple[Any, ...] = ()):

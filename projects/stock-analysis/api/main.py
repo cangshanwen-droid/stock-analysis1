@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -5,7 +6,7 @@ import json
 import os
 import threading
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -38,8 +39,9 @@ DEFAULT_CORS_ORIGINS = {
     "https://www.gipfel.ltd",
     "https://gipfel.ltd",
 }
-READ_CACHE: dict[str, tuple[float, Any]] = {}
+READ_CACHE: OrderedDict[str, tuple[float, Any]] = OrderedDict()
 READ_CACHE_LOCK = threading.RLock()
+READ_CACHE_MAX_SIZE = int(os.environ.get("READ_CACHE_MAX_SIZE", "500"))
 
 
 def cors_origins() -> list[str]:
@@ -63,11 +65,15 @@ def cache_get(key: str, ttl_seconds: float) -> Any | None:
         if expires_at <= time.monotonic():
             READ_CACHE.pop(key, None)
             return None
+        READ_CACHE.move_to_end(key)
         return value
 
 
 def cache_set(key: str, value: Any, ttl_seconds: float) -> Any:
     with READ_CACHE_LOCK:
+        # Evict oldest if at capacity (LRU-like: oldest key is first in OrderedDict)
+        while len(READ_CACHE) >= READ_CACHE_MAX_SIZE:
+            READ_CACHE.popitem(last=False)
         READ_CACHE[key] = (time.monotonic() + ttl_seconds, value)
         return value
 
@@ -230,6 +236,20 @@ async def rate_limit_middleware(request: Request, call_next):
     if not limited:
         return JSONResponse(status_code=429, content={"detail": "too_many_requests", "retry_after": 60})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_timeout_middleware(request: Request, call_next):
+    """Enforce a 30s timeout on all requests except /health."""
+    if request.url.path == "/health":
+        return await call_next(request)
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=30.0)
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "gateway_timeout", "message": "Request took too long"}
+        )
 
 
 @app.exception_handler(DatabaseNotReady)
@@ -1955,3 +1975,28 @@ if FRONTEND_DIR.exists():
         if index.exists():
             return FileResponse(str(index))
         return JSONResponse(status_code=404, content={"detail": "not_found"})
+
+
+@app.on_event("startup")
+async def startup():
+    """Ensure database schema is ready before accepting traffic."""
+    try:
+        with connect() as conn:
+            from .market_ops import ensure_fund_accounts_schema
+            ensure_fund_accounts_schema(conn)
+            conn.commit()
+    except Exception:
+        pass  # /health will report database status
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Gracefully close database connections."""
+    from .db import get_pool
+    pool = get_pool()
+    if pool is not None:
+        try:
+            pool.close()
+        except Exception:
+            pass
+    clear_read_cache()
