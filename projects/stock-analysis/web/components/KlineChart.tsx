@@ -55,7 +55,7 @@ function timeKey(time: Time | unknown) {
 }
 
 function expandCandles(candles: Candle[]): DisplayCandle[] {
-  return candles.map((candle, index) => {
+  return candles.map((candle) => {
     const open = round2(candle.open);
     const close = round2(candle.close);
     return {
@@ -63,8 +63,8 @@ function expandCandles(candles: Candle[]): DisplayCandle[] {
       label: `R${candle.round}`,
       time: candle.time as Time,
       open,
-            high: round2(candle.high > Math.max(candle.open, candle.close) ? candle.high : Math.max(candle.open, candle.close) * (1 + Math.min(candle.volume / 50000, 0.03))),
-      low: round2(Math.max(0.01, candle.low < Math.min(candle.open, candle.close) ? candle.low : Math.min(candle.open, candle.close) * (1 - Math.min(candle.volume / 50000, 0.03)))),
+      high: round2(candle.high),
+      low: round2(candle.low),
       close,
       volume: Math.max(0, Math.round(candle.volume || 0)),
     };
@@ -88,7 +88,7 @@ export const KlineChart = memo(function KlineChart({ candles }: Props) {
   if (!hasMeaningfulBars) {
     return (
       <div className="chart-shell chart-shell-empty">
-        <div className="chart-empty-state">
+        <div className="chart-empty-state chart-pulse">
           <strong>等待首笔成交</strong>
           <span>开盘后产生买卖成交，K 线将按比赛轮次更新</span>
         </div>
@@ -172,8 +172,8 @@ function KlineChartCanvas({ candles }: Props) {
       timeScale: {
         borderColor: "rgba(99, 116, 139, 0.42)",
         rightOffset: 8,
-        barSpacing: 7,
-        minBarSpacing: 4,
+        barSpacing: 9,
+        minBarSpacing: 6,
         fixLeftEdge: true,
         fixRightEdge: false,
         tickMarkFormatter: (time: Time) => {
@@ -303,7 +303,7 @@ function KlineChartCanvas({ candles }: Props) {
     const volumeData = displayCandles.map((candle) => ({
       time: candle.time,
       value: Math.max(0.01, candle.volume),
-      color: candle.close >= candle.open ? "rgba(242,54,69,.38)" : "rgba(0,176,80,.36)"
+      color: candle.close >= candle.open ? "rgba(242,54,69,.55)" : "rgba(0,176,80,.50)"
     }));
     const volMax = Math.max(...volumeData.map((d) => d.value));
     if (volMax <= 0.01) {
@@ -313,7 +313,7 @@ function KlineChartCanvas({ candles }: Props) {
       volumeRef.current.setData(volumeData);
     }const ma5WithCrossColor = ma5Data.map((point, index) => ({
       ...point,
-      color: ma10Data[index] && point.value < ma10Data[index].value ? "#a3aec0" : MA5_COLOR
+      color: ma10Data[index] && point.value < ma10Data[index].value ? "#F59E0B" : MA5_COLOR
     }));
     ma5Ref.current.setData(ma5WithCrossColor);
     ma10Ref.current.setData(ma10Data);

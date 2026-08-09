@@ -1411,3 +1411,12 @@ button {
     min-height: 516px;
   }
 }
+
+.chart-pulse {
+  animation: chartPulse 2s ease-in-out infinite;
+}
+
+@keyframes chartPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
