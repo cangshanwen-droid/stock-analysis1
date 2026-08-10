@@ -109,6 +109,9 @@ def market_data():
 
 @app.post("/market/stocks")
 async def create_stock(request: Request):
+    # 安全验收 P0：上市公司创建必须管理密钥（桌面端 CompanyListPage 上市流程
+    # 经 stock-sync 带 X-Admin-Key 调用；公网匿名创建一律拒绝）
+    _require_admin(request)
     data = await request.json()
     symbol = (data.get("symbol") or "").upper()
     name = data.get("name", "")
