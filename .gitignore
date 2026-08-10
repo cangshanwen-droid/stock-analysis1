@@ -7,7 +7,7 @@
 # Allow .claude directory (for Claude Code)
 !.claude/
 
-# Allow only stock-analysis1 project (un-ignore parent dirs, re-ignore their contents)
+# Allow stock-analysis1 project at AppData/Local/Temp (legacy path, un-ignore parent dirs, re-ignore their contents)
 !AppData/
 AppData/*
 !AppData/Local/
@@ -16,3 +16,16 @@ AppData/Local/*
 AppData/Local/Temp/*
 !AppData/Local/Temp/stock-analysis1/
 !AppData/Local/Temp/stock-analysis1/**
+
+# Allow current project at projects/stock-analysis (deployed cloud source lives here)
+!projects/
+projects/*
+!projects/stock-analysis/
+projects/stock-analysis/*
+!projects/stock-analysis/api/
+projects/stock-analysis/api/*
+!projects/stock-analysis/api/stock_mini.py
+!projects/stock-analysis/deploy/
+projects/stock-analysis/deploy/*
+!projects/stock-analysis/deploy/nginx-gipfel-ssl.conf
+!projects/stock-analysis/deploy/README-DEPLOY.md
