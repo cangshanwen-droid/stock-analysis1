@@ -2,8 +2,7 @@
 支持桌面端统一登录：/auth/login 用户不存在时自动创建（与 Gipfel 管理系统账号同步）
 index.html 注入 auto-login 脚本：iframe URL 带 ?token=&username= 时自动写入 localStorage 免登录
 """
-import sqlite3, os, time, json, uuid, hashlib
-from datetime import datetime
+import sqlite3, os, json, uuid
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
