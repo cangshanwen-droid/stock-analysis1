@@ -191,6 +191,7 @@ async def auth_login(request: Request):
     db.close()
 
     u = dict(user)
+    u.pop("password", None)  # 安全：绝不向客户端返回本地密码列（统一账号后恒为空，防御性移除）
     u["gipfel_token"] = g_token  # 一并返回软件端 token，前端可透传
     return {"token": str(uuid.uuid4()), "user": u}
 
@@ -275,8 +276,10 @@ async def admin_account_detail(user_id: int, request: Request):
         (user_id,)
     ).fetchall()
     db.close()
+    u = dict(user)
+    u.pop("password", None)  # 安全：绝不向客户端返回本地密码列
     return {
-        "user": dict(user),
+        "user": u,
         "positions": [dict(p) for p in positions],
         "orders": [dict(o) for o in orders],
     }
