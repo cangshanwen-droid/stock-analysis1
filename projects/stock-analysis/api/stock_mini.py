@@ -139,47 +139,69 @@ def health():
 
 @app.post("/auth/login")
 async def auth_login(request: Request):
-    """统一登录：与 Gipfel 管理系统共用账号。
-    用户不存在时自动创建（桌面端账号同步），返回 token + role。
+    """统一登录 v2：单一账号源 = Gipfel 管理系统（gipfel-api）。
+    本机转发 gipfel-api /api/auth/login 验证（bcrypt），验证通过后
+    本地 users 表仅维护交易数据（balance/持仓），不存密码——
+    改密码/删用户/角色变更只操作软件端，股票端登录时实时跟随。
     """
     data = await request.json()
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
     if not username or not password:
         raise HTTPException(400, "缺少用户名或密码")
+
+    # ── 转发验证到 gipfel-api（本机回环，不暴露公网）──
+    import urllib.request
+    import urllib.error
+    GIPFEL_API = os.environ.get("GIPFEL_API_URL", "http://127.0.0.1:8000")
+    payload = json.dumps({"username": username, "password": password}).encode()
+    req = urllib.request.Request(
+        f"{GIPFEL_API}/api/auth/login",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            gipfel = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(401, "用户名或密码错误")
+        raise HTTPException(502, f"账号服务暂不可用（{e.code}），请稍后重试")
+    except Exception:
+        raise HTTPException(502, "账号服务暂不可用，请稍后重试")
+
+    g_user = gipfel.get("user") or {}
+    g_role = g_user.get("role") or "user"
+    g_token = gipfel.get("token") or ""
+
+    # ── 本地 upsert：仅交易数据（密码列存空，不再自管）──
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
-        # 自动创建（桌面端账号同步）
-        db.execute("INSERT INTO users(username,password,balance,role) VALUES(?,?,100000,'user')",
-                   (username, hashlib.sha256(password.encode()).hexdigest()))
+        db.execute("INSERT INTO users(username,password,balance,role) VALUES(?,?,100000,?)",
+                   (username, "", g_role))
         db.commit()
         user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    elif user["password"] != hashlib.sha256(password.encode()).hexdigest():
-        db.close()
-        raise HTTPException(401, "密码错误")
+    elif user["role"] != g_role:
+        # 角色变更实时跟随软件端
+        db.execute("UPDATE users SET role=? WHERE id=?", (g_role, user["id"]))
+        db.commit()
+        user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     db.close()
-    return {"token": str(uuid.uuid4()), "user": dict(user)}
+
+    u = dict(user)
+    u["gipfel_token"] = g_token  # 一并返回软件端 token，前端可透传
+    return {"token": str(uuid.uuid4()), "user": u}
+
 
 @app.post("/auth/register")
 async def auth_register(request: Request):
-    data = await request.json()
-    username = (data.get("username") or "").strip()
-    password = data.get("password") or ""
-    role = data.get("role") or "user"
-    if not username or not password:
-        raise HTTPException(400, "缺少用户名或密码")
-    db = get_db()
-    exists = db.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
-    if exists:
-        db.close()
-        raise HTTPException(409, "用户名已存在")
-    db.execute("INSERT INTO users(username,password,balance,role) VALUES(?,?,100000,?)",
-               (username, hashlib.sha256(password.encode()).hexdigest(), role))
-    db.commit()
-    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    db.close()
-    return {"token": str(uuid.uuid4()), "user": dict(user)}
+    """注册已关闭：账号统一由 Gipfel 管理系统创建（单一账号源）。
+    保留端点返回明确提示，避免客户端误解。
+    """
+    raise HTTPException(403, "账号注册已关闭，请由系统管理员在 Gipfel 管理系统创建")
+
 
 
 # ── 管理端：账户监控（桌面端 admin 面板调用）──
