@@ -28,4 +28,9 @@ projects/stock-analysis/api/*
 !projects/stock-analysis/deploy/
 projects/stock-analysis/deploy/*
 !projects/stock-analysis/deploy/nginx-gipfel-ssl.conf
+!projects/stock-analysis/.github/
+projects/stock-analysis/.github/*
+!projects/stock-analysis/.github/workflows/
+projects/stock-analysis/.github/workflows/*
+!projects/stock-analysis/.github/workflows/ci.yml
 !projects/stock-analysis/deploy/README-DEPLOY.md
