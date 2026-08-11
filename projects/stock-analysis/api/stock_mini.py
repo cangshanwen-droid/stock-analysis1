@@ -213,6 +213,57 @@ def _stock_fund_rollback(username: str, side: str, amount: float, idem_key: str)
         print(f"[stock-fund-rollback-failed] username={username} side={side} amount={amount} key={idem_key}")
 
 
+
+def _sync_company_account(db, g_user, g_token=""):
+    """v1.3.0 公司级资金：登录时同步用户所属公司并确保公司账户存在。
+    g_user 来自 gipfel-api 登录响应（含 org_id）；g_token 为软件端 JWT（查公司用）。
+    返回 (company_id, company_name) 或 (None, None)。"""
+    org_id = g_user.get("org_id")
+    if not org_id:
+        return None, None
+    try:
+        import urllib.request
+        GIPFEL_API = os.environ.get("GIPFEL_API_URL", "http://127.0.0.1:8000")
+        headers = {}
+        if g_token:
+            headers["Authorization"] = f"Bearer {g_token}"
+        else:
+            headers["X-Internal-Key"] = os.environ.get("ADMIN_KEY", "gipfel-admin-dev")
+        req = urllib.request.Request(
+            f"{GIPFEL_API}/api/companies?org_id={org_id}",
+            headers=headers,
+            method="GET")
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            companies = json.loads(resp.read().decode())
+    except Exception:
+        return None, None
+    company = None
+    if isinstance(companies, list):
+        company = next((c for c in companies if c.get("org_id") == org_id), None)
+    elif isinstance(companies, dict):
+        items = companies.get("items") or companies.get("data") or []
+        company = next((c for c in items if c.get("org_id") == org_id), None)
+    if not company:
+        return None, None
+    cid = company.get("id")
+    cname = company.get("name") or ""
+    if cid is None:
+        return None, None
+    # 确保公司账户存在（初始 10 万）
+    db.execute("INSERT OR IGNORE INTO company_accounts(company_id, company_name, balance) VALUES(?,?,100000)",
+               (cid, cname))
+    db.execute("UPDATE company_accounts SET company_name=? WHERE company_id=?", (cname, cid))
+    db.commit()
+    return cid, cname
+
+
+def _require_operator(username_arg: str, session: dict) -> str:
+    """买卖操作权限：仅 admin/operator（主席）。rep 只读。"""
+    username = _require_self(username_arg, session)
+    if session.get("role") not in ("admin", "operator"):
+        raise HTTPException(403, "无买卖权限（仅主席/管理员可操作股票，代表端只读）")
+    return username
+
 def _require_self(username_arg: str, session: dict) -> str:
     """请求体/查询参数中的 username 必须与 token 身份一致（admin 可代操作）。"""
     uname = (username_arg or "").strip()
@@ -274,6 +325,13 @@ async def auth_login(request: Request):
         db.execute("UPDATE users SET role=? WHERE id=?", (g_role, user["id"]))
         db.commit()
         user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+
+    # ── v1.3.0 公司级资金：同步用户归属公司 + 确保公司账户存在 ──
+    cid, cname = _sync_company_account(db, g_user, g_token)
+    if cid is not None:
+        db.execute("UPDATE users SET company_id=? WHERE id=?", (cid, user["id"]))
+        db.commit()
+        user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     db.close()
 
     u = dict(user)
@@ -304,47 +362,48 @@ def _require_admin(request: Request) -> str:
 
 @app.get("/admin/accounts")
 async def admin_accounts(request: Request):
-    """所有账户总览：用户 + 余额 + 持仓市值 + 订单数"""
+    """所有公司股票账户总览（v1.3.0 公司级：每公司资金 + 持仓市值 + 订单数）"""
     _require_admin(request)
     db = get_db()
-    users = db.execute("SELECT id, username, balance, role FROM users ORDER BY id").fetchall()
+    accounts = db.execute(
+        "SELECT company_id, company_name, balance FROM company_accounts ORDER BY company_id").fetchall()
     positions = db.execute(
-        "SELECT p.user_id, p.symbol, p.quantity, p.avg_price, s.current_price "
+        "SELECT p.company_id, p.symbol, p.quantity, p.avg_price, s.current_price "
         "FROM portfolios p LEFT JOIN stocks s ON p.symbol = s.symbol"
     ).fetchall()
     orders = db.execute(
-        "SELECT user_id, COUNT(*) AS cnt, "
+        "SELECT company_id, COUNT(*) AS cnt, "
         "SUM(CASE WHEN side='buy' THEN quantity ELSE 0 END) AS buy_qty, "
         "SUM(CASE WHEN side='sell' THEN quantity ELSE 0 END) AS sell_qty "
-        "FROM orders GROUP BY user_id"
+        "FROM orders GROUP BY company_id"
+    ).fetchall()
+    users_by_company = db.execute(
+        "SELECT company_id, COUNT(*) AS cnt FROM users WHERE company_id IS NOT NULL GROUP BY company_id"
     ).fetchall()
     db.close()
-    pos_map: dict[int, list] = {}
+    pos_map: dict = {}
     for p in positions:
-        pos_map.setdefault(p["user_id"], []).append(dict(p))
-    order_map: dict[int, dict] = {o["user_id"]: dict(o) for o in orders}
+        pos_map.setdefault(p["company_id"], []).append(dict(p))
+    order_map: dict = {o["company_id"]: dict(o) for o in orders}
+    user_map: dict = {r["company_id"]: r["cnt"] for r in users_by_company}
     result = []
-    for u in users:
-        uid = u["id"]
-        pos = pos_map.get(uid, [])
+    for acct in accounts:
+        cid = acct["company_id"]
+        pos = pos_map.get(cid, [])
         market_value = sum(
             (p["current_price"] or p["avg_price"] or 0) * p["quantity"] for p in pos
         )
-        # v1.3.0 跨库：真实现金余额经资金桥从区域账户读（本地 balance 已废弃）
-        try:
-            fq = _stock_fund_call(u["username"], "query", 0, "admin-accounts")
-            cash = float(fq.get("balance", 0))
-        except HTTPException:
-            cash = 0.0
+        cash = float(acct["balance"] or 0)
         result.append({
-            "id": uid,
-            "username": u["username"],
-            "role": u["role"],
+            "id": cid,
+            "company_id": cid,
+            "company_name": acct["company_name"],
+            "user_count": user_map.get(cid, 0),
             "balance": cash,
             "position_count": len(pos),
             "market_value": round(market_value, 2),
             "total_assets": round(cash + market_value, 2),
-            "orders": order_map.get(uid, {"cnt": 0, "buy_qty": 0, "sell_qty": 0}),
+            "orders": order_map.get(cid, {"cnt": 0, "buy_qty": 0, "sell_qty": 0}),
         })
     return result
 
@@ -435,12 +494,14 @@ async def admin_stock_update(symbol: str, request: Request):
 
 @app.post("/orders")
 async def place_order(request: Request, session: dict = Depends(_require_auth)):
-    """下单：买/卖（跨库资金桥 + 原子持仓更新 + 补偿）
-    v1.3.0 跨库一致性：资金从 gipfel-api 区域账户扣/加，本地 stocks.db 只记账。
-    buy：先扣款 → 本地写持仓（失败补偿回加）
-    sell：先加款（失败不动持仓）→ 本地减持仓"""
+    """下单：买/卖（公司级资金账户 + 主席权限）
+    v1.3.0 公司级改造：资金从本公司股票账户（company_accounts）扣/加，
+    与区域基建账户完全分开；订单/持仓记公司维度（同公司代表只读可见）。
+    权限：仅 admin/operator（主席）可买卖；rep 只读 403。
+    buy：先扣公司账户款 → 写持仓/订单（失败补偿回加）
+    sell：先加款到公司账户（失败不动持仓）→ 减持仓/订单"""
     data = await request.json()
-    username = _require_self(data.get("username"), session)
+    username = _require_operator(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
     side = (data.get("side") or "").strip().lower()
     try:
@@ -463,91 +524,111 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         db.close()
         raise HTTPException(404, f"股票 {symbol} 不存在")
 
+    # ── 公司维度：主席操作的是本公司股票账户 ──
+    cid = user["company_id"]
+    if not cid:
+        db.close()
+        raise HTTPException(400, "当前账号未绑定公司，无法买卖股票")
+    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone()
+    if not acct:
+        db.close()
+        raise HTTPException(400, "公司股票账户不存在，请重新登录")
     uid = user["id"]
     cost = round(price * quantity, 2)
-    order_key = str(uuid.uuid4())
 
     if side == "buy":
-        # ① 先扣区域账户款（失败直接 400/502，不写本地）
-        fund = _stock_fund_call(username, "buy", cost, order_key)
+        # ① 原子扣公司账户款 + 防透支（同区域账户机制）
+        cur = db.execute("UPDATE company_accounts SET balance = balance - ? WHERE company_id = ? AND balance >= ?",
+                         (cost, cid, cost))
+        if cur.rowcount == 0:
+            db.close()
+            raise HTTPException(400, f"公司可用资金不足：当前 {(acct['balance'] or 0):.2f}，需 ¥{cost:.2f}")
         try:
-            # ② 本地写持仓 + 订单
-            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+            # ② 写持仓（公司维度）+ 订单
+            pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
             if pos:
                 old_qty = pos["quantity"] or 0
                 old_avg = pos["avg_price"] or 0
                 new_qty = old_qty + quantity
                 new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
-                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
-                           (new_qty, new_avg, uid, symbol))
+                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE company_id=? AND symbol=?",
+                           (new_qty, new_avg, cid, symbol))
             else:
-                db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
-                           (uid, symbol, quantity, price))
-            db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
-                       (uid, symbol, side, quantity, price))
+                db.execute("INSERT INTO portfolios(company_id,user_id,symbol,quantity,avg_price) VALUES(?,?,?,?,?)",
+                           (cid, uid, symbol, quantity, price))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,?,'filled')",
+                       (cid, uid, symbol, side, quantity, price))
             db.commit()
         except Exception:
-            # ③ 本地失败 → 补偿回加资金（幂等 key 复用）
+            # ③ 本地失败 → 补偿回加公司账户
             db.rollback()
             db.close()
-            _stock_fund_rollback(username, "buy", cost, order_key)
+            db2 = get_db()
+            db2.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
+            db2.commit()
+            db2.close()
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
+        new_bal = db.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()["balance"]
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
-                "round": 0, "balance": fund.get("balance", 0),
+                "round": 0, "balance": new_bal,
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
     else:  # sell
-        pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+        pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
         if not pos or (pos["quantity"] or 0) < quantity:
             db.close()
             raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
-        # ① 先加款到区域账户（失败则不动持仓，避免持仓已减钱未回）
-        fund = _stock_fund_call(username, "sell", cost, order_key)
+        # ① 先加款到公司账户（失败则不动持仓）
+        db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
         try:
-            # ② 本地减持仓 + 订单
+            # ② 减持仓 + 订单
             new_qty = (pos["quantity"] or 0) - quantity
             if new_qty == 0:
-                db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
+                db.execute("DELETE FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol))
             else:
-                db.execute("UPDATE portfolios SET quantity=? WHERE user_id=? AND symbol=?",
-                           (new_qty, uid, symbol))
-            db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
-                       (uid, symbol, side, quantity, price))
+                db.execute("UPDATE portfolios SET quantity=? WHERE company_id=? AND symbol=?",
+                           (new_qty, cid, symbol))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,?,'filled')",
+                       (cid, uid, symbol, side, quantity, price))
             db.commit()
         except Exception:
-            # ③ 本地失败 → 补偿回扣资金（幂等 key 复用）
             db.rollback()
             db.close()
-            _stock_fund_rollback(username, "sell", cost, order_key)
+            db2 = get_db()
+            db2.execute("UPDATE company_accounts SET balance = balance - ? WHERE company_id = ?", (cost, cid))
+            db2.commit()
+            db2.close()
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
         db.close()
+        db3 = get_db()
+        sell_bal = db3.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()
+        db3.close()
         return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
-                "round": 0, "balance": fund.get("balance", 0),
+                "round": 0, "balance": sell_bal["balance"] if sell_bal else 0,
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
 
 
 @app.get("/portfolio")
 async def get_portfolio(request: Request, session: dict = Depends(_require_auth)):
-    """持仓总览（对齐 Trading Arena 前端契约）"""
+    """持仓总览（对齐 Trading Arena 前端契约）
+    v1.3.0 公司级：现金=本公司股票账户余额，持仓=公司维度（同公司代表可见）"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # ── v1.3.0 跨库一致性：现金余额从 gipfel-api 区域账户读（本地 balance 已废弃）──
-    try:
-        fund_q = _stock_fund_call(username, "query", 0, "portfolio-query")
-        cash = float(fund_q.get("balance", 0))
-    except HTTPException:
-        cash = 0.0  # 资金服务不可用时显示 0（行情/持仓仍可看）
+    # 现金 = 公司股票账户余额（与区域基建账户分开）
+    cid = user["company_id"]
+    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
+    cash = float(acct["balance"] or 0) if acct else 0.0
     stocks = {r["symbol"]: dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()}
     positions_raw = db.execute(
         "SELECT p.symbol, p.quantity, p.avg_price, s.name, s.current_price "
-        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.user_id=? AND p.quantity>0",
-        (user["id"],)).fetchall()
+        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.company_id=? AND p.quantity>0",
+        (cid,)).fetchall() if cid else []
     positions = []
     total_mv = 0.0
     total_cost = 0.0
@@ -588,21 +669,20 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
 
 @app.get("/fund-accounts")
 async def fund_accounts(request: Request, session: dict = Depends(_require_auth)):
-    """资金账户列表（v1.3.0 跨库：主资金账户 = 区域账户余额，经资金桥查询）"""
+    """资金账户列表（v1.3.0 公司级：主资金账户 = 本公司股票账户余额，与区域基建分开）"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    try:
-        fq = _stock_fund_call(username, "query", 0, "fund-accounts")
-        cash = float(fq.get("balance", 0))
-    except HTTPException:
-        cash = 0.0
+    cid = user["company_id"]
+    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
+    cash = float(acct["balance"] or 0) if acct else 0.0
+    acct_id = acct["company_id"] if acct else 0
     result = [{
-        "id": user["id"], "name": "主资金账户", "balance": cash,
-        "initialBalance": cash, "locked": False, "symbol": str(user["id"]),
+        "id": acct_id, "name": "公司股票资金账户", "balance": cash,
+        "initialBalance": cash, "locked": False, "symbol": str(acct_id),
     }]
     db.close()
     return result
@@ -621,13 +701,12 @@ async def create_fund_account(request: Request, session: dict = Depends(_require
         db.close()
         raise HTTPException(404, "用户不存在")
     db.close()
-    # v1.3.0 跨库：余额经资金桥查区域账户
-    try:
-        fq = _stock_fund_call(username, "query", 0, "create-fund-account")
-        cash = float(fq.get("balance", 0))
-    except HTTPException:
-        cash = 0.0
-    return {"accepted": True, "id": user["id"], "symbol": str(user["id"]), "name": name,
+    # v1.3.0 公司级：余额 = 公司股票账户（与区域基建分开）
+    cid = user["company_id"]
+    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
+    cash = float(acct["balance"] or 0) if acct else 0.0
+    acct_id = acct["company_id"] if acct else 0
+    return {"accepted": True, "id": acct_id, "symbol": str(acct_id), "name": name,
             "balance": cash, "fundsLocked": False}
 
 
