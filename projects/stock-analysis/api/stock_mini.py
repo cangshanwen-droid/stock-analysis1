@@ -52,8 +52,12 @@ async def root():
 DB = os.environ.get("DATABASE_URL", "stocks.db")
 
 def get_db():
+    """v1.3.1 并发加固：WAL 模式（读写并发不锁库）+ busy_timeout 5s（写锁等待）。
+    与 gipfel-api 对齐——买卖/资金高频写场景 delete 模式会写锁阻塞。"""
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 def init_db():
