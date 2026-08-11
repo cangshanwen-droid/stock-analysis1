@@ -33,4 +33,7 @@ projects/stock-analysis/.github/*
 !projects/stock-analysis/.github/workflows/
 projects/stock-analysis/.github/workflows/*
 !projects/stock-analysis/.github/workflows/ci.yml
+!projects/stock-analysis/tests/
+projects/stock-analysis/tests/*
+!projects/stock-analysis/tests/test_smoke.py
 !projects/stock-analysis/deploy/README-DEPLOY.md
