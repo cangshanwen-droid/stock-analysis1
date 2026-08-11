@@ -330,3 +330,204 @@ async def admin_stock_update(symbol: str, request: Request):
     result = dict(db.execute("SELECT * FROM stocks WHERE symbol=?", (sym,)).fetchone())
     db.close()
     return {"accepted": True, "stock": result}
+
+
+# ══════════════════════════════════════════════════════════════════
+# 交易端点（v2 新增：补全买卖/持仓/资金账户——此前线上只跑精简版，
+# 前端调用 /orders /portfolio /fund-accounts 全部 404，交易功能不可用）
+# 设计：复用现有 users/orders/portfolios/stocks 表 + 原子扣款，
+# 无 token 鉴权（与 /market 一致，身份由请求体 username 指定）
+# ══════════════════════════════════════════════════════════════════
+
+
+@app.post("/orders")
+async def place_order(request: Request):
+    """下单：买/卖（原子余额校验 + 持仓更新）"""
+    data = await request.json()
+    username = (data.get("username") or "").strip()
+    symbol = (data.get("symbol") or "").upper().strip()
+    side = (data.get("side") or "").strip().lower()
+    try:
+        price = float(data.get("price") or 0)
+        quantity = int(data.get("shares") or data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "价格或数量格式错误")
+    if side not in ("buy", "sell"):
+        raise HTTPException(400, "side 仅支持 buy/sell")
+    if price <= 0 or quantity <= 0:
+        raise HTTPException(400, "价格和数量必须为正数")
+
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user:
+        db.close()
+        raise HTTPException(404, "用户不存在，请先登录")
+    stock = db.execute("SELECT * FROM stocks WHERE symbol=?", (symbol,)).fetchone()
+    if not stock:
+        db.close()
+        raise HTTPException(404, f"股票 {symbol} 不存在")
+
+    uid = user["id"]
+    cost = round(price * quantity, 2)
+
+    if side == "buy":
+        # 原子扣款：余额不足则 0 行
+        cur = db.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
+                         (cost, uid, cost))
+        if cur.rowcount == 0:
+            db.close()
+            raise HTTPException(400, f"余额不足：当前余额 {(user['balance'] or 0):.2f}，需 ¥{cost:.2f}")
+        # 持仓 upsert（加权均价）
+        pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+        if pos:
+            old_qty = pos["quantity"] or 0
+            old_avg = pos["avg_price"] or 0
+            new_qty = old_qty + quantity
+            new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
+            db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
+                       (new_qty, new_avg, uid, symbol))
+        else:
+            db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
+                       (uid, symbol, quantity, price))
+        db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
+                   (uid, symbol, side, quantity, price))
+        db.commit()
+        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
+        db.close()
+        return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
+                "round": 0, "balance": new_bal,
+                "order": {"username": username, "symbol": symbol, "side": side,
+                          "price": price, "shares": quantity}}
+    else:  # sell
+        pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+        if not pos or (pos["quantity"] or 0) < quantity:
+            db.close()
+            raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
+        new_qty = (pos["quantity"] or 0) - quantity
+        if new_qty == 0:
+            db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
+        else:
+            db.execute("UPDATE portfolios SET quantity=? WHERE user_id=? AND symbol=?",
+                       (new_qty, uid, symbol))
+        db.execute("UPDATE users SET balance = balance + ? WHERE id=?", (cost, uid))
+        db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
+                   (uid, symbol, side, quantity, price))
+        db.commit()
+        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
+        db.close()
+        return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
+                "round": 0, "balance": new_bal,
+                "order": {"username": username, "symbol": symbol, "side": side,
+                          "price": price, "shares": quantity}}
+
+
+@app.get("/portfolio")
+async def get_portfolio(request: Request):
+    """持仓总览（对齐 Trading Arena 前端契约）"""
+    username = (request.query_params.get("username") or request.query_params.get("user") or "").strip()
+    if not username:
+        username = (request.headers.get("X-Username") or "").strip()
+    if not username:
+        raise HTTPException(400, "缺少 username 参数")
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user:
+        db.close()
+        raise HTTPException(404, "用户不存在")
+    cash = float(user["balance"] or 0)
+    stocks = {r["symbol"]: dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()}
+    positions_raw = db.execute(
+        "SELECT p.symbol, p.quantity, p.avg_price, s.name, s.current_price "
+        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.user_id=? AND p.quantity>0",
+        (user["id"],)).fetchall()
+    positions = []
+    total_mv = 0.0
+    total_cost = 0.0
+    for row in positions_raw:
+        symbol = row["symbol"]
+        shares = float(row["quantity"] or 0)
+        avg_cost = float(row["avg_price"] or 0)
+        cur_price = float(row["current_price"] or avg_cost)
+        name = row["name"] or symbol
+        mv = round(cur_price * shares, 2)
+        pnl = round(mv - avg_cost * shares, 2)
+        total_mv += mv
+        total_cost += avg_cost * shares
+        positions.append({
+            "symbol": symbol, "name": name, "shares": int(shares),
+            "avgCost": round(avg_cost, 2), "currentPrice": round(cur_price, 2),
+            "marketValue": mv, "pnl": pnl,
+            "pnlRatio": round(pnl / (avg_cost * shares) * 100, 2) if avg_cost and shares else 0,
+        })
+    orders = [dict(r) for r in db.execute(
+        "SELECT o.*, u.username FROM orders o JOIN users u ON o.user_id=u.id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 20",
+        (user["id"],)).fetchall()]
+    db.close()
+    total_pnl = round(total_mv - total_cost, 2)
+    return {
+        "user": {"username": username, "role": user["role"], "balance": cash},
+        "summary": {
+            "marketValue": round(total_mv, 2),
+            "totalAssets": round(cash + total_mv, 2),
+            "totalPnl": total_pnl,
+            "pnlRatio": round(total_pnl / total_cost * 100, 2) if total_cost else 0,
+        },
+        "positions": positions,
+        "orders": orders,
+        "recentTrades": orders,
+    }
+
+
+@app.get("/fund-accounts")
+async def fund_accounts(request: Request):
+    """资金账户列表（简化：主资金账户 = users.balance）"""
+    username = (request.query_params.get("username") or "").strip()
+    if not username:
+        raise HTTPException(400, "缺少 username 参数")
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user:
+        db.close()
+        raise HTTPException(404, "用户不存在")
+    result = [{
+        "id": user["id"], "name": "主资金账户", "balance": float(user["balance"] or 0),
+        "initialBalance": float(user["balance"] or 0), "locked": False, "symbol": str(user["id"]),
+    }]
+    db.close()
+    return result
+
+
+@app.post("/fund-accounts")
+async def create_fund_account(request: Request):
+    """创建资金账户（简化：单账户模式，返回主账户）"""
+    data = await request.json()
+    username = (data.get("username") or "").strip()
+    name = (data.get("name") or "主资金账户").strip()
+    amount = float(data.get("initial_balance") or 0)
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user:
+        db.close()
+        raise HTTPException(404, "用户不存在")
+    db.close()
+    return {"accepted": True, "id": user["id"], "symbol": str(user["id"]), "name": name,
+            "balance": float(user["balance"] or 0), "fundsLocked": False}
+
+
+@app.delete("/fund-accounts/{account_id}")
+async def delete_fund_account(account_id: int, request: Request):
+    """删除资金账户（主账户不可删）"""
+    raise HTTPException(400, "主资金账户不可删除")
+
+
+@app.get("/available-companies")
+async def available_companies():
+    """可选公司（简化：返回空——公司绑定由 Gipfel 管理端维护）"""
+    return []
+
+
+@app.get("/my-companies")
+async def my_companies(request: Request):
+    """我的公司（简化：返回空）"""
+    return []
+
