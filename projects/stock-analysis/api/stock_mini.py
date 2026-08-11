@@ -690,22 +690,23 @@ async def fund_accounts(request: Request, session: dict = Depends(_require_auth)
 
 @app.post("/fund-accounts")
 async def create_fund_account(request: Request, session: dict = Depends(_require_auth)):
-    """创建资金账户（简化：单账户模式，返回主账户）"""
+    """创建资金账户（v1.3.0 公司级：单账户模式，仅主席可调用；
+    initial_balance 忽略——资金只经买卖流转，防代表端注入资金）"""
     data = await request.json()
-    username = _require_self(data.get("username"), session)
+    username = _require_operator(data.get("username"), session)  # 仅主席/管理员
     name = (data.get("name") or "主资金账户").strip()
-    amount = float(data.get("initial_balance") or 0)
+    # amount 故意不使用：资金账户余额由买卖决定，不接受客户端注入
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    db.close()
-    # v1.3.0 公司级：余额 = 公司股票账户（与区域基建分开）
+    # v1.3.0 公司级：余额 = 公司股票账户（与区域基建分开）——查询须在 close 前
     cid = user["company_id"]
     acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
     cash = float(acct["balance"] or 0) if acct else 0.0
     acct_id = acct["company_id"] if acct else 0
+    db.close()
     return {"accepted": True, "id": acct_id, "symbol": str(acct_id), "name": name,
             "balance": cash, "fundsLocked": False}
 
