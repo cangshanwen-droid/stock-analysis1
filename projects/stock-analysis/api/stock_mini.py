@@ -163,6 +163,56 @@ def _require_auth(authorization: str = Header(default=""), username: str = Heade
     return session
 
 
+
+
+def _stock_fund_call(username: str, side: str, amount: float, idem_key: str):
+    """调用 gipfel-api 资金桥（跨库：区域账户扣/加/查询）。失败抛 HTTPException。
+    side: buy(扣) / sell(加) / query(查余额，amount/idem 忽略)"""
+    import urllib.request
+    import urllib.error
+    GIPFEL_API = os.environ.get("GIPFEL_API_URL", "http://127.0.0.1:8000")
+    if side == "query":
+        from urllib.parse import quote as _urlquote
+        url = f"{GIPFEL_API}/api/stock/fund?username={_urlquote(username)}"
+        req = urllib.request.Request(url, method="GET")
+    else:
+        payload = json.dumps({
+            "username": username, "side": side, "amount": round(amount, 2),
+            "idempotency_key": idem_key,
+        }).encode()
+        req = urllib.request.Request(
+            f"{GIPFEL_API}/api/stock/fund",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+    # 内部密钥（与 gipfel-api 的 ADMIN_KEY 同源，本机回环鉴权）
+    req.add_header("X-Internal-Key", os.environ.get("ADMIN_KEY", "gipfel-admin-dev"))
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read().decode()).get("detail", "")
+        except Exception:
+            detail = ""
+        if e.code == 400:
+            raise HTTPException(400, detail or "资金不足或参数错误")
+        raise HTTPException(502, f"资金服务暂不可用（{e.code}），请稍后重试")
+    except Exception:
+        raise HTTPException(502, "资金服务暂不可用，请稍后重试")
+
+
+def _stock_fund_rollback(username: str, side: str, amount: float, idem_key: str):
+    """补偿：买入失败回加 / 卖出失败回扣（幂等 key 复用，不重复执行）。"""
+    try:
+        reverse = "sell" if side == "buy" else "buy"
+        _stock_fund_call(username, reverse, amount, f"{idem_key}-rollback")
+    except Exception:
+        # 补偿失败记录到日志（对账脚本可发现）；不阻断主流程返回错误
+        print(f"[stock-fund-rollback-failed] username={username} side={side} amount={amount} key={idem_key}")
+
+
 def _require_self(username_arg: str, session: dict) -> str:
     """请求体/查询参数中的 username 必须与 token 身份一致（admin 可代操作）。"""
     uname = (username_arg or "").strip()
@@ -379,7 +429,10 @@ async def admin_stock_update(symbol: str, request: Request):
 
 @app.post("/orders")
 async def place_order(request: Request, session: dict = Depends(_require_auth)):
-    """下单：买/卖（原子余额校验 + 持仓更新）"""
+    """下单：买/卖（跨库资金桥 + 原子持仓更新 + 补偿）
+    v1.3.0 跨库一致性：资金从 gipfel-api 区域账户扣/加，本地 stocks.db 只记账。
+    buy：先扣款 → 本地写持仓（失败补偿回加）
+    sell：先加款（失败不动持仓）→ 本地减持仓"""
     data = await request.json()
     username = _require_self(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
@@ -406,33 +459,36 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
 
     uid = user["id"]
     cost = round(price * quantity, 2)
+    order_key = str(uuid.uuid4())
 
     if side == "buy":
-        # 原子扣款：余额不足则 0 行
-        cur = db.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
-                         (cost, uid, cost))
-        if cur.rowcount == 0:
+        # ① 先扣区域账户款（失败直接 400/502，不写本地）
+        fund = _stock_fund_call(username, "buy", cost, order_key)
+        try:
+            # ② 本地写持仓 + 订单
+            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+            if pos:
+                old_qty = pos["quantity"] or 0
+                old_avg = pos["avg_price"] or 0
+                new_qty = old_qty + quantity
+                new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
+                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
+                           (new_qty, new_avg, uid, symbol))
+            else:
+                db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
+                           (uid, symbol, quantity, price))
+            db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
+                       (uid, symbol, side, quantity, price))
+            db.commit()
+        except Exception:
+            # ③ 本地失败 → 补偿回加资金（幂等 key 复用）
+            db.rollback()
             db.close()
-            raise HTTPException(400, f"余额不足：当前余额 {(user['balance'] or 0):.2f}，需 ¥{cost:.2f}")
-        # 持仓 upsert（加权均价）
-        pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
-        if pos:
-            old_qty = pos["quantity"] or 0
-            old_avg = pos["avg_price"] or 0
-            new_qty = old_qty + quantity
-            new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
-            db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
-                       (new_qty, new_avg, uid, symbol))
-        else:
-            db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
-                       (uid, symbol, quantity, price))
-        db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
-                   (uid, symbol, side, quantity, price))
-        db.commit()
-        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
+            _stock_fund_rollback(username, "buy", cost, order_key)
+            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
-                "round": 0, "balance": new_bal,
+                "round": 0, "balance": fund.get("balance", 0),
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
     else:  # sell
@@ -440,20 +496,28 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         if not pos or (pos["quantity"] or 0) < quantity:
             db.close()
             raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
-        new_qty = (pos["quantity"] or 0) - quantity
-        if new_qty == 0:
-            db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
-        else:
-            db.execute("UPDATE portfolios SET quantity=? WHERE user_id=? AND symbol=?",
-                       (new_qty, uid, symbol))
-        db.execute("UPDATE users SET balance = balance + ? WHERE id=?", (cost, uid))
-        db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
-                   (uid, symbol, side, quantity, price))
-        db.commit()
-        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
+        # ① 先加款到区域账户（失败则不动持仓，避免持仓已减钱未回）
+        fund = _stock_fund_call(username, "sell", cost, order_key)
+        try:
+            # ② 本地减持仓 + 订单
+            new_qty = (pos["quantity"] or 0) - quantity
+            if new_qty == 0:
+                db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
+            else:
+                db.execute("UPDATE portfolios SET quantity=? WHERE user_id=? AND symbol=?",
+                           (new_qty, uid, symbol))
+            db.execute("INSERT INTO orders(user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,'filled')",
+                       (uid, symbol, side, quantity, price))
+            db.commit()
+        except Exception:
+            # ③ 本地失败 → 补偿回扣资金（幂等 key 复用）
+            db.rollback()
+            db.close()
+            _stock_fund_rollback(username, "sell", cost, order_key)
+            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
         db.close()
         return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
-                "round": 0, "balance": new_bal,
+                "round": 0, "balance": fund.get("balance", 0),
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
 
@@ -467,7 +531,12 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    cash = float(user["balance"] or 0)
+    # ── v1.3.0 跨库一致性：现金余额从 gipfel-api 区域账户读（本地 balance 已废弃）──
+    try:
+        fund_q = _stock_fund_call(username, "query", 0, "portfolio-query")
+        cash = float(fund_q.get("balance", 0))
+    except HTTPException:
+        cash = 0.0  # 资金服务不可用时显示 0（行情/持仓仍可看）
     stocks = {r["symbol"]: dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()}
     positions_raw = db.execute(
         "SELECT p.symbol, p.quantity, p.avg_price, s.name, s.current_price "
