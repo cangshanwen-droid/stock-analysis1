@@ -330,14 +330,20 @@ async def admin_accounts(request: Request):
         market_value = sum(
             (p["current_price"] or p["avg_price"] or 0) * p["quantity"] for p in pos
         )
+        # v1.3.0 跨库：真实现金余额经资金桥从区域账户读（本地 balance 已废弃）
+        try:
+            fq = _stock_fund_call(u["username"], "query", 0, "admin-accounts")
+            cash = float(fq.get("balance", 0))
+        except HTTPException:
+            cash = 0.0
         result.append({
             "id": uid,
             "username": u["username"],
             "role": u["role"],
-            "balance": u["balance"],
+            "balance": cash,
             "position_count": len(pos),
             "market_value": round(market_value, 2),
-            "total_assets": round((u["balance"] or 0) + market_value, 2),
+            "total_assets": round(cash + market_value, 2),
             "orders": order_map.get(uid, {"cnt": 0, "buy_qty": 0, "sell_qty": 0}),
         })
     return result
@@ -582,16 +588,21 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
 
 @app.get("/fund-accounts")
 async def fund_accounts(request: Request, session: dict = Depends(_require_auth)):
-    """资金账户列表（简化：主资金账户 = users.balance）"""
+    """资金账户列表（v1.3.0 跨库：主资金账户 = 区域账户余额，经资金桥查询）"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
+    try:
+        fq = _stock_fund_call(username, "query", 0, "fund-accounts")
+        cash = float(fq.get("balance", 0))
+    except HTTPException:
+        cash = 0.0
     result = [{
-        "id": user["id"], "name": "主资金账户", "balance": float(user["balance"] or 0),
-        "initialBalance": float(user["balance"] or 0), "locked": False, "symbol": str(user["id"]),
+        "id": user["id"], "name": "主资金账户", "balance": cash,
+        "initialBalance": cash, "locked": False, "symbol": str(user["id"]),
     }]
     db.close()
     return result
@@ -610,8 +621,14 @@ async def create_fund_account(request: Request, session: dict = Depends(_require
         db.close()
         raise HTTPException(404, "用户不存在")
     db.close()
+    # v1.3.0 跨库：余额经资金桥查区域账户
+    try:
+        fq = _stock_fund_call(username, "query", 0, "create-fund-account")
+        cash = float(fq.get("balance", 0))
+    except HTTPException:
+        cash = 0.0
     return {"accepted": True, "id": user["id"], "symbol": str(user["id"]), "name": name,
-            "balance": float(user["balance"] or 0), "fundsLocked": False}
+            "balance": cash, "fundsLocked": False}
 
 
 @app.delete("/fund-accounts/{account_id}")
