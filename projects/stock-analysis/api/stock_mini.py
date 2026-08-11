@@ -3,7 +3,7 @@
 index.html 注入 auto-login 脚本：iframe URL 带 ?token=&username= 时自动写入 localStorage 免登录
 """
 import sqlite3, os, json, uuid
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -136,6 +136,43 @@ async def create_stock(request: Request):
 def health():
     return {"status": "ok", "version": "1.1", "service": "stock-trading"}
 
+
+# ── 交易鉴权（v1.3.0 安全加固）：登录生成 token，交易端点必须带 Bearer token ──
+# 修复前：/orders /portfolio /fund-accounts 仅凭请求体 username 识别身份，
+# 公网可冒名操作任意账户。现改为：token → {username, role} 内存映射，
+# 交易端点校验 Authorization: Bearer <token>，且身份必须匹配（admin 可代操作）。
+TOKENS: dict = {}
+
+
+def _issue_token(username: str, role: str) -> str:
+    token = str(uuid.uuid4()) + str(uuid.uuid4())[:8]
+    TOKENS[token] = {"username": username, "role": role}
+    return token
+
+
+def _require_auth(authorization: str = Header(default=""), username: str = Header(default="", alias="X-Username")):
+    """校验 Bearer token；返回 token 对应的用户身份。
+    兼容前端两种传法：Authorization: Bearer <t> 或 X-Username 头。
+    """
+    token = ""
+    if authorization.startswith("Bearer "):
+        token = authorization[len("Bearer "):].strip()
+    session = TOKENS.get(token)
+    if not session:
+        raise HTTPException(401, "未登录或登录已失效，请重新登录")
+    return session
+
+
+def _require_self(username_arg: str, session: dict) -> str:
+    """请求体/查询参数中的 username 必须与 token 身份一致（admin 可代操作）。"""
+    uname = (username_arg or "").strip()
+    if not uname:
+        return session["username"]
+    if uname != session["username"] and session["role"] != "admin":
+        raise HTTPException(403, "无权操作其他用户账户")
+    return uname
+
+
 @app.post("/auth/login")
 async def auth_login(request: Request):
     """统一登录 v2：单一账号源 = Gipfel 管理系统（gipfel-api）。
@@ -192,7 +229,7 @@ async def auth_login(request: Request):
     u = dict(user)
     u.pop("password", None)  # 安全：绝不向客户端返回本地密码列（统一账号后恒为空，防御性移除）
     u["gipfel_token"] = g_token  # 一并返回软件端 token，前端可透传
-    return {"token": str(uuid.uuid4()), "user": u}
+    return {"token": _issue_token(username, u.get("role", "user")), "user": u}
 
 
 @app.post("/auth/register")
@@ -341,10 +378,10 @@ async def admin_stock_update(symbol: str, request: Request):
 
 
 @app.post("/orders")
-async def place_order(request: Request):
+async def place_order(request: Request, session: dict = Depends(_require_auth)):
     """下单：买/卖（原子余额校验 + 持仓更新）"""
     data = await request.json()
-    username = (data.get("username") or "").strip()
+    username = _require_self(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
     side = (data.get("side") or "").strip().lower()
     try:
@@ -422,13 +459,9 @@ async def place_order(request: Request):
 
 
 @app.get("/portfolio")
-async def get_portfolio(request: Request):
+async def get_portfolio(request: Request, session: dict = Depends(_require_auth)):
     """持仓总览（对齐 Trading Arena 前端契约）"""
-    username = (request.query_params.get("username") or request.query_params.get("user") or "").strip()
-    if not username:
-        username = (request.headers.get("X-Username") or "").strip()
-    if not username:
-        raise HTTPException(400, "缺少 username 参数")
+    username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
@@ -479,11 +512,9 @@ async def get_portfolio(request: Request):
 
 
 @app.get("/fund-accounts")
-async def fund_accounts(request: Request):
+async def fund_accounts(request: Request, session: dict = Depends(_require_auth)):
     """资金账户列表（简化：主资金账户 = users.balance）"""
-    username = (request.query_params.get("username") or "").strip()
-    if not username:
-        raise HTTPException(400, "缺少 username 参数")
+    username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
@@ -498,10 +529,10 @@ async def fund_accounts(request: Request):
 
 
 @app.post("/fund-accounts")
-async def create_fund_account(request: Request):
+async def create_fund_account(request: Request, session: dict = Depends(_require_auth)):
     """创建资金账户（简化：单账户模式，返回主账户）"""
     data = await request.json()
-    username = (data.get("username") or "").strip()
+    username = _require_self(data.get("username"), session)
     name = (data.get("name") or "主资金账户").strip()
     amount = float(data.get("initial_balance") or 0)
     db = get_db()
@@ -515,7 +546,7 @@ async def create_fund_account(request: Request):
 
 
 @app.delete("/fund-accounts/{account_id}")
-async def delete_fund_account(account_id: int, request: Request):
+async def delete_fund_account(account_id: int, request: Request, session: dict = Depends(_require_auth)):
     """删除资金账户（主账户不可删）"""
     raise HTTPException(400, "主资金账户不可删除")
 
