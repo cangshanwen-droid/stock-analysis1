@@ -216,8 +216,36 @@ def _stock_fund_rollback(username: str, side: str, amount: float, idem_key: str)
 
 def _sync_company_account(db, g_user, g_token=""):
     """v1.3.0 公司级资金：登录时同步用户所属公司并确保公司账户存在。
-    g_user 来自 gipfel-api 登录响应（含 org_id）；g_token 为软件端 JWT（查公司用）。
-    返回 (company_id, company_name) 或 (None, None)。"""
+    v1.3.1 多公司：优先取 g_user.company_ids（公司 id 列表，取第一个）；
+    org_id（组织 id）仅作单值回退。返回 (company_id, company_name) 或 (None, None)。"""
+    # ── 多公司优先：company_ids 是 companies.id 列表 ──
+    company_ids = g_user.get("company_ids") or []
+    if isinstance(company_ids, list) and len(company_ids) > 0:
+        cid = int(company_ids[0])
+        try:
+            import urllib.request
+            GIPFEL_API = os.environ.get("GIPFEL_API_URL", "http://127.0.0.1:8000")
+            headers = {}
+            if g_token:
+                headers["Authorization"] = f"Bearer {g_token}"
+            else:
+                headers["X-Internal-Key"] = os.environ.get("ADMIN_KEY", "gipfel-admin-dev")
+            req = urllib.request.Request(
+                f"{GIPFEL_API}/api/companies/{cid}",
+                headers=headers,
+                method="GET")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                company = json.loads(resp.read().decode())
+            cname = company.get("name") or ""
+        except Exception:
+            cname = ""
+        # 确保公司账户存在（初始 10 万）
+        db.execute("INSERT OR IGNORE INTO company_accounts(company_id, company_name, balance) VALUES(?,?,100000)",
+                   (cid, cname))
+        db.execute("UPDATE company_accounts SET company_name=? WHERE company_id=?", (cname, cid))
+        db.commit()
+        return cid, cname
+    # ── 单值回退：org_id（组织 id → 公司）──
     org_id = g_user.get("org_id")
     if not org_id:
         return None, None
