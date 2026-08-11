@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  stock-api:
+    name: stock-api 语法 + 冒烟
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+      - name: 安装依赖
+        run: pip install fastapi uvicorn pytest httpx
+      - name: 语法检查
+        run: python -m py_compile stock_mini.py
+      - name: 基础冒烟（导入 + 端点注册）
+        run: |
+          python -c "
+          import ast, sys
+          src = open('stock_mini.py').read()
+          tree = ast.parse(src)
+          routes = [n.args[0].value for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef,)) and hasattr(n, 'decorator_list') for d in n.decorator_list if isinstance(d, ast.Call) and getattr(d.func, 'attr', '') in ('get','post','put','delete','patch') and d.args and isinstance(d.args[0], ast.Constant)]
+          print('端点数:', len(routes))
+          required = ['/auth/login', '/orders', '/portfolio', '/fund-accounts', '/market', '/health']
+          missing = [r for r in required if r not in routes]
+          assert not missing, f'缺少端点: {missing}'
+          print('冒烟 OK')
+          "
