@@ -88,6 +88,14 @@ def init_db():
 def startup():
     init_db()
     db = get_db()
+    # ── v1.3.1 幂等迁移：orders 加 idempotency_key 列 + 部分唯一索引（空 key 不约束）──
+    cols = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
+    if "idempotency_key" not in cols:
+        db.execute("ALTER TABLE orders ADD COLUMN idempotency_key TEXT DEFAULT ''")
+        db.commit()
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_idem ON orders(idempotency_key) "
+               "WHERE idempotency_key != ''")
+    db.commit()
     if not db.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]:
         stocks = [
             ("JGONG", "晶工科技", 100, 98),
@@ -536,6 +544,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
     username = _require_operator(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
     side = (data.get("side") or "").strip().lower()
+    idem_key = (data.get("idempotency_key") or "").strip()
     try:
         price = float(data.get("price") or 0)
         quantity = int(data.get("shares") or data.get("quantity") or 0)
@@ -545,6 +554,19 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         raise HTTPException(400, "side 仅支持 buy/sell")
     if price <= 0 or quantity <= 0:
         raise HTTPException(400, "价格和数量必须为正数")
+
+    # ── v1.3.1 幂等：同 idempotency_key 已成交 → 直接返回原结果（防前端重提交双扣）──
+    if idem_key:
+        db0 = get_db()
+        dup = db0.execute("SELECT * FROM orders WHERE idempotency_key=? AND status='filled'",
+                          (idem_key,)).fetchone()
+        if dup:
+            db0.close()
+            return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
+                    "matched": dup["quantity"], "round": 0, "order": {
+                        "username": username, "symbol": dup["symbol"], "side": dup["side"],
+                        "price": dup["price"], "shares": dup["quantity"]}}
+        db0.close()
 
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
@@ -588,8 +610,8 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             else:
                 db.execute("INSERT INTO portfolios(company_id,user_id,symbol,quantity,avg_price) VALUES(?,?,?,?,?)",
                            (cid, uid, symbol, quantity, price))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,?,'filled')",
-                       (cid, uid, symbol, side, quantity, price))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
+                       (cid, uid, symbol, side, quantity, price, idem_key))
             db.commit()
         except Exception:
             # ③ 本地失败 → 补偿回加公司账户
@@ -621,8 +643,8 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             else:
                 db.execute("UPDATE portfolios SET quantity=? WHERE company_id=? AND symbol=?",
                            (new_qty, cid, symbol))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status) VALUES(?,?,?,?,?,?,'filled')",
-                       (cid, uid, symbol, side, quantity, price))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
+                       (cid, uid, symbol, side, quantity, price, idem_key))
             db.commit()
         except Exception:
             db.rollback()
