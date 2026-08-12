@@ -781,20 +781,18 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
 
 @app.get("/fund-accounts")
 async def fund_accounts(request: Request, session: dict = Depends(_require_auth)):
-    """资金账户列表（v1.3.0 公司级：主资金账户 = 本公司股票账户余额，与区域基建分开）"""
+    """资金账户列表（v1.3.1-3 用户级：每个账号一个股票账户 = 用户余额，与区域基建分开）"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    cid = user["company_id"]
-    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
-    cash = float(acct["balance"] or 0) if acct else 0.0
-    acct_id = acct["company_id"] if acct else 0
+    cash = float(user["balance"] or 0)
     result = [{
-        "id": acct_id, "name": "公司股票资金账户", "balance": cash,
-        "initialBalance": cash, "locked": False, "symbol": str(acct_id),
+        "id": user["id"], "name": "我的股票账户", "balance": cash,
+        "initialBalance": cash, "locked": not bool(user["adjustable"]),
+        "symbol": str(user["id"]),
     }]
     db.close()
     return result
@@ -874,14 +872,12 @@ async def create_fund_account(request: Request, session: dict = Depends(_require
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # v1.3.0 公司级：余额 = 公司股票账户（与区域基建分开）——查询须在 close 前
-    cid = user["company_id"]
-    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
-    cash = float(acct["balance"] or 0) if acct else 0.0
-    acct_id = acct["company_id"] if acct else 0
+    # v1.3.1-3 用户级：余额 = 用户股票账户（与区域基建分开）——查询须在 close 前
+    cash = float(user["balance"] or 0)
+    acct_id = user["id"]
     db.close()
     return {"accepted": True, "id": acct_id, "symbol": str(acct_id), "name": name,
-            "balance": cash, "fundsLocked": False}
+            "balance": cash, "fundsLocked": not bool(user["adjustable"])}
 
 
 @app.delete("/fund-accounts/{account_id}")
