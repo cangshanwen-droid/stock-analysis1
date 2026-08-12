@@ -86,6 +86,11 @@ def init_db():
             id INTEGER PRIMARY KEY, company_id INTEGER UNIQUE, company_name TEXT,
             balance REAL DEFAULT 100000, created_at TEXT DEFAULT (datetime('now'))
         );
+        -- v1.3.1 可用资金调整日志（幂等记录）
+        CREATE TABLE IF NOT EXISTS adjust_logs (
+            id INTEGER PRIMARY KEY, username TEXT, amount REAL, reason TEXT,
+            idempotency_key TEXT UNIQUE, created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     db.commit()
     db.close()
@@ -314,11 +319,17 @@ def _sync_company_account(db, g_user, g_token=""):
 
 
 def _require_operator(username_arg: str, session: dict) -> str:
-    """买卖操作权限：仅 admin/operator（主席）。rep 只读。"""
+    """资金调整/账户管理权限：仅 admin/operator（主席）。rep 无权调整资金。"""
     username = _require_self(username_arg, session)
     if session.get("role") not in ("admin", "operator"):
-        raise HTTPException(403, "无买卖权限（仅主席/管理员可操作股票，代表端只读）")
+        raise HTTPException(403, "无资金调整权限（仅主席/管理员可调整可用资金）")
     return username
+
+
+def _require_trader(username_arg: str, session: dict) -> str:
+    """买卖权限：admin/operator/rep 均可买卖本公司股票（v1.3.1 需求：代表可自行买卖）。
+    _require_self 已保证只能操作自己账户（admin 全量）。"""
+    return _require_self(username_arg, session)
 
 def _require_self(username_arg: str, session: dict) -> str:
     """请求体/查询参数中的 username 必须与 token 身份一致（admin 可代操作）。"""
@@ -563,7 +574,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
     buy：先扣公司账户款 → 写持仓/订单（失败补偿回加）
     sell：先加款到公司账户（失败不动持仓）→ 减持仓/订单"""
     data = await request.json()
-    username = _require_operator(data.get("username"), session)
+    username = _require_trader(data.get("username"), session)  # v1.3.1：rep 也可买卖
     symbol = (data.get("symbol") or "").upper().strip()
     side = (data.get("side") or "").strip().lower()
     idem_key = (data.get("idempotency_key") or "").strip()
@@ -779,6 +790,62 @@ async def fund_accounts(request: Request, session: dict = Depends(_require_auth)
     }]
     db.close()
     return result
+
+
+@app.post("/adjust-balance")
+async def adjust_balance(request: Request, session: dict = Depends(_require_auth)):
+    """v1.3.1 调整可用资金（仅 admin/operator 主席可调，rep 403）：
+    主席给代表/本公司注入或扣减股票可用资金。
+    请求: {username, amount(正=注入/负=扣减), reason?, idempotency_key?}
+    amount 不能为 0；扣减后余额不允许为负。"""
+    data = await request.json()
+    username = _require_operator(data.get("username"), session)  # 仅主席/管理员
+    try:
+        amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "金额格式错误")
+    if amount == 0:
+        raise HTTPException(400, "调整金额不能为 0")
+    reason = (data.get("reason") or "主席调整").strip()[:100]
+    idem_key = (data.get("idempotency_key") or "").strip()
+
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    if not user:
+        db.close()
+        raise HTTPException(404, "用户不存在")
+    cid = user["company_id"]
+    if not cid:
+        db.close()
+        raise HTTPException(400, "该用户未绑定公司，无法调整股票可用资金")
+
+    # 幂等：同 key 已调整 → 直接返回
+    if idem_key:
+        dup = db.execute("SELECT * FROM adjust_logs WHERE idempotency_key=?", (idem_key,)).fetchone()
+        if dup:
+            db.close()
+            return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）"}
+
+    # 扣减防负：条件 UPDATE
+    if amount < 0:
+        cur = db.execute(
+            "UPDATE company_accounts SET balance = balance + ? WHERE company_id = ? AND balance >= ?",
+            (amount, cid, -amount))
+        if cur.rowcount == 0:
+            db.close()
+            raise HTTPException(400, "扣减后余额不能为负（当前可用资金不足）")
+    else:
+        db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?",
+                   (amount, cid))
+    new_bal = db.execute("SELECT balance FROM company_accounts WHERE company_id=?",
+                         (cid,)).fetchone()["balance"]
+    if idem_key:
+        db.execute("INSERT OR IGNORE INTO adjust_logs(username, amount, reason, idempotency_key) VALUES(?,?,?,?)",
+                   (username, amount, reason, idem_key))
+    db.commit()
+    db.close()
+    return {"accepted": True, "reason": "", "detail": "可用资金已调整",
+            "username": username, "amount": amount, "balance": new_bal}
 
 
 @app.post("/fund-accounts")
