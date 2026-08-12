@@ -70,15 +70,21 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY, user_id INTEGER, symbol TEXT, side TEXT CHECK(side IN('buy','sell')),
-            quantity INTEGER, price REAL, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now'))
+            quantity INTEGER, price REAL, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now')),
+            company_id INTEGER, idempotency_key TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS portfolios (
             user_id INTEGER, symbol TEXT, quantity INTEGER,
-            avg_price REAL, PRIMARY KEY(user_id, symbol)
+            avg_price REAL, company_id INTEGER, PRIMARY KEY(user_id, symbol)
         );
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT,
-            balance REAL DEFAULT 100000, role TEXT DEFAULT 'user'
+            balance REAL DEFAULT 100000, role TEXT DEFAULT 'user', company_id INTEGER
+        );
+        -- 审核 P0-5 修复：company_accounts 表此前从未在 init_db 创建（DDL 漂移）
+        CREATE TABLE IF NOT EXISTS company_accounts (
+            id INTEGER PRIMARY KEY, company_id INTEGER UNIQUE, company_name TEXT,
+            balance REAL DEFAULT 100000, created_at TEXT DEFAULT (datetime('now'))
         );
     """)
     db.commit()
@@ -95,6 +101,16 @@ def startup():
         db.commit()
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_idem ON orders(idempotency_key) "
                "WHERE idempotency_key != ''")
+    db.commit()
+    # ── 审核 P0-5 迁移：存量库补 company_id 列（orders/portfolios/users）+ company_accounts 表 ──
+    for table in ("orders", "portfolios", "users"):
+        tcols = [c[1] for c in db.execute(f"PRAGMA table_info({table})").fetchall()]
+        if "company_id" not in tcols:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN company_id INTEGER")
+            db.commit()
+    db.execute("""CREATE TABLE IF NOT EXISTS company_accounts (
+        id INTEGER PRIMARY KEY, company_id INTEGER UNIQUE, company_name TEXT,
+        balance REAL DEFAULT 100000, created_at TEXT DEFAULT (datetime('now')))""")
     db.commit()
     if not db.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]:
         stocks = [
@@ -369,9 +385,15 @@ async def auth_login(request: Request):
     # ── v1.3.0 公司级资金：同步用户归属公司 + 确保公司账户存在 ──
     cid, cname = _sync_company_account(db, g_user, g_token)
     if cid is not None:
-        db.execute("UPDATE users SET company_id=? WHERE id=?", (cid, user["id"]))
+        db.execute("UPDATE users SET company_id=? WHERE id=? AND (company_id IS NULL OR company_id != ?)",
+                   (cid, user["id"], cid))
         db.commit()
-        user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    elif g_role != "admin" and user["company_id"] is not None:
+        # 审核 P1-5 修复：非 admin 用户已解绑公司（无 company_ids/org_id）→ 清空本地 company_id，
+        # 防止继续操作原公司账户（admin 保留——管理全量，无单公司绑定语义）
+        db.execute("UPDATE users SET company_id=NULL WHERE id=?", (user["id"],))
+        db.commit()
+    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     db.close()
 
     u = dict(user)
@@ -613,15 +635,23 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
                        (cid, uid, symbol, side, quantity, price, idem_key))
             db.commit()
-        except Exception:
-            # ③ 本地失败 → 补偿回加公司账户
+        except Exception as e:
+            # ③ 审核 P0-1 修复：rollback 已自动回退扣款——绝不再手动补偿（双重执行=凭空加钱）
+            #    并发同 key：INSERT 撞唯一索引 → 回滚后回读原订单返回幂等结果（资金桥示范模式）
             db.rollback()
+            if idem_key:
+                if isinstance(e, sqlite3.IntegrityError):
+                    db2 = get_db()
+                    dup = db2.execute("SELECT * FROM orders WHERE idempotency_key=? AND status='filled'",
+                                      (idem_key,)).fetchone()
+                    db2.close()
+                    if dup:
+                        return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
+                                "matched": dup["quantity"], "round": 0, "order": {
+                                    "username": username, "symbol": dup["symbol"], "side": dup["side"],
+                                    "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
-            db2 = get_db()
-            db2.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
-            db2.commit()
-            db2.close()
-            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
+            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
         new_bal = db.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()["balance"]
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
@@ -629,31 +659,40 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
     else:  # sell
-        pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
-        if not pos or (pos["quantity"] or 0) < quantity:
+        # ① 审核 P0-3 修复：持仓原子扣减（条件 UPDATE + rowcount 校验，防并发卖超）
+        cur = db.execute(
+            "UPDATE portfolios SET quantity = quantity - ? WHERE company_id=? AND symbol=? AND quantity >= ?",
+            (quantity, cid, symbol, quantity))
+        if cur.rowcount == 0:
+            pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
             db.close()
             raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
-        # ① 先加款到公司账户（失败则不动持仓）
-        db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
         try:
-            # ② 减持仓 + 订单
-            new_qty = (pos["quantity"] or 0) - quantity
-            if new_qty == 0:
+            # ② 加款到公司账户 + 清理零持仓 + 订单（同一事务，失败整体回滚）
+            db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
+            remaining = db.execute("SELECT quantity FROM portfolios WHERE company_id=? AND symbol=?",
+                                   (cid, symbol)).fetchone()
+            if remaining and (remaining["quantity"] or 0) == 0:
                 db.execute("DELETE FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol))
-            else:
-                db.execute("UPDATE portfolios SET quantity=? WHERE company_id=? AND symbol=?",
-                           (new_qty, cid, symbol))
             db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
                        (cid, uid, symbol, side, quantity, price, idem_key))
             db.commit()
-        except Exception:
+        except Exception as e:
+            # 审核 P0-1 修复：rollback 已自动回退持仓扣减与加款——绝不再手动补偿
             db.rollback()
+            if idem_key:
+                if isinstance(e, sqlite3.IntegrityError):
+                    db2 = get_db()
+                    dup = db2.execute("SELECT * FROM orders WHERE idempotency_key=? AND status='filled'",
+                                      (idem_key,)).fetchone()
+                    db2.close()
+                    if dup:
+                        return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
+                                "matched": dup["quantity"], "round": 0, "order": {
+                                    "username": username, "symbol": dup["symbol"], "side": dup["side"],
+                                    "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
-            db2 = get_db()
-            db2.execute("UPDATE company_accounts SET balance = balance - ? WHERE company_id = ?", (cost, cid))
-            db2.commit()
-            db2.close()
-            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已退回")
+            raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
         db.close()
         db3 = get_db()
         sell_bal = db3.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()
