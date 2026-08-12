@@ -814,6 +814,11 @@ async def adjust_balance(request: Request, session: dict = Depends(_require_auth
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
+    # v1.3.1-2 用户拍板：操作端/管理端的可用资金固定 100 万不能变——只允许调整代表（rep）
+    target_role = user["role"]
+    if target_role in ("admin", "operator"):
+        db.close()
+        raise HTTPException(400, f"操作端/管理端的可用资金固定，不可调整（仅可调整代表端可用资金）")
     cid = user["company_id"]
     if not cid:
         db.close()
