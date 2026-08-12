@@ -79,7 +79,8 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT,
-            balance REAL DEFAULT 100000, role TEXT DEFAULT 'user', company_id INTEGER
+            balance REAL DEFAULT 100000, role TEXT DEFAULT 'user', company_id INTEGER,
+            adjustable INTEGER DEFAULT 1
         );
         -- 审核 P0-5 修复：company_accounts 表此前从未在 init_db 创建（DDL 漂移）
         CREATE TABLE IF NOT EXISTS company_accounts (
@@ -113,6 +114,11 @@ def startup():
         if "company_id" not in tcols:
             db.execute(f"ALTER TABLE {table} ADD COLUMN company_id INTEGER")
             db.commit()
+    # ── v1.3.1-3 用户级账户：users 补 adjustable（1=可修改/0=不可修改，主席审计锁定）──
+    ucols = [c[1] for c in db.execute("PRAGMA table_info(users)").fetchall()]
+    if "adjustable" not in ucols:
+        db.execute("ALTER TABLE users ADD COLUMN adjustable INTEGER DEFAULT 1")
+        db.commit()
     db.execute("""CREATE TABLE IF NOT EXISTS company_accounts (
         id INTEGER PRIMARY KEY, company_id INTEGER UNIQUE, company_name TEXT,
         balance REAL DEFAULT 100000, created_at TEXT DEFAULT (datetime('now')))""")
@@ -381,16 +387,27 @@ async def auth_login(request: Request):
 
     # ── 本地 upsert：仅交易数据（密码列存空，不再自管）──
     db = get_db()
+    # v1.3.1-3 账户类型：从 gipfel 用户读取 stock_adjustable（1=可修改/0=主席审计锁定 100 万）
+    g_adjustable = g_user.get("stock_adjustable")
+    adj = 1 if g_adjustable is None else (1 if g_adjustable else 0)
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
-        db.execute("INSERT INTO users(username,password,balance,role) VALUES(?,?,100000,?)",
-                   (username, "", g_role))
+        db.execute("INSERT INTO users(username,password,balance,role,adjustable) VALUES(?,?,100000,?,?)",
+                   (username, "", g_role, adj))
         db.commit()
         user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    elif user["role"] != g_role:
-        # 角色变更实时跟随软件端
-        db.execute("UPDATE users SET role=? WHERE id=?", (g_role, user["id"]))
-        db.commit()
+    else:
+        updates = []
+        params = []
+        if user["role"] != g_role:
+            updates.append("role=?")
+            params.append(g_role)
+        if user["adjustable"] != adj:
+            updates.append("adjustable=?")
+            params.append(adj)
+        if updates:
+            db.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", (*params, user["id"]))
+            db.commit()
         user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
 
     # ── v1.3.0 公司级资金：同步用户归属公司 + 确保公司账户存在 ──
@@ -611,40 +628,33 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         db.close()
         raise HTTPException(404, f"股票 {symbol} 不存在")
 
-    # ── 公司维度：主席操作的是本公司股票账户 ──
-    cid = user["company_id"]
-    if not cid:
-        db.close()
-        raise HTTPException(400, "当前账号未绑定公司，无法买卖股票")
-    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone()
-    if not acct:
-        db.close()
-        raise HTTPException(400, "公司股票账户不存在，请重新登录")
+    # ── v1.3.1-3 用户级：每个账号一个股票账户（可用资金=users.balance）──
     uid = user["id"]
     cost = round(price * quantity, 2)
+    cur_bal = user["balance"] or 0
 
     if side == "buy":
-        # ① 原子扣公司账户款 + 防透支（同区域账户机制）
-        cur = db.execute("UPDATE company_accounts SET balance = balance - ? WHERE company_id = ? AND balance >= ?",
-                         (cost, cid, cost))
+        # ① 原子扣用户账户款 + 防透支
+        cur = db.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
+                         (cost, uid, cost))
         if cur.rowcount == 0:
             db.close()
-            raise HTTPException(400, f"公司可用资金不足：当前 {(acct['balance'] or 0):.2f}，需 ¥{cost:.2f}")
+            raise HTTPException(400, f"可用资金不足：当前 {cur_bal:.2f}，需 ¥{cost:.2f}")
         try:
-            # ② 写持仓（公司维度）+ 订单
-            pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
+            # ② 写持仓（用户维度）+ 订单
+            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
             if pos:
                 old_qty = pos["quantity"] or 0
                 old_avg = pos["avg_price"] or 0
                 new_qty = old_qty + quantity
                 new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
-                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE company_id=? AND symbol=?",
-                           (new_qty, new_avg, cid, symbol))
+                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
+                           (new_qty, new_avg, uid, symbol))
             else:
-                db.execute("INSERT INTO portfolios(company_id,user_id,symbol,quantity,avg_price) VALUES(?,?,?,?,?)",
-                           (cid, uid, symbol, quantity, price))
+                db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price,company_id) VALUES(?,?,?,?,?)",
+                           (uid, symbol, quantity, price, user["company_id"]))
             db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
-                       (cid, uid, symbol, side, quantity, price, idem_key))
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key))
             db.commit()
         except Exception as e:
             # ③ 审核 P0-1 修复：rollback 已自动回退扣款——绝不再手动补偿（双重执行=凭空加钱）
@@ -663,7 +673,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                                     "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
-        new_bal = db.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()["balance"]
+        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
                 "round": 0, "balance": new_bal,
@@ -672,21 +682,21 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
     else:  # sell
         # ① 审核 P0-3 修复：持仓原子扣减（条件 UPDATE + rowcount 校验，防并发卖超）
         cur = db.execute(
-            "UPDATE portfolios SET quantity = quantity - ? WHERE company_id=? AND symbol=? AND quantity >= ?",
-            (quantity, cid, symbol, quantity))
+            "UPDATE portfolios SET quantity = quantity - ? WHERE user_id=? AND symbol=? AND quantity >= ?",
+            (quantity, uid, symbol, quantity))
         if cur.rowcount == 0:
-            pos = db.execute("SELECT * FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol)).fetchone()
+            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
             db.close()
             raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
         try:
-            # ② 加款到公司账户 + 清理零持仓 + 订单（同一事务，失败整体回滚）
-            db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?", (cost, cid))
-            remaining = db.execute("SELECT quantity FROM portfolios WHERE company_id=? AND symbol=?",
-                                   (cid, symbol)).fetchone()
+            # ② 加款到用户账户 + 清理零持仓 + 订单（同一事务，失败整体回滚）
+            db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (cost, uid))
+            remaining = db.execute("SELECT quantity FROM portfolios WHERE user_id=? AND symbol=?",
+                                   (uid, symbol)).fetchone()
             if remaining and (remaining["quantity"] or 0) == 0:
-                db.execute("DELETE FROM portfolios WHERE company_id=? AND symbol=?", (cid, symbol))
+                db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
             db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
-                       (cid, uid, symbol, side, quantity, price, idem_key))
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key))
             db.commit()
         except Exception as e:
             # 审核 P0-1 修复：rollback 已自动回退持仓扣减与加款——绝不再手动补偿
@@ -706,7 +716,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
         db.close()
         db3 = get_db()
-        sell_bal = db3.execute("SELECT balance FROM company_accounts WHERE company_id=?", (cid,)).fetchone()
+        sell_bal = db3.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()
         db3.close()
         return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
                 "round": 0, "balance": sell_bal["balance"] if sell_bal else 0,
@@ -724,15 +734,13 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # 现金 = 公司股票账户余额（与区域基建账户分开）
-    cid = user["company_id"]
-    acct = db.execute("SELECT * FROM company_accounts WHERE company_id=?", (cid,)).fetchone() if cid else None
-    cash = float(acct["balance"] or 0) if acct else 0.0
+    # v1.3.1-3 用户级：现金=用户股票账户余额（每人一个账户）
+    cash = float(user["balance"] or 0)
     stocks = {r["symbol"]: dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()}
     positions_raw = db.execute(
         "SELECT p.symbol, p.quantity, p.avg_price, s.name, s.current_price "
-        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.company_id=? AND p.quantity>0",
-        (cid,)).fetchall() if cid else []
+        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.user_id=? AND p.quantity>0",
+        (user["id"],)).fetchall()
     positions = []
     total_mv = 0.0
     total_cost = 0.0
@@ -814,11 +822,11 @@ async def adjust_balance(request: Request, session: dict = Depends(_require_auth
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # v1.3.1-2 用户拍板：操作端/管理端的可用资金固定 100 万不能变——只允许调整代表（rep）
-    target_role = user["role"]
-    if target_role in ("admin", "operator"):
+    # v1.3.1-3 用户拍板：账户类型决定可调整性——仅「可修改」账户（代表）可调；
+    # 「不可修改」账户（主席审计，初始 100 万锁定）拒绝调整
+    if not user["adjustable"]:
         db.close()
-        raise HTTPException(400, f"操作端/管理端的可用资金固定，不可调整（仅可调整代表端可用资金）")
+        raise HTTPException(400, "该账户可用资金不可修改（主席审计账户 100 万锁定，仅代表账户可调整）")
     cid = user["company_id"]
     if not cid:
         db.close()
@@ -831,19 +839,19 @@ async def adjust_balance(request: Request, session: dict = Depends(_require_auth
             db.close()
             return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）"}
 
-    # 扣减防负：条件 UPDATE
+    # 扣减防负：条件 UPDATE（用户级账户）
     if amount < 0:
         cur = db.execute(
-            "UPDATE company_accounts SET balance = balance + ? WHERE company_id = ? AND balance >= ?",
-            (amount, cid, -amount))
+            "UPDATE users SET balance = balance + ? WHERE id = ? AND balance >= ?",
+            (amount, user["id"], -amount))
         if cur.rowcount == 0:
             db.close()
             raise HTTPException(400, "扣减后余额不能为负（当前可用资金不足）")
     else:
-        db.execute("UPDATE company_accounts SET balance = balance + ? WHERE company_id = ?",
-                   (amount, cid))
-    new_bal = db.execute("SELECT balance FROM company_accounts WHERE company_id=?",
-                         (cid,)).fetchone()["balance"]
+        db.execute("UPDATE users SET balance = balance + ? WHERE id = ?",
+                   (amount, user["id"]))
+    new_bal = db.execute("SELECT balance FROM users WHERE id=?",
+                         (user["id"],)).fetchone()["balance"]
     if idem_key:
         db.execute("INSERT OR IGNORE INTO adjust_logs(username, amount, reason, idempotency_key) VALUES(?,?,?,?)",
                    (username, amount, reason, idem_key))
