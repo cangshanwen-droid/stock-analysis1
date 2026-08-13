@@ -206,6 +206,40 @@ def stock_kline(symbol: str):
         })
     return candles[-120:]
 
+
+@app.get("/stocks/{symbol}/order-book")
+def stock_order_book(symbol: str):
+    """返回由已成交订单聚合的五档成交价位及大单提示。
+
+    当前撮合模式会立即成交，没有常驻挂单簿；因此这里明确返回的是历史成交
+    的买卖方向聚合，而非虚构的实时委托。客户端据此展示可追溯的盘口参考。
+    """
+    code = symbol.upper().strip()
+    db = get_db()
+    exists = db.execute("SELECT 1 FROM stocks WHERE symbol=? AND is_active=1", (code,)).fetchone()
+    if not exists:
+        db.close()
+        raise HTTPException(404, "股票不存在或已下市")
+
+    def levels(side: str, direction: str):
+        return [dict(row) for row in db.execute(
+            f"""SELECT price, SUM(quantity) AS quantity
+                FROM orders WHERE symbol=? AND side=? AND status='filled'
+                GROUP BY price ORDER BY price {direction} LIMIT 5""",
+            (code, side),
+        ).fetchall()]
+
+    large_trades = [dict(row) for row in db.execute(
+        """SELECT side, price, quantity, created_at
+           FROM orders WHERE symbol=? AND status='filled' AND quantity >= 1000
+           ORDER BY created_at DESC, id DESC LIMIT 5""",
+        (code,),
+    ).fetchall()]
+    bids = levels("buy", "DESC")
+    asks = levels("sell", "ASC")
+    db.close()
+    return {"symbol": code, "bids": bids, "asks": asks, "largeTrades": large_trades}
+
 @app.post("/market/stocks")
 async def create_stock(request: Request):
     # 安全验收 P0：上市公司创建必须管理密钥（桌面端 CompanyListPage 上市流程
