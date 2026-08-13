@@ -145,6 +145,67 @@ def market_data():
     db.close()
     return rows
 
+
+@app.get("/stocks/{symbol}/kline")
+def stock_kline(symbol: str):
+    """按成交订单生成日 K 线（OHLCV）。
+
+    本系统没有独立的行情撮合表，已成交订单是唯一可信的交易来源；因此以
+    ``created_at`` 的自然日聚合，并用订单 id 解决同秒成交时的开/收盘顺序。
+    无成交历史时返回当前价基准柱，便于原生工作台稳定显示新上市股票。
+    """
+    code = symbol.upper().strip()
+    db = get_db()
+    stock = db.execute(
+        "SELECT symbol, current_price, prev_price FROM stocks WHERE symbol=? AND is_active=1",
+        (code,),
+    ).fetchone()
+    if not stock:
+        db.close()
+        raise HTTPException(404, "股票不存在或已下市")
+
+    orders = db.execute(
+        """SELECT id, price, quantity, created_at
+           FROM orders
+           WHERE symbol=? AND status='filled'
+           ORDER BY created_at ASC, id ASC""",
+        (code,),
+    ).fetchall()
+    db.close()
+
+    by_day = {}
+    for order in orders:
+        day = str(order["created_at"] or "")[:10]
+        if not day:
+            continue
+        by_day.setdefault(day, []).append(order)
+
+    candles = []
+    for index, (day, rows) in enumerate(by_day.items(), start=1):
+        prices = [float(row["price"] or 0) for row in rows]
+        candles.append({
+            "round": index,
+            "time": f"{day}T00:00:00Z",
+            "open": round(prices[0], 2),
+            "high": round(max(prices), 2),
+            "low": round(min(prices), 2),
+            "close": round(prices[-1], 2),
+            "volume": sum(int(row["quantity"] or 0) for row in rows),
+        })
+
+    if not candles:
+        price = round(float(stock["current_price"] or stock["prev_price"] or 0), 2)
+        candles.append({
+            "round": 1,
+            "time": "1970-01-01T00:00:00Z",
+            "open": price,
+            "high": price,
+            "low": price,
+            "close": price,
+            "volume": 0,
+        })
+    return candles[-120:]
+
 @app.post("/market/stocks")
 async def create_stock(request: Request):
     # 安全验收 P0：上市公司创建必须管理密钥（桌面端 CompanyListPage 上市流程
