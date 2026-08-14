@@ -3,6 +3,7 @@
 index.html 注入 auto-login 脚本：iframe URL 带 ?token=&username= 时自动写入 localStorage 免登录
 """
 import sqlite3, os, json, uuid
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, Header, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -193,6 +194,27 @@ def stock_kline(symbol: str):
             "volume": sum(int(row["quantity"] or 0) for row in rows),
         })
 
+    # The quote table is the latest-price source of truth. Filled orders only
+    # cover historical trades, so add/update a live daily candle to keep the
+    # chart close aligned with the market tape without inventing volume.
+    current_day = datetime.utcnow().strftime("%Y-%m-%d")
+    current_price = round(float(stock["current_price"] or stock["prev_price"] or 0), 2)
+    if candles and str(candles[-1]["time"])[:10] == current_day:
+        candles[-1]["high"] = round(max(float(candles[-1]["high"]), current_price), 2)
+        candles[-1]["low"] = round(min(float(candles[-1]["low"]), current_price), 2)
+        candles[-1]["close"] = current_price
+    elif candles:
+        previous_close = round(float(candles[-1]["close"]), 2)
+        candles.append({
+            "round": len(candles) + 1,
+            "time": f"{current_day}T00:00:00Z",
+            "open": previous_close,
+            "high": max(previous_close, current_price),
+            "low": min(previous_close, current_price),
+            "close": current_price,
+            "volume": 0,
+        })
+
     if not candles:
         price = round(float(stock["current_price"] or stock["prev_price"] or 0), 2)
         candles.append({
@@ -238,7 +260,13 @@ def stock_order_book(symbol: str):
     bids = levels("buy", "DESC")
     asks = levels("sell", "ASC")
     db.close()
-    return {"symbol": code, "bids": bids, "asks": asks, "largeTrades": large_trades}
+    return {
+        "symbol": code,
+        "mode": "trade-distribution",
+        "bids": bids,
+        "asks": asks,
+        "largeTrades": large_trades,
+    }
 
 @app.post("/market/stocks")
 async def create_stock(request: Request):
@@ -420,17 +448,19 @@ def _sync_company_account(db, g_user, g_token=""):
 
 
 def _require_operator(username_arg: str, session: dict) -> str:
-    """资金调整/账户管理权限：仅 admin/operator（主席）。rep 无权调整资金。"""
-    username = _require_self(username_arg, session)
+    """资金调整/账户管理权限：admin/operator 共用；rep 无权调整资金。"""
     if session.get("role") not in ("admin", "operator"):
-        raise HTTPException(403, "无资金调整权限（仅主席/管理员可调整可用资金）")
-    return username
+        raise HTTPException(403, "无资金调整权限（仅操作员/管理员可调整可用资金）")
+    username = (username_arg or "").strip()
+    return username or session["username"]
 
 
 def _require_trader(username_arg: str, session: dict) -> str:
-    """买卖权限：admin/operator/rep 均可买卖本公司股票（v1.3.1 需求：代表可自行买卖）。
-    _require_self 已保证只能操作自己账户（admin 全量）。"""
-    return _require_self(username_arg, session)
+    """买卖权限仅限 admin/operator；代表端在 API 层强制只读。"""
+    username = _require_self(username_arg, session)
+    if session.get("role") not in ("admin", "operator"):
+        raise HTTPException(403, "代表端为只读行情模式，无股票买卖权限")
+    return username
 
 def _require_self(username_arg: str, session: dict) -> str:
     """请求体/查询参数中的 username 必须与 token 身份一致（admin 可代操作）。"""
@@ -686,7 +716,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
     buy：先扣公司账户款 → 写持仓/订单（失败补偿回加）
     sell：先加款到公司账户（失败不动持仓）→ 减持仓/订单"""
     data = await request.json()
-    username = _require_trader(data.get("username"), session)  # v1.3.1：rep 也可买卖
+    username = _require_trader(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
     side = (data.get("side") or "").strip().lower()
     idem_key = (data.get("idempotency_key") or "").strip()
@@ -891,6 +921,20 @@ async def fund_accounts(request: Request, session: dict = Depends(_require_auth)
     }]
     db.close()
     return result
+
+
+@app.get("/managed-stock-accounts")
+async def managed_stock_accounts(session: dict = Depends(_require_auth)):
+    """Return the shared stock-account directory for admin and operator roles."""
+    if session.get("role") not in ("admin", "operator"):
+        raise HTTPException(403, "No stock-account management permission")
+    db = get_db()
+    rows = [dict(row) for row in db.execute(
+        "SELECT id, username, role, balance, adjustable, company_id "
+        "FROM users ORDER BY role, username"
+    ).fetchall()]
+    db.close()
+    return rows
 
 
 @app.post("/adjust-balance")
