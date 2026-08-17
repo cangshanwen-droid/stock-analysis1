@@ -67,7 +67,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS stocks (
             id INTEGER PRIMARY KEY, symbol TEXT UNIQUE, name TEXT, current_price REAL,
             prev_price REAL, change_pct REAL, sector TEXT, is_active INTEGER DEFAULT 1,
-            premium_rate REAL DEFAULT 0, carbon_price REAL DEFAULT 0, revenue REAL DEFAULT 0
+            premium_rate REAL DEFAULT 50, carbon_price REAL DEFAULT 50, revenue REAL DEFAULT 0,
+            total_shares REAL DEFAULT 0, industry_pe REAL DEFAULT 20,
+            industry_carbon_mean REAL DEFAULT 50, manager TEXT DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY, user_id INTEGER, symbol TEXT, side TEXT CHECK(side IN('buy','sell')),
@@ -99,6 +101,27 @@ def init_db():
         CREATE TABLE IF NOT EXISTS audit_logs (
             id INTEGER PRIMARY KEY, action TEXT NOT NULL, detail TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS fund_accounts (
+            id INTEGER PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL,
+            balance REAL NOT NULL DEFAULT 0, initial_balance REAL NOT NULL DEFAULT 0,
+            locked INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS account_portfolios (
+            account_id INTEGER NOT NULL, symbol TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0,
+            avg_price REAL NOT NULL DEFAULT 0, PRIMARY KEY(account_id,symbol)
+        );
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, username TEXT NOT NULL,
+            stock_symbol TEXT NOT NULL, trade_type TEXT NOT NULL, price REAL NOT NULL,
+            shares INTEGER NOT NULL, round INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS kline (
+            id INTEGER PRIMARY KEY, stock_symbol TEXT NOT NULL, round INTEGER NOT NULL,
+            open_price REAL NOT NULL, high_price REAL NOT NULL, low_price REAL NOT NULL,
+            close_price REAL NOT NULL, volume INTEGER NOT NULL DEFAULT 0,
+            buy_total REAL NOT NULL DEFAULT 0, sell_total REAL NOT NULL DEFAULT 0,
+            change_pct REAL NOT NULL DEFAULT 0, UNIQUE(stock_symbol,round)
         );
         INSERT OR IGNORE INTO market_state(id,state,round) VALUES(1,'open',1);
     """)
@@ -138,6 +161,21 @@ def startup():
     if "adjustable" not in ucols:
         db.execute("ALTER TABLE users ADD COLUMN adjustable INTEGER DEFAULT 1")
         db.commit()
+    scols = [c[1] for c in db.execute("PRAGMA table_info(stocks)").fetchall()]
+    if "initial_price" not in scols:
+        db.execute("ALTER TABLE stocks ADD COLUMN initial_price REAL")
+        db.execute("UPDATE stocks SET initial_price=COALESCE(prev_price,current_price,1)")
+        db.commit()
+    for column, definition in (
+        ("total_shares", "REAL DEFAULT 0"), ("industry_pe", "REAL DEFAULT 20"),
+        ("industry_carbon_mean", "REAL DEFAULT 50"), ("manager", "TEXT DEFAULT ''")):
+        if column not in scols:
+            db.execute("ALTER TABLE stocks ADD COLUMN %s %s" % (column, definition))
+            db.commit()
+    ocols = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
+    if "account_id" not in ocols:
+        db.execute("ALTER TABLE orders ADD COLUMN account_id INTEGER")
+        db.commit()
     db.execute("""CREATE TABLE IF NOT EXISTS company_accounts (
         id INTEGER PRIMARY KEY, company_id INTEGER UNIQUE, company_name TEXT,
         balance REAL DEFAULT 100000, created_at TEXT DEFAULT (datetime('now')))""")
@@ -155,6 +193,45 @@ def startup():
             db.execute("INSERT OR IGNORE INTO stocks(symbol,name,current_price,prev_price,change_pct,sector) VALUES(?,?,?,?,?,?)",
                        (s, n, p, pp, round((p-pp)/pp*100,2), "综合"))
         db.commit()
+    db.execute("UPDATE stocks SET initial_price=COALESCE(initial_price,current_price,prev_price,1)")
+    # 原版 Trading Arena 资金账户模型：为存量用户建立默认账户，并迁移现有持仓。
+    for user in db.execute("SELECT id,username,balance FROM users ORDER BY id").fetchall():
+        account = db.execute("SELECT id FROM fund_accounts WHERE owner=? ORDER BY id LIMIT 1", (user["username"],)).fetchone()
+        if not account:
+            balance = float(user["balance"] or 0)
+            cur = db.execute(
+                "INSERT INTO fund_accounts(owner,name,balance,initial_balance,locked) VALUES(?,?,?,?,1)",
+                (user["username"], "主资金账户", balance, balance))
+            account_id = cur.lastrowid
+        else:
+            account_id = account["id"]
+        db.execute("UPDATE orders SET account_id=? WHERE user_id=? AND account_id IS NULL", (account_id, user["id"]))
+        if not db.execute("SELECT 1 FROM account_portfolios WHERE account_id=? LIMIT 1", (account_id,)).fetchone():
+            for position in db.execute("SELECT symbol,quantity,avg_price FROM portfolios WHERE user_id=? AND quantity>0", (user["id"],)).fetchall():
+                db.execute(
+                    "INSERT OR IGNORE INTO account_portfolios(account_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
+                    (account_id, position["symbol"], position["quantity"], position["avg_price"]))
+        db.execute("UPDATE users SET balance=0 WHERE id=?", (user["id"],))
+    # 将存量成交补成已结束轮次 K 线，避免切换结算模型后历史图表断层。
+    current_round = int(db.execute("SELECT round FROM market_state WHERE id=1").fetchone()[0])
+    if current_round > 1 and not db.execute("SELECT 1 FROM kline LIMIT 1").fetchone():
+        for stock in db.execute("SELECT symbol,initial_price FROM stocks WHERE is_active=1").fetchall():
+            previous_close = float(stock["initial_price"] or 1)
+            for round_no in range(1, current_round):
+                trades = db.execute("SELECT price,quantity FROM orders WHERE symbol=? AND round=? AND status='filled' ORDER BY id",
+                                    (stock["symbol"], round_no)).fetchall()
+                prices = [float(row["price"] or 0) for row in trades if float(row["price"] or 0) > 0]
+                close = prices[-1] if prices else previous_close
+                high = max([previous_close, close] + prices)
+                low = min([previous_close, close] + prices)
+                volume = sum(int(row["quantity"] or 0) for row in trades)
+                change = round((close - previous_close) / previous_close * 100, 2) if previous_close else 0
+                db.execute(
+                    "INSERT OR IGNORE INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (stock["symbol"], round_no, previous_close, high, low, close, volume, 0, 0, change))
+                previous_close = close
+    db.commit()
     db.close()
 
 def _market_status(db=None):
@@ -170,6 +247,51 @@ def _market_status(db=None):
 
 def _audit(db, action: str, detail: str = ""):
     db.execute("INSERT INTO audit_logs(action,detail) VALUES(?,?)", (action, detail[:500]))
+
+
+def _compute_round_price(stock, buy_total, sell_total, carbon_mean):
+    """原版 Trading Arena 收盘价公式，最终涨跌限制在上一收盘价的 ±10%。"""
+    previous = float(stock["prev_price"] or stock["current_price"] or 1)
+    demand = max(float(buy_total or 0), 1.0) / max(float(sell_total or 0), 1.0)
+    premium = float(stock["premium_rate"] or 50)
+    carbon = float(stock["carbon_price"] or 50)
+    premium_factor = 1 + 0.2 * (premium - 50) / 50
+    carbon_factor = 1 - 0.5 * (carbon - max(carbon_mean, 1)) / max(carbon_mean, 1)
+    target = previous * demand * premium_factor * carbon_factor
+    return max(round(previous * 0.9, 2), min(round(previous * 1.1, 2), round(target, 2)))
+
+
+def _rebuild_accounts_before_round(db, round_no):
+    """按成交历史重放资金与持仓，用于安全返回上一轮。"""
+    db.execute("UPDATE fund_accounts SET balance=initial_balance")
+    db.execute("DELETE FROM account_portfolios")
+    rows = db.execute(
+        "SELECT account_id,stock_symbol,trade_type,price,shares FROM transactions "
+        "WHERE round<? ORDER BY id", (round_no,)).fetchall()
+    for row in rows:
+        account_id = int(row["account_id"])
+        shares = int(row["shares"] or 0)
+        price = float(row["price"] or 0)
+        amount = round(price * shares, 2)
+        if row["trade_type"] == "buy":
+            db.execute("UPDATE fund_accounts SET balance=balance-? WHERE id=?", (amount, account_id))
+            position = db.execute(
+                "SELECT quantity,avg_price FROM account_portfolios WHERE account_id=? AND symbol=?",
+                (account_id, row["stock_symbol"])).fetchone()
+            if position:
+                old_quantity = int(position["quantity"] or 0)
+                new_quantity = old_quantity + shares
+                average = (old_quantity * float(position["avg_price"] or 0) + amount) / max(new_quantity, 1)
+                db.execute("UPDATE account_portfolios SET quantity=?,avg_price=? WHERE account_id=? AND symbol=?",
+                           (new_quantity, average, account_id, row["stock_symbol"]))
+            else:
+                db.execute("INSERT INTO account_portfolios(account_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
+                           (account_id, row["stock_symbol"], shares, price))
+        elif row["trade_type"] == "sell":
+            db.execute("UPDATE fund_accounts SET balance=balance+? WHERE id=?", (amount, account_id))
+            db.execute("UPDATE account_portfolios SET quantity=MAX(quantity-?,0) WHERE account_id=? AND symbol=?",
+                       (shares, account_id, row["stock_symbol"]))
+    db.execute("DELETE FROM account_portfolios WHERE quantity<=0")
 
 
 @app.get("/market")
@@ -193,6 +315,22 @@ def stock_kline(symbol: str):
     if not stock:
         db.close()
         raise HTTPException(404, "股票不存在或已下市")
+
+    settled = [dict(row) for row in db.execute(
+        "SELECT round,open_price,high_price,low_price,close_price,volume "
+        "FROM kline WHERE stock_symbol=? ORDER BY round",
+        (code,),
+    ).fetchall()]
+    if settled:
+        db.close()
+        return [{
+            "round": int(row["round"]), "time": "round-%s" % int(row["round"]),
+            "open": round(float(row["open_price"]), 2),
+            "high": round(float(row["high_price"]), 2),
+            "low": round(float(row["low_price"]), 2),
+            "close": round(float(row["close_price"]), 2),
+            "volume": int(row["volume"] or 0),
+        } for row in settled][-120:]
 
     orders = db.execute(
         """SELECT id, price, quantity, created_at, round
@@ -289,6 +427,11 @@ async def create_stock(request: Request):
     name = data.get("name", "")
     price = data.get("price") or data.get("initial_price", 100)
     sector = data.get("sector", "综合")
+    total_shares = float(data.get("total_shares", 0) or 0)
+    revenue = float(data.get("revenue", 0) or 0)
+    industry_pe = float(data.get("industry_pe", 20) or 20)
+    premium_rate = float(data.get("premium_rate", 50) or 50)
+    carbon_price = float(data.get("carbon_price", 50) or 50)
     if not symbol or not name:
         raise HTTPException(400, "缺少 symbol 或 name")
     db = get_db()
@@ -297,8 +440,8 @@ async def create_stock(request: Request):
         db.close()
         raise HTTPException(409, f"股票 {symbol} 已存在")
     db.execute(
-        "INSERT INTO stocks(symbol,name,current_price,prev_price,change_pct,sector) VALUES(?,?,?,?,?,?)",
-        (symbol, name, float(price), float(price), 0, sector))
+        "INSERT INTO stocks(symbol,name,current_price,prev_price,change_pct,sector,initial_price,total_shares,revenue,industry_pe,premium_rate,carbon_price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        (symbol, name, float(price), float(price), 0, sector, float(price), total_shares, revenue, industry_pe, premium_rate, carbon_price))
     db.commit()
     stock_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     row = dict(db.execute("SELECT * FROM stocks WHERE id=?", (stock_id,)).fetchone())
@@ -634,19 +777,36 @@ async def admin_market_close(request: Request):
     if status["state"] != "open":
         db.close()
         raise HTTPException(409, "当前轮次已经收盘")
-    for stock in db.execute("SELECT symbol,current_price FROM stocks WHERE is_active=1").fetchall():
+    stocks = db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()
+    carbon_values = [float(stock["carbon_price"] or 50) for stock in stocks]
+    carbon_mean = sum(carbon_values) / len(carbon_values) if carbon_values else 50
+    for stock in stocks:
         trades = db.execute(
-            "SELECT price FROM orders WHERE symbol=? AND round=? AND status='filled' ORDER BY id",
-            (stock["symbol"], status["round"]),
-        ).fetchall()
-        if trades:
-            previous = float(stock["current_price"] or trades[0]["price"] or 0)
-            close = float(trades[-1]["price"] or previous)
-            change = round((close - previous) / previous * 100, 2) if previous else 0
-            db.execute(
-                "UPDATE stocks SET prev_price=?,current_price=?,change_pct=? WHERE symbol=?",
-                (previous, close, change, stock["symbol"]),
-            )
+            "SELECT trade_type,price,shares FROM transactions WHERE stock_symbol=? AND round=? ORDER BY id",
+            (stock["symbol"], status["round"])).fetchall()
+        previous = float(stock["prev_price"] or stock["current_price"] or 1)
+        buy_total = sum(float(row["price"]) * int(row["shares"]) for row in trades if row["trade_type"] == "buy")
+        sell_total = sum(float(row["price"]) * int(row["shares"]) for row in trades if row["trade_type"] == "sell")
+        buy_volume = sum(int(row["shares"]) for row in trades if row["trade_type"] == "buy")
+        sell_volume = sum(int(row["shares"]) for row in trades if row["trade_type"] == "sell")
+        volume = max(buy_volume, sell_volume)
+        close = _compute_round_price(stock, buy_total, sell_total, carbon_mean) if volume else previous
+        prices = [float(row["price"]) for row in trades if float(row["price"] or 0) > 0]
+        if volume:
+            ratio = buy_volume / max(sell_volume, 1)
+            upper_spread = close * (0.001 + 0.002 * min(ratio, 5))
+            lower_spread = close * (0.001 + 0.002 * min(1 / max(ratio, 0.001), 5))
+        else:
+            upper_spread = lower_spread = 0
+        high = max([previous, close] + prices) + upper_spread
+        low = max(0.01, min([previous, close] + prices) - lower_spread)
+        change = round((close - previous) / previous * 100, 2) if previous else 0
+        db.execute("DELETE FROM kline WHERE stock_symbol=? AND round=?", (stock["symbol"], status["round"]))
+        db.execute(
+            "INSERT INTO kline(stock_symbol,round,open_price,high_price,low_price,close_price,volume,buy_total,sell_total,change_pct) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (stock["symbol"], status["round"], previous, high, low, close, volume, buy_total, sell_total, change))
+        db.execute("UPDATE stocks SET current_price=?,change_pct=? WHERE symbol=?", (close, change, stock["symbol"]))
     db.execute("UPDATE market_state SET state='closed' WHERE id=1")
     _audit(db, "market.close", "round=%s" % status["round"])
     db.commit()
@@ -679,11 +839,17 @@ async def admin_market_previous_round(request: Request):
     if status["round"] <= 1:
         db.close()
         raise HTTPException(409, "当前已经是第 1 轮")
-    current_orders = db.execute("SELECT COUNT(*) FROM orders WHERE round=?", (status["round"],)).fetchone()[0]
-    if current_orders:
-        db.close()
-        raise HTTPException(409, "当前轮次已有成交，为保护资金与持仓不能直接回退；请使用回到第 1 轮")
     previous_round = status["round"] - 1
+    db.execute("DELETE FROM transactions WHERE round>=?", (previous_round,))
+    db.execute("DELETE FROM orders WHERE round>=?", (previous_round,))
+    db.execute("DELETE FROM kline WHERE round>=?", (previous_round,))
+    _rebuild_accounts_before_round(db, previous_round)
+    for stock in db.execute("SELECT symbol,initial_price FROM stocks WHERE is_active=1").fetchall():
+        prior = db.execute("SELECT close_price FROM kline WHERE stock_symbol=? AND round=?",
+                           (stock["symbol"], previous_round - 1)).fetchone()
+        price = float(prior["close_price"] if prior else stock["initial_price"] or 1)
+        db.execute("UPDATE stocks SET current_price=?,prev_price=?,change_pct=0 WHERE symbol=?",
+                   (price, price, stock["symbol"]))
     db.execute("UPDATE market_state SET state='open',round=? WHERE id=1", (previous_round,))
     _audit(db, "market.previous", "round=%s" % previous_round)
     db.commit()
@@ -699,9 +865,13 @@ async def admin_market_reset_round1(request: Request):
     db = get_db()
     db.execute("DELETE FROM orders")
     db.execute("DELETE FROM portfolios")
-    db.execute("UPDATE stocks SET prev_price=current_price,change_pct=0")
+    db.execute("DELETE FROM transactions")
+    db.execute("DELETE FROM account_portfolios")
+    db.execute("DELETE FROM kline")
+    db.execute("DELETE FROM fund_accounts")
+    db.execute("UPDATE stocks SET current_price=COALESCE(initial_price,current_price),prev_price=COALESCE(initial_price,current_price),change_pct=0")
     db.execute("UPDATE market_state SET state='open',round=1 WHERE id=1")
-    _audit(db, "market.reset", "round=1; orders and positions cleared")
+    _audit(db, "market.reset", "round=1; orders, positions and fund accounts cleared")
     db.commit()
     db.close()
     return {"success": True, "state": "open", "round": 1}
@@ -724,7 +894,7 @@ async def admin_stock_delete(symbol: str, request: Request):
     _require_admin(request)
     code = symbol.upper().strip()
     db = get_db()
-    holding = db.execute("SELECT COALESCE(SUM(quantity),0) FROM portfolios WHERE symbol=?", (code,)).fetchone()[0]
+    holding = db.execute("SELECT COALESCE(SUM(quantity),0) FROM account_portfolios WHERE symbol=?", (code,)).fetchone()[0]
     if holding:
         db.close()
         raise HTTPException(409, "该股票仍有持仓，不能下市")
@@ -751,49 +921,24 @@ async def admin_stocks_restore(request: Request):
 
 @app.get("/admin/accounts")
 async def admin_accounts(request: Request):
-    """所有公司股票账户总览（v1.3.0 公司级：每公司资金 + 持仓市值 + 订单数）"""
+    """管理员查看所有独立资金账户、资产和持仓。"""
     _require_admin(request)
     db = get_db()
-    accounts = db.execute(
-        "SELECT company_id, company_name, balance FROM company_accounts ORDER BY company_id").fetchall()
-    positions = db.execute(
-        "SELECT p.company_id, p.symbol, p.quantity, p.avg_price, s.current_price "
-        "FROM portfolios p LEFT JOIN stocks s ON p.symbol = s.symbol"
-    ).fetchall()
-    orders = db.execute(
-        "SELECT company_id, COUNT(*) AS cnt, "
-        "SUM(CASE WHEN side='buy' THEN quantity ELSE 0 END) AS buy_qty, "
-        "SUM(CASE WHEN side='sell' THEN quantity ELSE 0 END) AS sell_qty "
-        "FROM orders GROUP BY company_id"
-    ).fetchall()
-    users_by_company = db.execute(
-        "SELECT company_id, COUNT(*) AS cnt FROM users WHERE company_id IS NOT NULL GROUP BY company_id"
-    ).fetchall()
-    db.close()
-    pos_map: dict = {}
-    for p in positions:
-        pos_map.setdefault(p["company_id"], []).append(dict(p))
-    order_map: dict = {o["company_id"]: dict(o) for o in orders}
-    user_map: dict = {r["company_id"]: r["cnt"] for r in users_by_company}
+    accounts = db.execute("SELECT * FROM fund_accounts ORDER BY owner,id").fetchall()
+    prices = {row["symbol"]: float(row["current_price"] or 0) for row in db.execute("SELECT symbol,current_price FROM stocks").fetchall()}
     result = []
-    for acct in accounts:
-        cid = acct["company_id"]
-        pos = pos_map.get(cid, [])
-        market_value = sum(
-            (p["current_price"] or p["avg_price"] or 0) * p["quantity"] for p in pos
-        )
-        cash = float(acct["balance"] or 0)
+    for account in accounts:
+        positions = db.execute("SELECT symbol,quantity,avg_price FROM account_portfolios WHERE account_id=? AND quantity>0",
+                               (account["id"],)).fetchall()
+        market_value = sum(prices.get(row["symbol"], float(row["avg_price"] or 0)) * int(row["quantity"] or 0) for row in positions)
+        cash = float(account["balance"] or 0)
         result.append({
-            "id": cid,
-            "company_id": cid,
-            "company_name": acct["company_name"],
-            "user_count": user_map.get(cid, 0),
-            "balance": cash,
-            "position_count": len(pos),
-            "market_value": round(market_value, 2),
+            "id": account["id"], "account_id": account["id"], "account_name": account["name"],
+            "company_name": account["owner"], "owner": account["owner"], "user_count": 1,
+            "balance": cash, "position_count": len(positions), "market_value": round(market_value, 2),
             "total_assets": round(cash + market_value, 2),
-            "orders": order_map.get(cid, {"cnt": 0, "buy_qty": 0, "sell_qty": 0}),
         })
+    db.close()
     return result
 
 
@@ -837,8 +982,7 @@ async def admin_stocks(request: Request):
 
 @app.patch("/admin/stocks/{symbol}")
 async def admin_stock_update(symbol: str, request: Request):
-    """同步区域经济指标到股票：premium_rate(幸福度) / carbon_price(碳排) / revenue(人口)
-    同时按指标调整现价：幸福度↑→价格↑，碳排↑→价格↓，幅度 ±2% 内"""
+    """同步区域经济指标；指标只在收盘结算公式中影响下一收盘价。"""
     _require_admin(request)
     data = await request.json()
     sym = symbol.upper()
@@ -849,24 +993,16 @@ async def admin_stock_update(symbol: str, request: Request):
         raise HTTPException(404, f"股票 {sym} 不存在")
     updates = []
     params = []
-    for key in ("premium_rate", "carbon_price", "revenue"):
+    for key in ("premium_rate", "carbon_price", "revenue", "total_shares", "industry_pe", "industry_carbon_mean"):
         if key in data:
             updates.append(f"{key}=?")
             params.append(float(data[key]))
+    if "manager" in data:
+        updates.append("manager=?")
+        params.append(str(data["manager"] or "").strip()[:80])
     if updates:
         params.append(sym)
         db.execute(f"UPDATE stocks SET {', '.join(updates)} WHERE symbol=?", params)
-        # 价格联动：premium_rate 上调→涨，carbon_price 上调→跌
-        row = db.execute("SELECT * FROM stocks WHERE symbol=?", (sym,)).fetchone()
-        price = row["current_price"]
-        drift = 0.0
-        if row["premium_rate"]:
-            drift += (row["premium_rate"] - 50) / 50 * 0.02  # 幸福度高于50上调
-        if row["carbon_price"]:
-            drift -= row["carbon_price"] / 500 * 0.02        # 碳排价格上涨下跌
-        new_price = max(0.01, round(price * (1 + drift), 2))
-        db.execute("UPDATE stocks SET prev_price=?, current_price=?, change_pct=? WHERE symbol=?",
-                   (price, new_price, round((new_price - price) / price * 100, 2), sym))
         db.commit()
     result = dict(db.execute("SELECT * FROM stocks WHERE symbol=?", (sym,)).fetchone())
     db.close()
@@ -883,12 +1019,7 @@ async def admin_stock_update(symbol: str, request: Request):
 
 @app.post("/orders")
 async def place_order(request: Request, session: dict = Depends(_require_auth)):
-    """下单：买/卖（公司级资金账户 + 主席权限）
-    v1.3.0 公司级改造：资金从本公司股票账户（company_accounts）扣/加，
-    与区域基建账户完全分开；订单/持仓记公司维度（同公司代表只读可见）。
-    权限：仅 admin/operator（主席）可买卖；rep 只读 403。
-    buy：先扣公司账户款 → 写持仓/订单（失败补偿回加）
-    sell：先加款到公司账户（失败不动持仓）→ 减持仓/订单"""
+    """按 Trading Arena 资金账户下单；admin/operator 可交易，rep 只读。"""
     data = await request.json()
     username = _require_trader(data.get("username"), session)
     symbol = (data.get("symbol") or "").upper().strip()
@@ -932,33 +1063,49 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         db.close()
         raise HTTPException(404, f"股票 {symbol} 不存在")
 
-    # ── v1.3.1-3 用户级：每个账号一个股票账户（可用资金=users.balance）──
+    account_id = data.get("account_id")
+    try:
+        account_id = int(account_id) if account_id is not None else None
+    except (TypeError, ValueError):
+        db.close()
+        raise HTTPException(400, "资金账户格式错误")
+    if account_id is None:
+        fallback = db.execute("SELECT id FROM fund_accounts WHERE owner=? AND locked=1 ORDER BY id LIMIT 1",
+                              (username,)).fetchone()
+        account_id = int(fallback["id"]) if fallback else None
+    account = db.execute("SELECT * FROM fund_accounts WHERE id=? AND owner=? AND locked=1",
+                         (account_id, username)).fetchone() if account_id else None
+    if not account:
+        db.close()
+        raise HTTPException(400, "请先创建并选择资金账户")
+
     uid = user["id"]
     cost = round(price * quantity, 2)
-    cur_bal = user["balance"] or 0
+    cur_bal = float(account["balance"] or 0)
 
     if side == "buy":
-        # ① 原子扣用户账户款 + 防透支
-        cur = db.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
-                         (cost, uid, cost))
+        cur = db.execute("UPDATE fund_accounts SET balance=balance-? WHERE id=? AND owner=? AND balance>=?",
+                         (cost, account_id, username, cost))
         if cur.rowcount == 0:
             db.close()
             raise HTTPException(400, f"可用资金不足：当前 {cur_bal:.2f}，需 ¥{cost:.2f}")
         try:
             # ② 写持仓（用户维度）+ 订单
-            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+            pos = db.execute("SELECT * FROM account_portfolios WHERE account_id=? AND symbol=?", (account_id, symbol)).fetchone()
             if pos:
                 old_qty = pos["quantity"] or 0
                 old_avg = pos["avg_price"] or 0
                 new_qty = old_qty + quantity
                 new_avg = round((old_qty * old_avg + cost) / new_qty, 4)
-                db.execute("UPDATE portfolios SET quantity=?, avg_price=? WHERE user_id=? AND symbol=?",
-                           (new_qty, new_avg, uid, symbol))
+                db.execute("UPDATE account_portfolios SET quantity=?,avg_price=? WHERE account_id=? AND symbol=?",
+                           (new_qty, new_avg, account_id, symbol))
             else:
-                db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price,company_id) VALUES(?,?,?,?,?)",
-                           (uid, symbol, quantity, price, user["company_id"]))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round) VALUES(?,?,?,?,?,?,'filled',?,?)",
-                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round))
+                db.execute("INSERT INTO account_portfolios(account_id,symbol,quantity,avg_price) VALUES(?,?,?,?)",
+                           (account_id, symbol, quantity, price))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round,account_id) VALUES(?,?,?,?,?,?,'filled',?,?,?)",
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round, account_id))
+            db.execute("INSERT INTO transactions(account_id,username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?,?)",
+                       (account_id, username, symbol, side, price, quantity, current_round))
             db.commit()
         except Exception as e:
             # ③ 审核 P0-1 修复：rollback 已自动回退扣款——绝不再手动补偿（双重执行=凭空加钱）
@@ -977,7 +1124,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                                     "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
-        new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
+        new_bal = db.execute("SELECT balance FROM fund_accounts WHERE id=?", (account_id,)).fetchone()["balance"]
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
                 "round": current_round, "balance": new_bal,
@@ -986,21 +1133,23 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
     else:  # sell
         # ① 审核 P0-3 修复：持仓原子扣减（条件 UPDATE + rowcount 校验，防并发卖超）
         cur = db.execute(
-            "UPDATE portfolios SET quantity = quantity - ? WHERE user_id=? AND symbol=? AND quantity >= ?",
-            (quantity, uid, symbol, quantity))
+            "UPDATE account_portfolios SET quantity=quantity-? WHERE account_id=? AND symbol=? AND quantity>=?",
+            (quantity, account_id, symbol, quantity))
         if cur.rowcount == 0:
-            pos = db.execute("SELECT * FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol)).fetchone()
+            pos = db.execute("SELECT * FROM account_portfolios WHERE account_id=? AND symbol=?", (account_id, symbol)).fetchone()
             db.close()
             raise HTTPException(400, f"持仓不足：当前 {pos['quantity'] if pos else 0} 股")
         try:
             # ② 加款到用户账户 + 清理零持仓 + 订单（同一事务，失败整体回滚）
-            db.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (cost, uid))
-            remaining = db.execute("SELECT quantity FROM portfolios WHERE user_id=? AND symbol=?",
-                                   (uid, symbol)).fetchone()
+            db.execute("UPDATE fund_accounts SET balance=balance+? WHERE id=?", (cost, account_id))
+            remaining = db.execute("SELECT quantity FROM account_portfolios WHERE account_id=? AND symbol=?",
+                                   (account_id, symbol)).fetchone()
             if remaining and (remaining["quantity"] or 0) == 0:
-                db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round) VALUES(?,?,?,?,?,?,'filled',?,?)",
-                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round))
+                db.execute("DELETE FROM account_portfolios WHERE account_id=? AND symbol=?", (account_id, symbol))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round,account_id) VALUES(?,?,?,?,?,?,'filled',?,?,?)",
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round, account_id))
+            db.execute("INSERT INTO transactions(account_id,username,stock_symbol,trade_type,price,shares,round) VALUES(?,?,?,?,?,?,?)",
+                       (account_id, username, symbol, side, price, quantity, current_round))
             db.commit()
         except Exception as e:
             # 审核 P0-1 修复：rollback 已自动回退持仓扣减与加款——绝不再手动补偿
@@ -1020,7 +1169,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             raise HTTPException(502, "下单失败：持仓记录写入异常，资金已自动回退")
         db.close()
         db3 = get_db()
-        sell_bal = db3.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()
+        sell_bal = db3.execute("SELECT balance FROM fund_accounts WHERE id=?", (account_id,)).fetchone()
         db3.close()
         return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
                 "round": current_round, "balance": sell_bal["balance"] if sell_bal else 0,
@@ -1030,21 +1179,28 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
 
 @app.get("/portfolio")
 async def get_portfolio(request: Request, session: dict = Depends(_require_auth)):
-    """持仓总览（对齐 Trading Arena 前端契约）
-    v1.3.0 公司级：现金=本公司股票账户余额，持仓=公司维度（同公司代表可见）"""
+    """按资金账户返回持仓、现金与成交记录。"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # v1.3.1-3 用户级：现金=用户股票账户余额（每人一个账户）
-    cash = float(user["balance"] or 0)
+    try:
+        requested_account = int(request.query_params.get("account_id")) if request.query_params.get("account_id") else None
+    except (TypeError, ValueError):
+        db.close()
+        raise HTTPException(400, "资金账户格式错误")
+    account = db.execute(
+        "SELECT * FROM fund_accounts WHERE owner=? AND (? IS NULL OR id=?) ORDER BY id LIMIT 1",
+        (username, requested_account, requested_account)).fetchone()
+    cash = float(account["balance"] or 0) if account else 0.0
+    account_id = int(account["id"]) if account else 0
     stocks = {r["symbol"]: dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()}
     positions_raw = db.execute(
         "SELECT p.symbol, p.quantity, p.avg_price, s.name, s.current_price "
-        "FROM portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.user_id=? AND p.quantity>0",
-        (user["id"],)).fetchall()
+        "FROM account_portfolios p LEFT JOIN stocks s ON p.symbol=s.symbol WHERE p.account_id=? AND p.quantity>0",
+        (account_id,)).fetchall()
     positions = []
     total_mv = 0.0
     total_cost = 0.0
@@ -1065,12 +1221,13 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
             "pnlRatio": round(pnl / (avg_cost * shares) * 100, 2) if avg_cost and shares else 0,
         })
     orders = [dict(r) for r in db.execute(
-        "SELECT o.*, u.username FROM orders o JOIN users u ON o.user_id=u.id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 20",
-        (user["id"],)).fetchall()]
+        "SELECT o.*,u.username FROM orders o JOIN users u ON o.user_id=u.id WHERE o.account_id=? ORDER BY o.id DESC LIMIT 20",
+        (account_id,)).fetchall()]
     db.close()
     total_pnl = round(total_mv - total_cost, 2)
     return {
-        "user": {"username": username, "role": user["role"], "balance": cash},
+        "user": {"username": username, "role": user["role"], "balance": cash, "accountId": account_id,
+                 "accountName": account["name"] if account else "未选择资金账户"},
         "summary": {
             "marketValue": round(total_mv, 2),
             "totalAssets": round(cash + total_mv, 2),
@@ -1085,19 +1242,16 @@ async def get_portfolio(request: Request, session: dict = Depends(_require_auth)
 
 @app.get("/fund-accounts")
 async def fund_accounts(request: Request, session: dict = Depends(_require_auth)):
-    """资金账户列表（v1.3.1-3 用户级：每个账号一个股票账户 = 用户余额，与区域基建分开）"""
+    """返回当前用户的独立资金账户（与 Trading Arena 契约一致）。"""
     username = _require_self(request.query_params.get("username"), session)
     db = get_db()
-    user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-    if not user:
-        db.close()
-        raise HTTPException(404, "用户不存在")
-    cash = float(user["balance"] or 0)
+    rows = db.execute("SELECT * FROM fund_accounts WHERE owner=? ORDER BY id", (username,)).fetchall()
     result = [{
-        "id": user["id"], "name": "我的股票账户", "balance": cash,
-        "initialBalance": cash, "locked": not bool(user["adjustable"]),
-        "symbol": str(user["id"]),
-    }]
+        "id": row["id"], "accountId": row["id"], "name": row["name"], "accountName": row["name"],
+        "balance": float(row["balance"] or 0), "cash": float(row["balance"] or 0),
+        "initialBalance": float(row["initial_balance"] or 0), "locked": bool(row["locked"]),
+        "owner": username,
+    } for row in rows]
     db.close()
     return result
 
@@ -1109,8 +1263,8 @@ async def managed_stock_accounts(session: dict = Depends(_require_auth)):
         raise HTTPException(403, "No stock-account management permission")
     db = get_db()
     rows = [dict(row) for row in db.execute(
-        "SELECT id, username, role, balance, adjustable, company_id "
-        "FROM users ORDER BY role, username"
+        "SELECT u.id,u.username,u.role,COALESCE((SELECT SUM(f.balance) FROM fund_accounts f WHERE f.owner=u.username),0) AS balance,u.adjustable,u.company_id "
+        "FROM users u ORDER BY u.role,u.username"
     ).fetchall()]
     db.close()
     return rows
@@ -1155,19 +1309,26 @@ async def adjust_balance(request: Request, session: dict = Depends(_require_auth
             db.close()
             return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）"}
 
-    # 扣减防负：条件 UPDATE（用户级账户）
+    account = db.execute("SELECT id,balance FROM fund_accounts WHERE owner=? ORDER BY id LIMIT 1", (username,)).fetchone()
+    if not account:
+        cur = db.execute("INSERT INTO fund_accounts(owner,name,balance,initial_balance,locked) VALUES(?,?,?,?,1)",
+                         (username, "主资金账户", 0, 0))
+        account_id = cur.lastrowid
+    else:
+        account_id = account["id"]
+    # 扣减防负：条件 UPDATE（资金账户）
     if amount < 0:
         cur = db.execute(
-            "UPDATE users SET balance = balance + ? WHERE id = ? AND balance >= ?",
-            (amount, user["id"], -amount))
+            "UPDATE fund_accounts SET balance=balance+?,initial_balance=initial_balance+? "
+            "WHERE id=? AND balance>=? AND initial_balance>=?",
+            (amount, amount, account_id, -amount, -amount))
         if cur.rowcount == 0:
             db.close()
             raise HTTPException(400, "扣减后余额不能为负（当前可用资金不足）")
     else:
-        db.execute("UPDATE users SET balance = balance + ? WHERE id = ?",
-                   (amount, user["id"]))
-    new_bal = db.execute("SELECT balance FROM users WHERE id=?",
-                         (user["id"],)).fetchone()["balance"]
+        db.execute("UPDATE fund_accounts SET balance=balance+?,initial_balance=initial_balance+? WHERE id=?",
+                   (amount, amount, account_id))
+    new_bal = db.execute("SELECT balance FROM fund_accounts WHERE id=?", (account_id,)).fetchone()["balance"]
     if idem_key:
         db.execute("INSERT OR IGNORE INTO adjust_logs(username, amount, reason, idempotency_key) VALUES(?,?,?,?)",
                    (username, amount, reason, idem_key))
@@ -1179,29 +1340,50 @@ async def adjust_balance(request: Request, session: dict = Depends(_require_auth
 
 @app.post("/fund-accounts")
 async def create_fund_account(request: Request, session: dict = Depends(_require_auth)):
-    """创建资金账户（v1.3.0 公司级：单账户模式，仅主席可调用；
-    initial_balance 忽略——资金只经买卖流转，防代表端注入资金）"""
+    """创建并锁定独立资金账户；代表端保持只读。"""
     data = await request.json()
-    username = _require_operator(data.get("username"), session)  # 仅主席/管理员
+    if session.get("role") not in ("admin", "operator"):
+        raise HTTPException(403, "代表端不能创建资金账户")
+    username = session.get("username")
+    if session.get("role") == "admin" and data.get("username"):
+        username = str(data.get("username")).strip()
     name = (data.get("name") or "主资金账户").strip()
-    # amount 故意不使用：资金账户余额由买卖决定，不接受客户端注入
+    try:
+        initial_balance = float(data.get("initial_balance", data.get("initialBalance", 0)) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "初始资金格式错误")
+    if not name or initial_balance < 0:
+        raise HTTPException(400, "账户名称不能为空，初始资金不能为负数")
     db = get_db()
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
         raise HTTPException(404, "用户不存在")
-    # v1.3.1-3 用户级：余额 = 用户股票账户（与区域基建分开）——查询须在 close 前
-    cash = float(user["balance"] or 0)
-    acct_id = user["id"]
+    cur = db.execute("INSERT INTO fund_accounts(owner,name,balance,initial_balance,locked) VALUES(?,?,?,?,1)",
+                     (username, name[:60], initial_balance, initial_balance))
+    acct_id = cur.lastrowid
+    db.commit()
     db.close()
-    return {"accepted": True, "id": acct_id, "symbol": str(acct_id), "name": name,
-            "balance": cash, "fundsLocked": not bool(user["adjustable"])}
+    return {"accepted": True, "id": acct_id, "accountId": acct_id, "name": name,
+            "balance": initial_balance, "fundsLocked": True}
 
 
 @app.delete("/fund-accounts/{account_id}")
 async def delete_fund_account(account_id: int, request: Request, session: dict = Depends(_require_auth)):
-    """删除资金账户（主账户不可删）"""
-    raise HTTPException(400, "主资金账户不可删除")
+    username = session.get("username")
+    db = get_db()
+    account = db.execute("SELECT * FROM fund_accounts WHERE id=? AND owner=?", (account_id, username)).fetchone()
+    if not account:
+        db.close()
+        raise HTTPException(404, "资金账户不存在")
+    positions = db.execute("SELECT COUNT(*) FROM account_portfolios WHERE account_id=? AND quantity>0", (account_id,)).fetchone()[0]
+    if positions:
+        db.close()
+        raise HTTPException(409, "资金账户仍有持仓，不能删除")
+    db.execute("DELETE FROM fund_accounts WHERE id=?", (account_id,))
+    db.commit()
+    db.close()
+    return {"accepted": True, "accountId": account_id}
 
 
 @app.get("/available-companies")

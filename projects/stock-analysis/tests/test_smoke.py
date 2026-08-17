@@ -50,14 +50,15 @@ class TestStockApiSmoke(unittest.TestCase):
         pep604 = re.findall(r":\s*(int|str|float|bool)\s*\|\s*(None|int|str|float)", src)
         self.assertEqual(pep604, [], f"发现 PEP 604 语法（Python 3.8 不支持）: {pep604}")
 
-    def test_04_user_level_stock_balance_is_consistent(self):
-        """Current product model uses one independent stock balance per user."""
+    def test_04_fund_account_balance_is_consistent(self):
+        """Trading Arena model keeps cash in independent fund accounts."""
         path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api", "stock_mini.py")
         with open(path, encoding="utf-8") as f:
             src = f.read()
-        self.assertIn('UPDATE users SET balance = balance - ?', src)
-        self.assertIn('UPDATE users SET balance = balance + ?', src)
-        self.assertIn('cash = float(user["balance"] or 0)', src)
+        self.assertIn('CREATE TABLE IF NOT EXISTS fund_accounts', src)
+        self.assertIn('UPDATE fund_accounts SET balance=balance-?', src)
+        self.assertIn('UPDATE fund_accounts SET balance=balance+?', src)
+        self.assertIn('account_id = data.get("account_id")', src)
 
     def test_05_representative_is_api_readonly(self):
         """Representative read-only mode must be enforced by the API."""
