@@ -2,7 +2,7 @@
 支持桌面端统一登录：/auth/login 用户不存在时自动创建（与 Gipfel 管理系统账号同步）
 index.html 注入 auto-login 脚本：iframe URL 带 ?token=&username= 时自动写入 localStorage 免登录
 """
-import sqlite3, os, json, uuid
+import sqlite3, os, json, uuid, hashlib, math
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request, Header, Depends
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -69,7 +69,8 @@ def init_db():
             prev_price REAL, change_pct REAL, sector TEXT, is_active INTEGER DEFAULT 1,
             premium_rate REAL DEFAULT 50, carbon_price REAL DEFAULT 50, revenue REAL DEFAULT 0,
             total_shares REAL DEFAULT 0, industry_pe REAL DEFAULT 20,
-            industry_carbon_mean REAL DEFAULT 50, manager TEXT DEFAULT ''
+            industry_carbon_mean REAL DEFAULT 50, manager TEXT DEFAULT '',
+            volatility REAL DEFAULT 0.015
         );
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY, user_id INTEGER, symbol TEXT, side TEXT CHECK(side IN('buy','sell')),
@@ -123,6 +124,9 @@ def init_db():
             buy_total REAL NOT NULL DEFAULT 0, sell_total REAL NOT NULL DEFAULT 0,
             change_pct REAL NOT NULL DEFAULT 0, UNIQUE(stock_symbol,round)
         );
+        CREATE TABLE IF NOT EXISTS system_migrations (
+            migration_key TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now'))
+        );
         INSERT OR IGNORE INTO market_state(id,state,round) VALUES(1,'open',1);
     """)
     db.commit()
@@ -168,7 +172,8 @@ def startup():
         db.commit()
     for column, definition in (
         ("total_shares", "REAL DEFAULT 0"), ("industry_pe", "REAL DEFAULT 20"),
-        ("industry_carbon_mean", "REAL DEFAULT 50"), ("manager", "TEXT DEFAULT ''")):
+        ("industry_carbon_mean", "REAL DEFAULT 50"), ("manager", "TEXT DEFAULT ''"),
+        ("volatility", "REAL DEFAULT 0.015")):
         if column not in scols:
             db.execute("ALTER TABLE stocks ADD COLUMN %s %s" % (column, definition))
             db.commit()
@@ -192,6 +197,15 @@ def startup():
         for s, n, p, pp in stocks:
             db.execute("INSERT OR IGNORE INTO stocks(symbol,name,current_price,prev_price,change_pct,sector) VALUES(?,?,?,?,?,?)",
                        (s, n, p, pp, round((p-pp)/pp*100,2), "综合"))
+        db.commit()
+    if not db.execute("SELECT 1 FROM system_migrations WHERE migration_key='stock-volatility-v2'").fetchone():
+        volatility_by_symbol = {
+            "JGONG": 0.016, "JXIAO": 0.014, "WULIU": 0.018,
+            "YLIAO": 0.022, "JIANSHE": 0.012, "NENGYUAN": 0.024,
+        }
+        for symbol, volatility in volatility_by_symbol.items():
+            db.execute("UPDATE stocks SET volatility=? WHERE symbol=?", (volatility, symbol))
+        db.execute("INSERT INTO system_migrations(migration_key) VALUES('stock-volatility-v2')")
         db.commit()
     db.execute("UPDATE stocks SET initial_price=COALESCE(initial_price,current_price,prev_price,1)")
     # 原版 Trading Arena 资金账户模型：为存量用户建立默认账户，并迁移现有持仓。
@@ -249,15 +263,35 @@ def _audit(db, action: str, detail: str = ""):
     db.execute("INSERT INTO audit_logs(action,detail) VALUES(?,?)", (action, detail[:500]))
 
 
-def _compute_round_price(stock, buy_total, sell_total, carbon_mean):
-    """原版 Trading Arena 收盘价公式，最终涨跌限制在上一收盘价的 ±10%。"""
+def _round_normal(symbol, round_no, channel="close"):
+    """可重放的标准正态冲击：同一股票同一轮结果固定，支持审计和安全回退。"""
+    seed = os.environ.get("MARKET_RANDOM_SEED", "gipfel-round-model-v2")
+    digest = hashlib.sha256(("%s:%s:%s:%s" % (seed, symbol, round_no, channel)).encode("utf-8")).digest()
+    u1 = (int.from_bytes(digest[:8], "big") + 1) / float((1 << 64) + 1)
+    u2 = (int.from_bytes(digest[8:16], "big") + 1) / float((1 << 64) + 1)
+    return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
+
+
+def _compute_round_price(stock, buy_total, sell_total, carbon_mean, round_no):
+    """基本面 + 供需 + 可审计随机冲击；最终涨跌限制在上一收盘价的 ±10%。"""
     previous = float(stock["prev_price"] or stock["current_price"] or 1)
-    demand = max(float(buy_total or 0), 1.0) / max(float(sell_total or 0), 1.0)
+    buys = max(float(buy_total or 0), 0.0)
+    sells = max(float(sell_total or 0), 0.0)
+    # 引入流动性先验并压缩极端买卖比，避免单边小额交易机械触发涨跌停。
+    liquidity_prior = max((buys + sells) * 0.15, previous * 100)
+    demand_ratio = (buys + liquidity_prior) / (sells + liquidity_prior)
+    demand_factor = math.exp(max(-0.08, min(0.08, math.log(max(demand_ratio, 0.0001)) * 0.18)))
     premium = float(stock["premium_rate"] or 50)
     carbon = float(stock["carbon_price"] or 50)
     premium_factor = 1 + 0.2 * (premium - 50) / 50
     carbon_factor = 1 - 0.5 * (carbon - max(carbon_mean, 1)) / max(carbon_mean, 1)
-    target = previous * demand * premium_factor * carbon_factor
+    base_volatility = max(0.002, min(float(stock["volatility"] or 0.015), 0.05))
+    total_flow = buys + sells
+    imbalance = abs(buys - sells) / max(total_flow, 1)
+    liquidity_multiplier = 1.2 if total_flow < previous * 1000 else 0.85
+    sigma = max(0.002, min(base_volatility * (0.65 + 0.7 * imbalance) * liquidity_multiplier, 0.04))
+    news_shock = max(-3 * sigma, min(3 * sigma, _round_normal(stock["symbol"], round_no) * sigma))
+    target = previous * demand_factor * premium_factor * carbon_factor * (1 + news_shock)
     return max(round(previous * 0.9, 2), min(round(previous * 1.1, 2), round(target, 2)))
 
 
@@ -432,6 +466,7 @@ async def create_stock(request: Request):
     industry_pe = float(data.get("industry_pe", 20) or 20)
     premium_rate = float(data.get("premium_rate", 50) or 50)
     carbon_price = float(data.get("carbon_price", 50) or 50)
+    volatility = max(0.002, min(float(data.get("volatility", 0.015) or 0.015), 0.05))
     if not symbol or not name:
         raise HTTPException(400, "缺少 symbol 或 name")
     db = get_db()
@@ -440,8 +475,8 @@ async def create_stock(request: Request):
         db.close()
         raise HTTPException(409, f"股票 {symbol} 已存在")
     db.execute(
-        "INSERT INTO stocks(symbol,name,current_price,prev_price,change_pct,sector,initial_price,total_shares,revenue,industry_pe,premium_rate,carbon_price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-        (symbol, name, float(price), float(price), 0, sector, float(price), total_shares, revenue, industry_pe, premium_rate, carbon_price))
+        "INSERT INTO stocks(symbol,name,current_price,prev_price,change_pct,sector,initial_price,total_shares,revenue,industry_pe,premium_rate,carbon_price,volatility) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (symbol, name, float(price), float(price), 0, sector, float(price), total_shares, revenue, industry_pe, premium_rate, carbon_price, volatility))
     db.commit()
     stock_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
     row = dict(db.execute("SELECT * FROM stocks WHERE id=?", (stock_id,)).fetchone())
@@ -790,14 +825,11 @@ async def admin_market_close(request: Request):
         buy_volume = sum(int(row["shares"]) for row in trades if row["trade_type"] == "buy")
         sell_volume = sum(int(row["shares"]) for row in trades if row["trade_type"] == "sell")
         volume = max(buy_volume, sell_volume)
-        close = _compute_round_price(stock, buy_total, sell_total, carbon_mean) if volume else previous
+        close = _compute_round_price(stock, buy_total, sell_total, carbon_mean, status["round"])
         prices = [float(row["price"]) for row in trades if float(row["price"] or 0) > 0]
-        if volume:
-            ratio = buy_volume / max(sell_volume, 1)
-            upper_spread = close * (0.001 + 0.002 * min(ratio, 5))
-            lower_spread = close * (0.001 + 0.002 * min(1 / max(ratio, 0.001), 5))
-        else:
-            upper_spread = lower_spread = 0
+        base_volatility = max(0.002, min(float(stock["volatility"] or 0.015), 0.05))
+        upper_spread = close * (0.001 + abs(_round_normal(stock["symbol"], status["round"], "high")) * base_volatility * 0.35)
+        lower_spread = close * (0.001 + abs(_round_normal(stock["symbol"], status["round"], "low")) * base_volatility * 0.35)
         high = max([previous, close] + prices) + upper_spread
         low = max(0.01, min([previous, close] + prices) - lower_spread)
         change = round((close - previous) / previous * 100, 2) if previous else 0
@@ -808,7 +840,7 @@ async def admin_market_close(request: Request):
             (stock["symbol"], status["round"], previous, high, low, close, volume, buy_total, sell_total, change))
         db.execute("UPDATE stocks SET current_price=?,change_pct=? WHERE symbol=?", (close, change, stock["symbol"]))
     db.execute("UPDATE market_state SET state='closed' WHERE id=1")
-    _audit(db, "market.close", "round=%s" % status["round"])
+    _audit(db, "market.close", "round=%s; pricing=fundamental-demand-stochastic-v2" % status["round"])
     db.commit()
     db.close()
     return {"success": True, "state": "closed", "round": status["round"]}
@@ -993,7 +1025,7 @@ async def admin_stock_update(symbol: str, request: Request):
         raise HTTPException(404, f"股票 {sym} 不存在")
     updates = []
     params = []
-    for key in ("premium_rate", "carbon_price", "revenue", "total_shares", "industry_pe", "industry_carbon_mean"):
+    for key in ("premium_rate", "carbon_price", "revenue", "total_shares", "industry_pe", "industry_carbon_mean", "volatility"):
         if key in data:
             updates.append(f"{key}=?")
             params.append(float(data[key]))

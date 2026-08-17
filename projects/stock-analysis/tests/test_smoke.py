@@ -3,6 +3,7 @@ import unittest
 import os
 import sys
 import py_compile
+import importlib.util
 
 class TestStockApiSmoke(unittest.TestCase):
     """stock_mini.py 语法 + 关键函数存在性冒烟（补测试覆盖缺口）"""
@@ -79,6 +80,33 @@ class TestStockApiSmoke(unittest.TestCase):
         self.assertIn('"time": f"round-{order_round}"', kline)
         self.assertIn('ORDER BY round ASC, id ASC', kline)
         self.assertNotIn('by_day', kline)
+
+    def test_07_stochastic_price_is_replayable_and_bounded(self):
+        """随机冲击按股票和轮次固定，并始终遵守单轮 ±10%。"""
+        from starlette.staticfiles import StaticFiles
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api", "stock_mini.py")
+        original_init = StaticFiles.__init__
+        def unchecked_init(instance, *args, **kwargs):
+            kwargs["check_dir"] = False
+            original_init(instance, *args, **kwargs)
+        StaticFiles.__init__ = unchecked_init
+        try:
+            spec = importlib.util.spec_from_file_location("stock_mini_price_test", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        finally:
+            StaticFiles.__init__ = original_init
+        stock = {
+            "symbol": "VERIFY", "prev_price": 100, "current_price": 100,
+            "premium_rate": 50, "carbon_price": 50, "volatility": 0.015,
+        }
+        first = module._compute_round_price(stock, 100000, 80000, 50, 7)
+        repeated = module._compute_round_price(stock, 100000, 80000, 50, 7)
+        next_round = module._compute_round_price(stock, 100000, 80000, 50, 8)
+        self.assertEqual(first, repeated)
+        self.assertNotEqual(first, next_round)
+        self.assertGreaterEqual(first, 90)
+        self.assertLessEqual(first, 110)
 
 
 if __name__ == "__main__":
