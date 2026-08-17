@@ -23,6 +23,12 @@ class TestStockApiSmoke(unittest.TestCase):
             '@app.get("/fund-accounts")', '@app.post("/fund-accounts")',
             '@app.get("/managed-stock-accounts")',
             '@app.get("/admin/accounts")', '@app.get("/market")',
+            '@app.get("/admin/control/overview")',
+            '@app.post("/admin/market/close")',
+            '@app.post("/admin/market/open")',
+            '@app.post("/admin/market/previous-round")',
+            '@app.post("/admin/market/reset-round1")',
+            '@app.get("/admin/audit-logs")',
             '@app.post("/auth/login")',
             'def _require_auth', 'def _require_self', 'def _require_admin',
             'def _require_trader',
@@ -30,6 +36,8 @@ class TestStockApiSmoke(unittest.TestCase):
             'from datetime import datetime',
             'X-Internal-Key',  # 资金桥内部密钥
             '"Bearer "',  # Bearer 鉴权
+            'CREATE TABLE IF NOT EXISTS market_state',
+            'round INTEGER DEFAULT 1',
         ]:
             self.assertIn(sym, src, f"缺少符号: {sym}")
 
@@ -59,6 +67,17 @@ class TestStockApiSmoke(unittest.TestCase):
         trader_block = src[src.index("def _require_trader"):src.index("def _require_self")]
         self.assertIn('session.get("role") not in ("admin", "operator")', trader_block)
         self.assertIn('raise HTTPException(403', trader_block)
+
+    def test_06_kline_is_round_based(self):
+        """K 线必须按比赛轮次聚合，禁止退回自然日时间轴。"""
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api", "stock_mini.py")
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        kline = src[src.index('def stock_kline'):src.index('@app.get("/stocks/{symbol}/order-book")')]
+        self.assertIn('for order_round in range(1, current_round + 1)', kline)
+        self.assertIn('"time": f"round-{order_round}"', kline)
+        self.assertIn('ORDER BY round ASC, id ASC', kline)
+        self.assertNotIn('by_day', kline)
 
 
 if __name__ == "__main__":

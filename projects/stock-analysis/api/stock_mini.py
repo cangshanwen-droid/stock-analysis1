@@ -72,7 +72,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY, user_id INTEGER, symbol TEXT, side TEXT CHECK(side IN('buy','sell')),
             quantity INTEGER, price REAL, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now')),
-            company_id INTEGER, idempotency_key TEXT DEFAULT ''
+            company_id INTEGER, idempotency_key TEXT DEFAULT '', round INTEGER DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS portfolios (
             user_id INTEGER, symbol TEXT, quantity INTEGER,
@@ -93,6 +93,14 @@ def init_db():
             id INTEGER PRIMARY KEY, username TEXT, amount REAL, reason TEXT,
             idempotency_key TEXT UNIQUE, created_at TEXT DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS market_state (
+            id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL DEFAULT 'open', round INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY, action TEXT NOT NULL, detail TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO market_state(id,state,round) VALUES(1,'open',1);
     """)
     db.commit()
     db.close()
@@ -105,6 +113,16 @@ def startup():
     cols = [c[1] for c in db.execute("PRAGMA table_info(orders)").fetchall()]
     if "idempotency_key" not in cols:
         db.execute("ALTER TABLE orders ADD COLUMN idempotency_key TEXT DEFAULT ''")
+        db.commit()
+    if "round" not in cols:
+        db.execute("ALTER TABLE orders ADD COLUMN round INTEGER DEFAULT 1")
+        days = [row[0] for row in db.execute(
+            "SELECT DISTINCT substr(created_at,1,10) FROM orders WHERE created_at IS NOT NULL ORDER BY 1"
+        ).fetchall() if row[0]]
+        for index, day in enumerate(days, start=1):
+            db.execute("UPDATE orders SET round=? WHERE substr(created_at,1,10)=?", (index, day))
+        if days:
+            db.execute("UPDATE market_state SET round=? WHERE id=1", (len(days),))
         db.commit()
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_idem ON orders(idempotency_key) "
                "WHERE idempotency_key != ''")
@@ -139,22 +157,33 @@ def startup():
         db.commit()
     db.close()
 
+def _market_status(db=None):
+    owns_db = db is None
+    if owns_db:
+        db = get_db()
+    row = db.execute("SELECT state,round FROM market_state WHERE id=1").fetchone()
+    result = {"state": row["state"] if row else "open", "round": int(row["round"] if row else 1)}
+    if owns_db:
+        db.close()
+    return result
+
+
+def _audit(db, action: str, detail: str = ""):
+    db.execute("INSERT INTO audit_logs(action,detail) VALUES(?,?)", (action, detail[:500]))
+
+
 @app.get("/market")
 def market_data():
     db = get_db()
     rows = [dict(r) for r in db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()]
+    status = _market_status(db)
     db.close()
-    return rows
+    return {"stocks": rows, "state": status["state"], "round": status["round"]}
 
 
 @app.get("/stocks/{symbol}/kline")
 def stock_kline(symbol: str):
-    """按成交订单生成日 K 线（OHLCV）。
-
-    本系统没有独立的行情撮合表，已成交订单是唯一可信的交易来源；因此以
-    ``created_at`` 的自然日聚合，并用订单 id 解决同秒成交时的开/收盘顺序。
-    无成交历史时返回当前价基准柱，便于原生工作台稳定显示新上市股票。
-    """
+    """按比赛轮次生成 K 线；每轮严格对应一根真实 OHLCV 蜡烛。"""
     code = symbol.upper().strip()
     db = get_db()
     stock = db.execute(
@@ -166,66 +195,48 @@ def stock_kline(symbol: str):
         raise HTTPException(404, "股票不存在或已下市")
 
     orders = db.execute(
-        """SELECT id, price, quantity, created_at
+        """SELECT id, price, quantity, created_at, round
            FROM orders
            WHERE symbol=? AND status='filled'
-           ORDER BY created_at ASC, id ASC""",
+           ORDER BY round ASC, id ASC""",
         (code,),
     ).fetchall()
     db.close()
 
-    by_day = {}
+    by_round = {}
     for order in orders:
-        day = str(order["created_at"] or "")[:10]
-        if not day:
-            continue
-        by_day.setdefault(day, []).append(order)
+        order_round = max(1, int(order["round"] or 1))
+        by_round.setdefault(order_round, []).append(order)
 
-    candles = []
-    for index, (day, rows) in enumerate(by_day.items(), start=1):
-        prices = [float(row["price"] or 0) for row in rows]
-        candles.append({
-            "round": index,
-            "time": f"{day}T00:00:00Z",
-            "open": round(prices[0], 2),
-            "high": round(max(prices), 2),
-            "low": round(min(prices), 2),
-            "close": round(prices[-1], 2),
-            "volume": sum(int(row["quantity"] or 0) for row in rows),
-        })
-
-    # The quote table is the latest-price source of truth. Filled orders only
-    # cover historical trades, so add/update a live daily candle to keep the
-    # chart close aligned with the market tape without inventing volume.
-    current_day = datetime.utcnow().strftime("%Y-%m-%d")
+    current_round = _market_status()["round"]
     current_price = round(float(stock["current_price"] or stock["prev_price"] or 0), 2)
-    if candles and str(candles[-1]["time"])[:10] == current_day:
-        candles[-1]["high"] = round(max(float(candles[-1]["high"]), current_price), 2)
-        candles[-1]["low"] = round(min(float(candles[-1]["low"]), current_price), 2)
-        candles[-1]["close"] = current_price
-    elif candles:
-        previous_close = round(float(candles[-1]["close"]), 2)
+    candles = []
+    previous_close = None
+    for order_round in range(1, current_round + 1):
+        rows = by_round.get(order_round, [])
+        prices = [float(row["price"] or 0) for row in rows]
+        if prices:
+            opening = previous_close if previous_close is not None else prices[0]
+            close = prices[-1]
+            high = max([opening] + prices)
+            low = min([opening] + prices)
+            volume = sum(int(row["quantity"] or 0) for row in rows)
+        else:
+            opening = previous_close if previous_close is not None else current_price
+            close = opening
+            high = opening
+            low = opening
+            volume = 0
         candles.append({
-            "round": len(candles) + 1,
-            "time": f"{current_day}T00:00:00Z",
-            "open": previous_close,
-            "high": max(previous_close, current_price),
-            "low": min(previous_close, current_price),
-            "close": current_price,
-            "volume": 0,
+            "round": order_round,
+            "time": f"round-{order_round}",
+            "open": round(opening, 2),
+            "high": round(high, 2),
+            "low": round(low, 2),
+            "close": round(close, 2),
+            "volume": volume,
         })
-
-    if not candles:
-        price = round(float(stock["current_price"] or stock["prev_price"] or 0), 2)
-        candles.append({
-            "round": 1,
-            "time": "1970-01-01T00:00:00Z",
-            "open": price,
-            "high": price,
-            "low": price,
-            "close": price,
-            "volume": 0,
-        })
+        previous_close = close
     return candles[-120:]
 
 
@@ -296,7 +307,19 @@ async def create_stock(request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "1.1", "service": "stock-trading"}
+    db = get_db()
+    status = _market_status(db)
+    counts = {
+        "stocks": db.execute("SELECT COUNT(*) FROM stocks WHERE is_active=1").fetchone()[0],
+        "users": db.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+        "orders": db.execute("SELECT COUNT(*) FROM orders").fetchone()[0],
+    }
+    db.close()
+    return {
+        "status": "ok", "version": "1.2", "service": "stock-trading",
+        "database": True, "writes_enabled": True,
+        "state": status["state"], "round": status["round"], "counts": counts,
+    }
 
 
 # ── 交易鉴权（v1.3.0 安全加固）：登录生成 token，交易端点必须带 Bearer token ──
@@ -575,6 +598,157 @@ def _require_admin(request: Request) -> str:
     return key
 
 
+@app.get("/admin/control/overview")
+async def admin_control_overview(request: Request):
+    _require_admin(request)
+    db = get_db()
+    status = _market_status(db)
+    result = {
+        "api": "ok",
+        "database": "ok",
+        "writes_enabled": True,
+        "state": status["state"],
+        "round": status["round"],
+        "users": db.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+        "operators": db.execute("SELECT COUNT(*) FROM users WHERE role='operator'").fetchone()[0],
+        "admins": db.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0],
+        "stocks": db.execute("SELECT COUNT(*) FROM stocks WHERE is_active=1").fetchone()[0],
+        "orders": db.execute("SELECT COUNT(*) FROM orders").fetchone()[0],
+        "recent_order": None,
+    }
+    recent = db.execute(
+        "SELECT o.id,u.username,o.symbol,o.side,o.quantity,o.price,o.round,o.created_at "
+        "FROM orders o LEFT JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 1"
+    ).fetchone()
+    if recent:
+        result["recent_order"] = dict(recent)
+    db.close()
+    return result
+
+
+@app.post("/admin/market/close")
+async def admin_market_close(request: Request):
+    _require_admin(request)
+    db = get_db()
+    status = _market_status(db)
+    if status["state"] != "open":
+        db.close()
+        raise HTTPException(409, "当前轮次已经收盘")
+    for stock in db.execute("SELECT symbol,current_price FROM stocks WHERE is_active=1").fetchall():
+        trades = db.execute(
+            "SELECT price FROM orders WHERE symbol=? AND round=? AND status='filled' ORDER BY id",
+            (stock["symbol"], status["round"]),
+        ).fetchall()
+        if trades:
+            previous = float(stock["current_price"] or trades[0]["price"] or 0)
+            close = float(trades[-1]["price"] or previous)
+            change = round((close - previous) / previous * 100, 2) if previous else 0
+            db.execute(
+                "UPDATE stocks SET prev_price=?,current_price=?,change_pct=? WHERE symbol=?",
+                (previous, close, change, stock["symbol"]),
+            )
+    db.execute("UPDATE market_state SET state='closed' WHERE id=1")
+    _audit(db, "market.close", "round=%s" % status["round"])
+    db.commit()
+    db.close()
+    return {"success": True, "state": "closed", "round": status["round"]}
+
+
+@app.post("/admin/market/open")
+async def admin_market_open(request: Request):
+    _require_admin(request)
+    db = get_db()
+    status = _market_status(db)
+    if status["state"] != "closed":
+        db.close()
+        raise HTTPException(409, "请先完成当前轮次收盘")
+    next_round = status["round"] + 1
+    db.execute("UPDATE stocks SET prev_price=current_price,change_pct=0 WHERE is_active=1")
+    db.execute("UPDATE market_state SET state='open',round=? WHERE id=1", (next_round,))
+    _audit(db, "market.open", "round=%s" % next_round)
+    db.commit()
+    db.close()
+    return {"success": True, "state": "open", "round": next_round}
+
+
+@app.post("/admin/market/previous-round")
+async def admin_market_previous_round(request: Request):
+    _require_admin(request)
+    db = get_db()
+    status = _market_status(db)
+    if status["round"] <= 1:
+        db.close()
+        raise HTTPException(409, "当前已经是第 1 轮")
+    current_orders = db.execute("SELECT COUNT(*) FROM orders WHERE round=?", (status["round"],)).fetchone()[0]
+    if current_orders:
+        db.close()
+        raise HTTPException(409, "当前轮次已有成交，为保护资金与持仓不能直接回退；请使用回到第 1 轮")
+    previous_round = status["round"] - 1
+    db.execute("UPDATE market_state SET state='open',round=? WHERE id=1", (previous_round,))
+    _audit(db, "market.previous", "round=%s" % previous_round)
+    db.commit()
+    db.close()
+    return {"success": True, "state": "open", "round": previous_round}
+
+
+@app.post("/admin/market/reset-round1")
+async def admin_market_reset_round1(request: Request):
+    _require_admin(request)
+    if request.headers.get("X-Confirm-Action", "") != "RESET ROUND 1":
+        raise HTTPException(400, "需要明确确认回到第 1 轮")
+    db = get_db()
+    db.execute("DELETE FROM orders")
+    db.execute("DELETE FROM portfolios")
+    db.execute("UPDATE stocks SET prev_price=current_price,change_pct=0")
+    db.execute("UPDATE market_state SET state='open',round=1 WHERE id=1")
+    _audit(db, "market.reset", "round=1; orders and positions cleared")
+    db.commit()
+    db.close()
+    return {"success": True, "state": "open", "round": 1}
+
+
+@app.get("/admin/audit-logs")
+async def admin_audit_logs(request: Request, limit: int = 80):
+    _require_admin(request)
+    db = get_db()
+    rows = [dict(row) for row in db.execute(
+        "SELECT id,action,detail,created_at FROM audit_logs ORDER BY id DESC LIMIT ?",
+        (max(1, min(int(limit), 200)),),
+    ).fetchall()]
+    db.close()
+    return rows
+
+
+@app.delete("/admin/stocks/{symbol}")
+async def admin_stock_delete(symbol: str, request: Request):
+    _require_admin(request)
+    code = symbol.upper().strip()
+    db = get_db()
+    holding = db.execute("SELECT COALESCE(SUM(quantity),0) FROM portfolios WHERE symbol=?", (code,)).fetchone()[0]
+    if holding:
+        db.close()
+        raise HTTPException(409, "该股票仍有持仓，不能下市")
+    cur = db.execute("UPDATE stocks SET is_active=0 WHERE symbol=? AND is_active=1", (code,))
+    if cur.rowcount == 0:
+        db.close()
+        raise HTTPException(404, "股票不存在或已经下市")
+    _audit(db, "stock.deactivate", code)
+    db.commit()
+    db.close()
+    return {"success": True, "symbol": code}
+
+
+@app.post("/admin/stocks/restore")
+async def admin_stocks_restore(request: Request):
+    _require_admin(request)
+    db = get_db()
+    count = db.execute("UPDATE stocks SET is_active=1 WHERE is_active=0").rowcount
+    _audit(db, "stock.restore", "count=%s" % count)
+    db.commit()
+    db.close()
+    return {"success": True, "restored": count}
+
+
 @app.get("/admin/accounts")
 async def admin_accounts(request: Request):
     """所有公司股票账户总览（v1.3.0 公司级：每公司资金 + 持仓市值 + 订单数）"""
@@ -738,12 +912,17 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         if dup:
             db0.close()
             return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
-                    "matched": dup["quantity"], "round": 0, "order": {
+                    "matched": dup["quantity"], "round": int(dup["round"] or 1), "order": {
                         "username": username, "symbol": dup["symbol"], "side": dup["side"],
                         "price": dup["price"], "shares": dup["quantity"]}}
         db0.close()
 
     db = get_db()
+    market_status = _market_status(db)
+    if market_status["state"] != "open":
+        db.close()
+        raise HTTPException(409, "当前轮次已经收盘，请等待管理员开启下一轮")
+    current_round = market_status["round"]
     user = db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not user:
         db.close()
@@ -778,8 +957,8 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
             else:
                 db.execute("INSERT INTO portfolios(user_id,symbol,quantity,avg_price,company_id) VALUES(?,?,?,?,?)",
                            (uid, symbol, quantity, price, user["company_id"]))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
-                       (user["company_id"], uid, symbol, side, quantity, price, idem_key))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round) VALUES(?,?,?,?,?,?,'filled',?,?)",
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round))
             db.commit()
         except Exception as e:
             # ③ 审核 P0-1 修复：rollback 已自动回退扣款——绝不再手动补偿（双重执行=凭空加钱）
@@ -793,7 +972,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                     db2.close()
                     if dup:
                         return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
-                                "matched": dup["quantity"], "round": 0, "order": {
+                                "matched": dup["quantity"], "round": int(dup["round"] or current_round), "order": {
                                     "username": username, "symbol": dup["symbol"], "side": dup["side"],
                                     "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
@@ -801,7 +980,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         new_bal = db.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()["balance"]
         db.close()
         return {"accepted": True, "reason": "", "detail": "买入成功", "matched": quantity,
-                "round": 0, "balance": new_bal,
+                "round": current_round, "balance": new_bal,
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
     else:  # sell
@@ -820,8 +999,8 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                                    (uid, symbol)).fetchone()
             if remaining and (remaining["quantity"] or 0) == 0:
                 db.execute("DELETE FROM portfolios WHERE user_id=? AND symbol=?", (uid, symbol))
-            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key) VALUES(?,?,?,?,?,?,'filled',?)",
-                       (user["company_id"], uid, symbol, side, quantity, price, idem_key))
+            db.execute("INSERT INTO orders(company_id,user_id,symbol,side,quantity,price,status,idempotency_key,round) VALUES(?,?,?,?,?,?,'filled',?,?)",
+                       (user["company_id"], uid, symbol, side, quantity, price, idem_key, current_round))
             db.commit()
         except Exception as e:
             # 审核 P0-1 修复：rollback 已自动回退持仓扣减与加款——绝不再手动补偿
@@ -834,7 +1013,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
                     db2.close()
                     if dup:
                         return {"accepted": True, "reason": "idempotent", "detail": "重复请求已忽略（幂等）",
-                                "matched": dup["quantity"], "round": 0, "order": {
+                                "matched": dup["quantity"], "round": int(dup["round"] or current_round), "order": {
                                     "username": username, "symbol": dup["symbol"], "side": dup["side"],
                                     "price": dup["price"], "shares": dup["quantity"]}}
             db.close()
@@ -844,7 +1023,7 @@ async def place_order(request: Request, session: dict = Depends(_require_auth)):
         sell_bal = db3.execute("SELECT balance FROM users WHERE id=?", (uid,)).fetchone()
         db3.close()
         return {"accepted": True, "reason": "", "detail": "卖出成功", "matched": quantity,
-                "round": 0, "balance": sell_bal["balance"] if sell_bal else 0,
+                "round": current_round, "balance": sell_bal["balance"] if sell_bal else 0,
                 "order": {"username": username, "symbol": symbol, "side": side,
                           "price": price, "shares": quantity}}
 
