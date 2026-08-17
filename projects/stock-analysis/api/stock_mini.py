@@ -281,8 +281,8 @@ def _compute_round_price(stock, buy_total, sell_total, carbon_mean, round_no):
     liquidity_prior = max((buys + sells) * 0.15, previous * 100)
     demand_ratio = (buys + liquidity_prior) / (sells + liquidity_prior)
     demand_factor = math.exp(max(-0.08, min(0.08, math.log(max(demand_ratio, 0.0001)) * 0.18)))
-    premium = float(stock["premium_rate"] or 50)
-    carbon = float(stock["carbon_price"] or 50)
+    premium = float(stock["premium_rate"] if stock["premium_rate"] is not None else 50)
+    carbon = float(stock["carbon_price"] if stock["carbon_price"] is not None else 50)
     premium_factor = 1 + 0.2 * (premium - 50) / 50
     carbon_factor = 1 - 0.5 * (carbon - max(carbon_mean, 1)) / max(carbon_mean, 1)
     base_volatility = max(0.002, min(float(stock["volatility"] or 0.015), 0.05))
@@ -464,8 +464,8 @@ async def create_stock(request: Request):
     total_shares = float(data.get("total_shares", 0) or 0)
     revenue = float(data.get("revenue", 0) or 0)
     industry_pe = float(data.get("industry_pe", 20) or 20)
-    premium_rate = float(data.get("premium_rate", 50) or 50)
-    carbon_price = float(data.get("carbon_price", 50) or 50)
+    premium_rate = float(50 if data.get("premium_rate") is None else data.get("premium_rate"))
+    carbon_price = float(50 if data.get("carbon_price") is None else data.get("carbon_price"))
     volatility = max(0.002, min(float(data.get("volatility", 0.015) or 0.015), 0.05))
     if not symbol or not name:
         raise HTTPException(400, "缺少 symbol 或 name")
@@ -813,7 +813,7 @@ async def admin_market_close(request: Request):
         db.close()
         raise HTTPException(409, "当前轮次已经收盘")
     stocks = db.execute("SELECT * FROM stocks WHERE is_active=1").fetchall()
-    carbon_values = [float(stock["carbon_price"] or 50) for stock in stocks]
+    carbon_values = [float(stock["carbon_price"] if stock["carbon_price"] is not None else 50) for stock in stocks]
     carbon_mean = sum(carbon_values) / len(carbon_values) if carbon_values else 50
     for stock in stocks:
         trades = db.execute(
@@ -1028,7 +1028,7 @@ async def admin_stock_update(symbol: str, request: Request):
     for key in ("premium_rate", "carbon_price", "revenue", "total_shares", "industry_pe", "industry_carbon_mean", "volatility"):
         if key in data:
             updates.append(f"{key}=?")
-            params.append(float(data[key]))
+            params.append(None if data[key] is None and key == "premium_rate" else float(data[key]))
     if "manager" in data:
         updates.append("manager=?")
         params.append(str(data["manager"] or "").strip()[:80])
